@@ -27,7 +27,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-xl bg-[#080d1a] border border-slate-700 rounded-xl overflow-hidden shadow-2xl flex flex-col text-xs text-slate-300">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d1527] border-b border-slate-800">

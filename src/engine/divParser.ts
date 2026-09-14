@@ -99,9 +99,15 @@ export const DIV_BUILTINS = new Set([
   "exists",
   // Sound
   "sound",
+  "sound_play",
   "load_wav",
   "unload_wav",
+  "load_snd",
+  "unload_snd",
+  "load_pcm",
+  "unload_pcm",
   "load_song",
+  "unload_song",
   "song",
   "stop_song",
   // Inputs
@@ -423,6 +429,29 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
     }
   }
 
+  // Pre-scan tokens for asset loaders (DIV Games Studio requirement)
+  let hasLoadFpg = false;
+  let hasLoadFnt = false;
+  let hasLoadSnd = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const val = tokens[i].value.toLowerCase();
+    if (val === "load_fpg" || val === "load_map") {
+      hasLoadFpg = true;
+    }
+    if (val === "load_fnt") {
+      hasLoadFnt = true;
+    }
+    if (
+      val === "load_wav" ||
+      val === "load_snd" ||
+      val === "load_pcm" ||
+      val === "load_song" ||
+      val === "load_mod"
+    ) {
+      hasLoadSnd = true;
+    }
+  }
+
   // Parentheses tracker per line
   let parenDepth = 0;
   const openParenStack: { line: number; column: number }[] = [];
@@ -437,6 +466,78 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
 
   for (let idx = 0; idx < tokens.length; idx++) {
     const t = tokens[idx];
+
+    // Check missing load_fnt for write / write_int / write_string
+    if (
+      t.type === TokenType.IDENTIFIER &&
+      ["write", "write_int", "write_string"].includes(t.value.toLowerCase())
+    ) {
+      const next = tokens[idx + 1];
+      if (next && next.value === "(" && !hasLoadFnt) {
+        diagnostics.push({
+          line: t.line,
+          column: t.column,
+          severity: "error",
+          message: `Error de compilación: La función '${t.value}(...)' en la línea ${t.line} requiere haber cargado previamente una fuente con 'load_fnt(...)'. En DIV Games Studio no se puede mostrar texto sin cargar una fuente FNT.`,
+          rule: "missing-load-fnt",
+        });
+      }
+    }
+
+    // Check missing load_wav / load_snd for sound(...) and sound_play(...)
+    if (
+      t.type === TokenType.IDENTIFIER &&
+      ["sound", "sound_play"].includes(t.value.toLowerCase())
+    ) {
+      const next = tokens[idx + 1];
+      if (next && next.value === "(" && !hasLoadSnd) {
+        diagnostics.push({
+          line: t.line,
+          column: t.column,
+          severity: "error",
+          message: `Error de compilación: La llamada a '${t.value}(...)' en la línea ${t.line} requiere haber cargado previamente el sonido con 'load_wav(...)', 'load_snd(...)' o 'load_pcm(...)'. En DIV Games Studio todo sonido debe ser cargado antes de reproducirse.`,
+          rule: "missing-load-wav",
+        });
+      }
+    }
+
+    // Check missing load_song for song(...)
+    if (
+      t.type === TokenType.IDENTIFIER &&
+      t.value.toLowerCase() === "song"
+    ) {
+      const next = tokens[idx + 1];
+      if (next && next.value === "(" && !hasLoadSnd) {
+        diagnostics.push({
+          line: t.line,
+          column: t.column,
+          severity: "error",
+          message: `Error de compilación: La llamada a 'song(...)' en la línea ${t.line} requiere haber cargado previamente la música con 'load_song(...)'.`,
+          rule: "missing-load-song",
+        });
+      }
+    }
+
+    // Check missing load_fpg for graph assignments
+    if (
+      t.type === TokenType.IDENTIFIER &&
+      t.value.toLowerCase() === "graph"
+    ) {
+      const next = tokens[idx + 1];
+      if (next && next.value === "=") {
+        const valToken = tokens[idx + 2];
+        const isZero = valToken && valToken.value === "0" && tokens[idx + 3]?.value === ";";
+        if (!isZero && !hasLoadFpg) {
+          diagnostics.push({
+            line: t.line,
+            column: t.column,
+            severity: "error",
+            message: `Error de compilación: Se asigna un gráfico ('graph = ...') en la línea ${t.line} sin haber cargado ningún fichero de sprites con 'load_fpg(...)'. En DIV Games Studio es obligatorio cargar el archivo FPG antes de asignar gráficos a los procesos.`,
+            rule: "missing-load-fpg",
+          });
+        }
+      }
+    }
 
     // Parentheses matching
     if (t.type === TokenType.PUNCTUATION) {

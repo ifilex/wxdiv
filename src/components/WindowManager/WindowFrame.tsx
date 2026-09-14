@@ -224,51 +224,67 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
         </div>
 
         {/* Window Control Buttons */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div
+          className="flex items-center gap-1 flex-shrink-0"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {/* Minimize */}
           <button
             id={`btn-min-${win.id}`}
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onMinimize();
             }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
             title="Minimizar a la barra de tareas"
             aria-label="Minimizar"
           >
-            <Minus className="w-3.5 h-3.5" />
+            <Minus className="w-3.5 h-3.5 pointer-events-none" />
           </button>
 
           {/* Maximize / Restore */}
           <button
             id={`btn-max-${win.id}`}
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onToggleMaximize();
             }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
             title={win.isMaximized ? "Restaurar tamaño normal" : "Maximizar ventana"}
             aria-label={win.isMaximized ? "Restaurar" : "Maximizar"}
           >
             {win.isMaximized ? (
-              <Copy className="w-3 h-3" />
+              <Copy className="w-3 h-3 pointer-events-none" />
             ) : (
-              <Square className="w-3 h-3" />
+              <Square className="w-3 h-3 pointer-events-none" />
             )}
           </button>
 
           {/* Close */}
           <button
             id={`btn-close-${win.id}`}
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onClose();
             }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-600/90 transition-colors"
+            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-600/90 transition-colors cursor-pointer"
             title="Cerrar ventana"
             aria-label="Cerrar"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-3.5 h-3.5 pointer-events-none" />
           </button>
         </div>
       </div>

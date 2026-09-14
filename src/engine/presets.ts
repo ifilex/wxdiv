@@ -22,6 +22,11 @@ export const PRESETS: GamePreset[] = [
     code: `PROGRAM galaxy_defender;
 
 GLOBAL
+  fpg_nave = 0;
+  fnt_retro = 0;
+  snd_laser = 0;
+  snd_explosion = 0;
+  snd_hit = 0;
   score = 0;
   hi_score = 5000;
   lives = 3;
@@ -36,9 +41,16 @@ BEGIN
   set_fps(60);
   screen_color(rgb(10, 14, 23));
 
-  write(1, 20, 30, 0, "GALAXY DEFENDER 3.0");
-  write_int(1, 20, 60, 0, &score);
-  write_int(1, 520, 60, 0, &lives);
+  // Cargar librerías FPG, FNT y sonidos WAV (DIV Games Studio)
+  fpg_nave = load_fpg("galaxy.fpg");
+  fnt_retro = load_fnt("arcade.fnt");
+  snd_laser = load_wav("laser.wav");
+  snd_explosion = load_wav("explosion.wav");
+  snd_hit = load_wav("hit.wav");
+
+  write(fnt_retro, 20, 30, 0, "GALAXY DEFENDER 3.0");
+  write_int(fnt_retro, 20, 60, 0, &score);
+  write_int(fnt_retro, 520, 60, 0, &lives);
 
   // Iniciar estrellas de fondo
   star_field();
@@ -81,6 +93,7 @@ PROCESS player(x, y)
 PRIVATE
   cooldown = 0;
 BEGIN
+  file = fpg_nave;
   graph = 1; // Nave espacial
   size = 130;
   LOOP
@@ -100,17 +113,17 @@ BEGIN
     IF ((key(_space) || key(_enter)) && cooldown == 0)
       laser_shot(x - 8, y - 16);
       laser_shot(x + 8, y - 16);
-      sound(1, 80, 300); // Sonido láser
+      sound(snd_laser, 80, 300); // Sonido láser cargado previamente
       cooldown = 12;
     END
 
     // Colisión con enemigos
     IF (collision(type alien) || collision(type asteroid))
       explosion(x, y);
-      sound(2, 100, 200); // Explosión
+      sound(snd_explosion, 100, 200); // Explosión cargada
       lives--;
       IF (lives <= 0)
-        write(1, 260, 240, 1, "GAME OVER");
+        write(fnt_retro, 260, 240, 1, "GAME OVER");
         signal(id, s_kill);
       ELSE
         x = 320;
@@ -124,6 +137,7 @@ END
 
 PROCESS laser_shot(x, y)
 BEGIN
+  file = fpg_nave;
   graph = 2; // Láser
   size = 110;
   WHILE (y > -20)
@@ -153,6 +167,7 @@ PRIVATE
   vx = 2;
   dir = 1;
 BEGIN
+  file = fpg_nave;
   graph = (variant == 1) ? 3 : 4; // Alien 1 o 2
   size = 120;
   LOOP
@@ -163,7 +178,7 @@ BEGIN
     // Detección de impacto de disparo
     IF (collision(type laser_shot))
       score += 150;
-      sound(2, 70, 250);
+      sound(snd_explosion, 70, 250);
       explosion(x, y);
       signal(collision(type laser_shot), s_kill);
       BREAK;
@@ -176,6 +191,7 @@ END
 
 PROCESS asteroid(x, y)
 BEGIN
+  file = fpg_nave;
   graph = 7; // Asteroide
   size = 140;
   LOOP
@@ -183,7 +199,7 @@ BEGIN
     angle += 4;
     IF (collision(type laser_shot))
       score += 80;
-      sound(3, 80, 180);
+      sound(snd_hit, 80, 180);
       explosion(x, y);
       signal(collision(type laser_shot), s_kill);
       BREAK;
@@ -197,6 +213,7 @@ PROCESS explosion(x, y)
 PRIVATE
   i;
 BEGIN
+  file = fpg_nave;
   FOR (i = 0; i < 15; i++)
     particle(x, y, rand(0, 360), rand(2, 6));
   END
@@ -224,12 +241,23 @@ END
       runtime.reset();
       runtime.setResolution("640x480");
       runtime.backgroundColor = "#070b14";
+      const fpgId = runtime.load_fpg("galaxy.fpg");
+      const fontId = runtime.load_fnt("arcade.fnt");
+      const sndLaser = runtime.load_wav("laser.wav");
+      const sndExplosion = runtime.load_wav("explosion.wav");
+      const sndHit = runtime.load_wav("hit.wav");
+      runtime.globalVars.fpg_nave = fpgId;
+      runtime.globalVars.fnt_retro = fontId;
+      runtime.globalVars.snd_laser = sndLaser;
+      runtime.globalVars.snd_explosion = sndExplosion;
+      runtime.globalVars.snd_hit = sndHit;
       runtime.globalVars.score = 0;
       runtime.globalVars.lives = 3;
 
       // Register Processes
       // Player
       runtime.registerProcess("player", function* (proc, [startX, startY], rt) {
+        proc.file = fpgId;
         proc.x = startX ?? 320;
         proc.y = startY ?? 420;
         proc.graph = 1;
@@ -250,7 +278,7 @@ END
           if ((rt.key("space") || rt.key("enter")) && cooldown === 0) {
             rt.spawn("laser_shot", [proc.x - 7, proc.y - 14]);
             rt.spawn("laser_shot", [proc.x + 7, proc.y - 14]);
-            rt.sound(1, 70, 300);
+            rt.sound(sndLaser, 70, 300);
             cooldown = 12;
           }
 
@@ -258,10 +286,10 @@ END
           const enemyHit = rt.collision(proc, "alien") || rt.collision(proc, "asteroid");
           if (enemyHit) {
             rt.spawn("explosion", [proc.x, proc.y]);
-            rt.sound(2, 90, 180);
+            rt.sound(sndExplosion, 90, 180);
             rt.globalVars.lives--;
             if (rt.globalVars.lives <= 0) {
-              rt.write(1, rt.width / 2 - 50, rt.height / 2, 1, "¡GAME OVER!");
+              rt.write(fontId, rt.width / 2 - 50, rt.height / 2, 1, "¡GAME OVER!");
               proc.isDead = true;
               return;
             } else {
@@ -276,6 +304,7 @@ END
 
       // Laser Shot
       runtime.registerProcess("laser_shot", function* (proc, [sx, sy], rt) {
+        proc.file = fpgId;
         proc.x = sx;
         proc.y = sy;
         proc.graph = 2;
@@ -288,6 +317,7 @@ END
 
       // Alien
       runtime.registerProcess("alien", function* (proc, [sx, sy, variant = 1], rt) {
+        proc.file = fpgId;
         proc.x = sx;
         proc.y = sy;
         proc.graph = variant === 1 ? 3 : 4;
@@ -303,7 +333,7 @@ END
           const hit = rt.collision(proc, "laser_shot");
           if (hit) {
             rt.globalVars.score += 150;
-            rt.sound(2, 70, 240);
+            rt.sound(sndExplosion, 70, 240);
             rt.spawn("explosion", [proc.x, proc.y]);
             rt.signal(hit, "s_kill");
             proc.isDead = true;
@@ -316,6 +346,7 @@ END
 
       // Asteroid
       runtime.registerProcess("asteroid", function* (proc, [sx, sy], rt) {
+        proc.file = fpgId;
         proc.x = sx;
         proc.y = sy;
         proc.graph = 7;
@@ -327,7 +358,7 @@ END
           const hit = rt.collision(proc, "laser_shot");
           if (hit) {
             rt.globalVars.score += 80;
-            rt.sound(3, 75, 180);
+            rt.sound(sndHit, 75, 180);
             rt.spawn("explosion", [proc.x, proc.y]);
             rt.signal(hit, "s_kill");
             proc.isDead = true;
@@ -340,6 +371,7 @@ END
 
       // Explosion
       runtime.registerProcess("explosion", function* (proc, [ex, ey], rt) {
+        proc.file = fpgId;
         proc.x = ex;
         proc.y = ey;
         for (let i = 0; i < 8; i++) {
@@ -401,9 +433,9 @@ END
       });
 
       // Initialize HUD & Entities
-      runtime.write(1, 20, 25, 0, "GALAXY DEFENDER 3.0");
-      runtime.writeInt(1, 20, 50, 0, "score");
-      runtime.writeInt(1, 520, 50, 0, "lives");
+      runtime.write(fontId, 20, 25, 0, "GALAXY DEFENDER 3.0");
+      runtime.writeInt(fontId, 20, 50, 0, "score");
+      runtime.writeInt(fontId, 520, 50, 0, "lives");
 
       runtime.spawn("game_director");
       runtime.spawn("player", [320, 410]);
@@ -420,6 +452,11 @@ END
     code: `PROGRAM pixel_knight;
 
 GLOBAL
+  fpg_knight = 0;
+  fnt_pixel = 0;
+  snd_salto = 0;
+  snd_moneda = 0;
+  snd_herido = 0;
   gold = 0;
   hp = 100;
   gravity = 0.6;
@@ -435,9 +472,16 @@ BEGIN
   set_fps(60);
   screen_color(rgb(15, 23, 42));
 
-  write(1, 20, 30, 0, "PIXEL KNIGHT");
-  write_int(1, 20, 60, 0, &gold);
-  write_int(1, 520, 60, 0, &hp);
+  // Carga explícita de sprites FPG, fuentes FNT y sonidos WAV (DIV Games Studio)
+  fpg_knight = load_fpg("knight.fpg");
+  fnt_pixel = load_fnt("medieval.fnt");
+  snd_salto = load_wav("salto.wav");
+  snd_moneda = load_wav("moneda.wav");
+  snd_herido = load_wav("golpe.wav");
+
+  write(fnt_pixel, 20, 30, 0, "PIXEL KNIGHT");
+  write_int(fnt_pixel, 20, 60, 0, &gold);
+  write_int(fnt_pixel, 520, 60, 0, &hp);
 
   create_level();
   knight(100, 350);
@@ -449,6 +493,7 @@ END
 
 PROCESS knight(x, y)
 BEGIN
+  file = fpg_knight;
   graph = 10; // Sprite del caballero
   size = 140;
   LOOP
@@ -466,7 +511,7 @@ BEGIN
     IF ((key(_up) || key(_w) || key(_space)) && on_ground)
       vy = -12;
       on_ground = 0;
-      sound(5, 70, 250); // Sonido salto
+      sound(snd_salto, 70, 250); // Sonido salto cargado
     END
 
     // Gravedad
@@ -483,14 +528,14 @@ BEGIN
     // Colisión con monedas
     IF (collision(type coin))
       gold += 10;
-      sound(4, 90, 300); // Sonido moneda
+      sound(snd_moneda, 90, 300); // Sonido moneda cargado
       signal(collision(type coin), s_kill);
     END
 
     // Colisión con monstruos
     IF (collision(type slime))
       hp -= 10;
-      sound(3, 80, 150);
+      sound(snd_herido, 80, 150);
       vy = -6;
     END
 
@@ -500,6 +545,7 @@ END
 
 PROCESS coin(x, y)
 BEGIN
+  file = fpg_knight;
   graph = 8;
   size = 110;
   LOOP
@@ -512,6 +558,7 @@ PROCESS slime(x, y, min_x, max_x)
 PRIVATE
   dir = 1;
 BEGIN
+  file = fpg_knight;
   graph = 3;
   size = 100;
   LOOP
@@ -525,11 +572,22 @@ END
       runtime.reset();
       runtime.setResolution("640x480");
       runtime.backgroundColor = "#0f172a";
+      const fpgId = runtime.load_fpg("knight.fpg");
+      const fontId = runtime.load_fnt("medieval.fnt");
+      const sndSalto = runtime.load_wav("salto.wav");
+      const sndMoneda = runtime.load_wav("moneda.wav");
+      const sndHerido = runtime.load_wav("golpe.wav");
+      runtime.globalVars.fpg_knight = fpgId;
+      runtime.globalVars.fnt_pixel = fontId;
+      runtime.globalVars.snd_salto = sndSalto;
+      runtime.globalVars.snd_moneda = sndMoneda;
+      runtime.globalVars.snd_herido = sndHerido;
       runtime.globalVars.gold = 0;
       runtime.globalVars.hp = 100;
 
       // Knight process
       runtime.registerProcess("knight", function* (proc, [sx, sy], rt) {
+        proc.file = fpgId;
         proc.x = sx ?? 100;
         proc.y = sy ?? 380;
         proc.graph = 10;
@@ -552,7 +610,7 @@ END
           if ((rt.key("up") || rt.key("w") || rt.key("space")) && onGround) {
             vy = -12.5;
             onGround = false;
-            rt.sound(5, 75, 260);
+            rt.sound(sndSalto, 75, 260);
           }
 
           vy += 0.65; // Gravity
@@ -576,7 +634,7 @@ END
           const coinHit = rt.collision(proc, "coin");
           if (coinHit) {
             rt.globalVars.gold = (rt.globalVars.gold || 0) + 25;
-            rt.sound(4, 85, 320);
+            rt.sound(sndMoneda, 85, 320);
             rt.signal(coinHit, "s_kill");
           }
 
@@ -584,7 +642,7 @@ END
           const enemyHit = rt.collision(proc, "slime");
           if (enemyHit) {
             rt.globalVars.hp = Math.max(0, (rt.globalVars.hp || 100) - 10);
-            rt.sound(3, 80, 160);
+            rt.sound(sndHerido, 80, 160);
             vy = -7;
             proc.x += proc.flags === 1 ? 25 : -25;
           }
@@ -595,6 +653,7 @@ END
 
       // Coin
       runtime.registerProcess("coin", function* (proc, [cx, cy], rt) {
+        proc.file = fpgId;
         proc.x = cx;
         proc.y = cy;
         proc.graph = 8;
@@ -610,6 +669,7 @@ END
 
       // Slime enemy
       runtime.registerProcess("slime", function* (proc, [sx, sy, minX, maxX], rt) {
+        proc.file = fpgId;
         proc.x = sx;
         proc.y = sy;
         proc.graph = 3;
@@ -640,9 +700,9 @@ END
       });
 
       // HUD
-      runtime.write(1, 20, 25, 0, "PIXEL KNIGHT ADVENTURE");
-      runtime.writeInt(1, 20, 50, 0, "gold");
-      runtime.writeInt(1, 520, 50, 0, "hp");
+      runtime.write(fontId, 20, 25, 0, "PIXEL KNIGHT ADVENTURE");
+      runtime.writeInt(fontId, 20, 50, 0, "gold");
+      runtime.writeInt(fontId, 520, 50, 0, "hp");
 
       runtime.spawn("level_scenery");
       runtime.spawn("knight", [100, 380]);
@@ -665,6 +725,11 @@ END
     code: `PROGRAM cyber_pong;
 
 GLOBAL
+  fpg_pong = 0;
+  fnt_cyber = 0;
+  snd_pala = 0;
+  snd_rebote = 0;
+  snd_gol = 0;
   score_p1 = 0;
   score_cpu = 0;
 
@@ -673,9 +738,16 @@ BEGIN
   set_fps(60);
   screen_color(rgb(11, 15, 25));
 
-  write(1, 200, 40, 1, "CYBER PONG 3000");
-  write_int(1, 250, 80, 1, &score_p1);
-  write_int(1, 390, 80, 1, &score_cpu);
+  // Carga explícita de recursos gráficos, fuentes y sonidos (DIV Games Studio)
+  fpg_pong = load_fpg("cyber_pong.fpg");
+  fnt_cyber = load_fnt("digital.fnt");
+  snd_pala = load_wav("paddle.wav");
+  snd_rebote = load_wav("bounce.wav");
+  snd_gol = load_wav("goal.wav");
+
+  write(fnt_cyber, 200, 40, 1, "CYBER PONG 3000");
+  write_int(fnt_cyber, 250, 80, 1, &score_p1);
+  write_int(fnt_cyber, 390, 80, 1, &score_cpu);
 
   paddle_player(40, 240);
   paddle_cpu(600, 240);
@@ -690,6 +762,7 @@ END
 
 PROCESS paddle_player(x, y)
 BEGIN
+  file = fpg_pong;
   graph = 12; // Raqueta
   LOOP
     IF (key(_up) || key(_w)) y -= 6; END
@@ -704,6 +777,7 @@ PROCESS paddle_cpu(x, y)
 PRIVATE
   target_y = 240;
 BEGIN
+  file = fpg_pong;
   graph = 12;
   LOOP
     // IA que sigue la pelota
@@ -720,6 +794,7 @@ PRIVATE
   vx = 5;
   vy = 3;
 BEGIN
+  file = fpg_pong;
   graph = 11; // Pelota cyber
   LOOP
     x += vx;
@@ -763,6 +838,10 @@ END
       runtime.reset();
       runtime.setResolution("640x480");
       runtime.backgroundColor = "#0b0f19";
+      const fpgId = runtime.load_fpg("cyber_pong.fpg");
+      const fontId = runtime.load_fnt("digital.fnt");
+      runtime.globalVars.fpg_pong = fpgId;
+      runtime.globalVars.fnt_cyber = fontId;
       runtime.globalVars.score_p1 = 0;
       runtime.globalVars.score_cpu = 0;
 
@@ -770,6 +849,7 @@ END
 
       // Player Paddle
       runtime.registerProcess("paddle_player", function* (proc, [px, py], rt) {
+        proc.file = fpgId;
         proc.x = px ?? 40;
         proc.y = py ?? 240;
         proc.graph = 12;
@@ -784,6 +864,7 @@ END
 
       // CPU Paddle
       runtime.registerProcess("paddle_cpu", function* (proc, [px, py], rt) {
+        proc.file = fpgId;
         proc.x = px ?? 600;
         proc.y = py ?? 240;
         proc.graph = 12;
@@ -798,6 +879,7 @@ END
 
       // Ball
       runtime.registerProcess("ball", function* (proc, [bx, by], rt) {
+        proc.file = fpgId;
         proc.x = bx ?? 320;
         proc.y = by ?? 240;
         proc.graph = 11;
@@ -864,9 +946,9 @@ END
       });
 
       // HUD
-      runtime.write(1, 230, 30, 1, "CYBER PONG");
-      runtime.writeInt(1, 260, 65, 1, "score_p1");
-      runtime.writeInt(1, 380, 65, 1, "score_cpu");
+      runtime.write(fontId, 230, 30, 1, "CYBER PONG");
+      runtime.writeInt(fontId, 260, 65, 1, "score_p1");
+      runtime.writeInt(fontId, 380, 65, 1, "score_cpu");
 
       runtime.spawn("field");
       runtime.spawn("paddle_player", [40, 240]);
@@ -885,6 +967,8 @@ END
     code: `PROGRAM div_super_kart_3d;
 
 GLOBAL
+  fpg_kart = 0;
+  fnt_kart = 0;
   score = 0;
   vueltas = 1;
   velocidad_kmh = 0;
@@ -898,16 +982,20 @@ BEGIN
   set_fps(60);
   screen_color(rgb(10, 20, 45));
 
+  // Carga explícita de sprites FPG y fuentes FNT (DIV Games Studio)
+  fpg_kart = load_fpg("karts.fpg");
+  fnt_kart = load_fnt("racing.fnt");
+
   // Iniciar perspectiva Modo 7 en el motor gráfico
   start_mode7(0, 0, 22, 0, 0, 0);
 
   // HUD de carreras
-  write(1, 20, 25, 0, "DIV SUPER KART 3D - MODO 7");
-  write(1, 20, 50, 0, "SCORE:");
-  write_int(1, 75, 50, 0, &score);
-  write(1, 20, 75, 0, "KM/H:");
-  write_int(1, 70, 75, 0, &velocidad_kmh);
-  write(1, 520, 25, 0, "VUELTA: 1/3");
+  write(fnt_kart, 20, 25, 0, "DIV SUPER KART 3D - MODO 7");
+  write(fnt_kart, 20, 50, 0, "SCORE:");
+  write_int(fnt_kart, 75, 50, 0, &score);
+  write(fnt_kart, 20, 75, 0, "KM/H:");
+  write_int(fnt_kart, 70, 75, 0, &velocidad_kmh);
+  write(fnt_kart, 520, 25, 0, "VUELTA: 1/3");
 
   // Iniciar circuito y elementos
   generador_circuito();
@@ -929,6 +1017,7 @@ PRIVATE
   vel = 0;
   max_vel = 12;
 BEGIN
+  file = fpg_kart;
   graph = 20; // Kart Rojo Jugador
   ctype = c_m7;
   x = 400;
@@ -969,6 +1058,7 @@ PROCESS rival_kart(x, y, graph)
 PRIVATE
   vel = 8;
 BEGIN
+  file = fpg_kart;
   ctype = c_m7;
   LOOP
     // IA de recorrido por el circuito
@@ -996,6 +1086,7 @@ END
 
 PROCESS arbol_3d(x, y)
 BEGIN
+  file = fpg_kart;
   graph = 22; // Árbol Modo 7
   ctype = c_m7;
   size = 110;
@@ -1006,6 +1097,7 @@ END
 
 PROCESS moneda_3d(x, y)
 BEGIN
+  file = fpg_kart;
   graph = 24; // Moneda dorada
   ctype = c_m7;
   size = 90;
@@ -1023,6 +1115,10 @@ END
     setupRuntime: (runtime) => {
       runtime.reset();
       runtime.setResolution("640x480");
+      const fpgId = runtime.load_fpg("karts.fpg");
+      const fontId = runtime.load_fnt("racing.fnt");
+      runtime.globalVars.fpg_kart = fpgId;
+      runtime.globalVars.fnt_kart = fontId;
       runtime.start_mode7(0, 0, 22, 0, 0, 0);
 
       runtime.globalVars.score = 0;
@@ -1031,6 +1127,7 @@ END
 
       // Player Kart process
       runtime.registerProcess("jugador_kart", function* (proc, _, rt) {
+        proc.file = fpgId;
         proc.graph = 20;
         proc.x = 400;
         proc.y = 850;
@@ -1088,6 +1185,7 @@ END
 
       // Rival karts
       runtime.registerProcess("rival_kart", function* (proc, [initialAngle, speed, colorGraph], rt) {
+        proc.file = fpgId;
         proc.graph = colorGraph || 21;
         proc.ctype = 7;
         let ang = initialAngle || 0;
@@ -1105,6 +1203,7 @@ END
 
       // Trees
       runtime.registerProcess("arbol_3d", function* (proc, [tx, ty], rt) {
+        proc.file = fpgId;
         proc.graph = 22;
         proc.ctype = 7;
         proc.x = tx;
@@ -1116,6 +1215,7 @@ END
 
       // Coins
       runtime.registerProcess("moneda_3d", function* (proc, [cx, cy], rt) {
+        proc.file = fpgId;
         proc.graph = 24;
         proc.ctype = 7;
         proc.x = cx;
@@ -1139,10 +1239,10 @@ END
       runtime.spawn("rival_kart", [120, 1.4, 21]);
       runtime.spawn("rival_kart", [200, 1.2, 21]);
 
-      runtime.write(1, 20, 20, 0, "DIV SUPER KART 3D [MODO 7]");
-      runtime.writeInt(1, 20, 45, 0, "score");
-      runtime.writeInt(1, 140, 45, 0, "velocidad_kmh");
-      runtime.write(1, 20, 70, 0, "FLECHAS / WASD: Conducir | ESPACIO: Turbo");
+      runtime.write(fontId, 20, 20, 0, "DIV SUPER KART 3D [MODO 7]");
+      runtime.writeInt(fontId, 20, 45, 0, "score");
+      runtime.writeInt(fontId, 140, 45, 0, "velocidad_kmh");
+      runtime.write(fontId, 20, 70, 0, "FLECHAS / WASD: Conducir | ESPACIO: Turbo");
     },
   },
 
@@ -1156,6 +1256,8 @@ END
     code: `PROGRAM dungeon_crypt_3d;
 
 GLOBAL
+  fpg_dungeon = 0;
+  fnt_hud = 0;
   score = 0;
   salud = 100;
   municion = 40;
@@ -1164,18 +1266,22 @@ BEGIN
   set_mode(m640x480);
   set_fps(60);
 
+  // Carga explícita de sprites FPG y fuentes FNT (DIV Games Studio)
+  fpg_dungeon = load_fpg("dungeon.fpg");
+  fnt_hud = load_fnt("gothic.fnt");
+
   // Iniciar motor de Raycasting Modo 8
   start_mode8(0, 0, 25, 0, 0, 0);
 
   // HUD inferior estilo retro
-  write(1, 20, 20, 0, "DUNGEON CRYPT 3D - MODO 8");
-  write(1, 20, 45, 0, "SALUD:");
-  write_int(1, 80, 45, 0, &salud);
-  write(1, 20, 70, 0, "MUNICION:");
-  write_int(1, 100, 70, 0, &municion);
-  write(1, 20, 95, 0, "SCORE:");
-  write_int(1, 80, 95, 0, &score);
-  write(1, 20, 120, 0, "[E] ABRIR PUERTA/DISPOSITIVO");
+  write(fnt_hud, 20, 20, 0, "DUNGEON CRYPT 3D - MODO 8");
+  write(fnt_hud, 20, 45, 0, "SALUD:");
+  write_int(fnt_hud, 80, 45, 0, &salud);
+  write(fnt_hud, 20, 70, 0, "MUNICION:");
+  write_int(fnt_hud, 100, 70, 0, &municion);
+  write(fnt_hud, 20, 95, 0, "SCORE:");
+  write_int(fnt_hud, 80, 95, 0, &score);
+  write(fnt_hud, 20, 120, 0, "[E] ABRIR PUERTA/DISPOSITIVO");
 
   // Iniciar jugador en primera persona
   jugador_fps();
@@ -1200,6 +1306,7 @@ PRIVATE
   vel = 3.5;
   rot_vel = 3;
 BEGIN
+  file = fpg_dungeon;
   x = 224; // (3.5 * 64)
   y = 224;
   angle = 0;
@@ -1244,6 +1351,7 @@ PROCESS demonio_slime(x, y)
 PRIVATE
   vida = 3;
 BEGIN
+  file = fpg_dungeon;
   graph = 27; // Monstruo Demonio / Slime 3D
   ctype = c_m8;
   size = 120;
@@ -1255,6 +1363,7 @@ END
 
 PROCESS antorcha_3d(x, y)
 BEGIN
+  file = fpg_dungeon;
   graph = 28; // Antorcha de pared con fuego
   ctype = c_m8;
   size = 100;
@@ -1265,6 +1374,7 @@ END
 
 PROCESS barril_3d(x, y)
 BEGIN
+  file = fpg_dungeon;
   graph = 29; // Barril de madera
   ctype = c_m8;
   size = 110;
@@ -1275,6 +1385,7 @@ END
 
 PROCESS tesoro_3d(x, y)
 BEGIN
+  file = fpg_dungeon;
   graph = 24; // Tesoro / Moneda
   ctype = c_m8;
   size = 90;
@@ -1286,6 +1397,10 @@ END
     setupRuntime: (runtime) => {
       runtime.reset();
       runtime.setResolution("640x480");
+      const fpgId = runtime.load_fpg("dungeon.fpg");
+      const fontId = runtime.load_fnt("gothic.fnt");
+      runtime.globalVars.fpg_dungeon = fpgId;
+      runtime.globalVars.fnt_hud = fontId;
       runtime.start_mode8(0, 0, 25, 0, 0, 0);
 
       runtime.globalVars.score = 0;
@@ -1294,6 +1409,7 @@ END
 
       // Player FPS Process
       runtime.registerProcess("jugador_fps", function* (proc, _, rt) {
+        proc.file = fpgId;
         proc.x = 224; // 3.5 * 64
         proc.y = 224;
         proc.angle = 0;
@@ -1369,6 +1485,7 @@ END
 
       // Monster Demon Slime
       runtime.registerProcess("demonio_slime", function* (proc, [mx, my], rt) {
+        proc.file = fpgId;
         proc.graph = 27;
         proc.ctype = 8;
         proc.x = mx;
@@ -1384,6 +1501,7 @@ END
 
       // 3D Objects
       runtime.registerProcess("antorcha_3d", function* (proc, [tx, ty], rt) {
+        proc.file = fpgId;
         proc.graph = 28;
         proc.ctype = 8;
         proc.x = tx;
@@ -1394,6 +1512,7 @@ END
       });
 
       runtime.registerProcess("barril_3d", function* (proc, [bx, by], rt) {
+        proc.file = fpgId;
         proc.graph = 29;
         proc.ctype = 8;
         proc.x = bx;
@@ -1404,6 +1523,7 @@ END
       });
 
       runtime.registerProcess("tesoro_3d", function* (proc, [gx, gy], rt) {
+        proc.file = fpgId;
         proc.graph = 24;
         proc.ctype = 8;
         proc.x = gx;
@@ -1426,11 +1546,11 @@ END
       runtime.spawn("tesoro_3d", [320, 576]);
       runtime.spawn("tesoro_3d", [768, 640]);
 
-      runtime.write(1, 20, 20, 0, "DUNGEON CRYPT 3D [MODO 8]");
-      runtime.writeInt(1, 20, 45, 0, "salud");
-      runtime.writeInt(1, 110, 45, 0, "municion");
-      runtime.writeInt(1, 210, 45, 0, "score");
-      runtime.write(1, 20, 70, 0, "WASD / FLECHAS: Moverse | ESPACIO / CLICK: Disparar");
+      runtime.write(fontId, 20, 20, 0, "DUNGEON CRYPT 3D [MODO 8]");
+      runtime.writeInt(fontId, 20, 45, 0, "salud");
+      runtime.writeInt(fontId, 110, 45, 0, "municion");
+      runtime.writeInt(fontId, 210, 45, 0, "score");
+      runtime.write(fontId, 20, 70, 0, "WASD / FLECHAS: Moverse | ESPACIO / CLICK: Disparar");
     },
   },
 ];

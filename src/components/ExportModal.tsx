@@ -216,7 +216,7 @@ export default WxDivGame;
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-3xl bg-[#080d1a] border border-slate-700 rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
         {/* Modal Top Bar */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d1527] border-b border-slate-800">

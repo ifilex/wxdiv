@@ -1,3 +1,5 @@
+// WXDIV 3.00
+
 import React, { useState, useEffect, useRef } from "react";
 import { IDEHeader, IDETabType } from "./components/IDEHeader";
 import { WindowManager } from "./components/WindowManager/WindowManager";
@@ -126,11 +128,14 @@ export default function App() {
   const setupCustomProjectRuntime = (rt: DivRuntime, projectTitle: string) => {
     rt.reset();
     rt.backgroundColor = "#070b14";
-    rt.write(1, 20, 25, 0, projectTitle.toUpperCase());
-    rt.write(1, 20, 50, 0, "SCORE: 0");
-    rt.write(1, rt.width - 130, 50, 0, "VIDAS: 3");
+    const fpgId = rt.load_fpg("juego.fpg");
+    const fontId = rt.load_fnt("arcade.fnt");
+    rt.write(fontId, 20, 25, 0, projectTitle.toUpperCase());
+    rt.write(fontId, 20, 50, 0, "SCORE: 0");
+    rt.write(fontId, rt.width - 130, 50, 0, "VIDAS: 3");
 
     rt.registerProcess("jugador", function* (proc, args, runtime) {
+      proc.file = fpgId;
       proc.graph = 1;
       proc.size = 120;
       proc.x = args[0] ?? (runtime.width / 2);

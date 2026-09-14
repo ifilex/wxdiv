@@ -19,6 +19,9 @@ import {
   Volume2,
   Flame,
   Paintbrush,
+  Type,
+  Package,
+  FileImage,
 } from "lucide-react";
 import { PRESETS, GamePreset } from "../engine/presets";
 
@@ -26,7 +29,10 @@ export type IDETabType =
   | "game"
   | "code"
   | "mode8"
+  | "fpg"
+  | "map"
   | "sprites"
+  | "fonts"
   | "sound"
   | "explosions"
   | "visual"
@@ -174,6 +180,32 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         </button>
 
         <button
+          onClick={() => onChangeTab("fpg")}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
+            activeTab === "fpg"
+              ? "bg-cyan-950 text-cyan-300 border border-cyan-700/60 shadow-sm font-semibold"
+              : "text-slate-400 hover:text-cyan-300"
+          }`}
+          title="Gestor y empaquetador de gráficos .FPG (DIV Games Studio)"
+        >
+          <Package className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Archivos FPG</span>
+        </button>
+
+        <button
+          onClick={() => onChangeTab("map")}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
+            activeTab === "map"
+              ? "bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm font-semibold"
+              : "text-slate-400 hover:text-emerald-300"
+          }`}
+          title="Editor de gráficos y fondos individuales .MAP"
+        >
+          <FileImage className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Editor MAP</span>
+        </button>
+
+        <button
           onClick={() => onChangeTab("sprites")}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
             activeTab === "sprites"
@@ -183,6 +215,19 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         >
           <Paintbrush className="w-3.5 h-3.5" />
           <span>Sprites Paint</span>
+        </button>
+
+        <button
+          onClick={() => onChangeTab("fonts")}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
+            activeTab === "fonts"
+              ? "bg-amber-950 text-amber-300 border border-amber-800/60 shadow-sm font-semibold"
+              : "text-slate-400 hover:text-amber-300"
+          }`}
+          title="Editor de fuentes tipográficas retro .FNT (DIV Games Studio)"
+        >
+          <Type className="w-3.5 h-3.5 text-amber-400" />
+          <span>Fuentes FNT</span>
         </button>
 
         <button

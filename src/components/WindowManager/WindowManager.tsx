@@ -9,6 +9,9 @@ import {
   Wand2,
   Sparkles,
   Cpu,
+  Type,
+  Package,
+  FileImage,
 } from "lucide-react";
 import { WindowConfig, WindowId, LayoutPresetType } from "./types";
 import { WindowFrame } from "./WindowFrame";
@@ -24,6 +27,9 @@ import { ExplosionCreator } from "../ExplosionCreator";
 import { VisualLogicBuilder } from "../VisualLogicBuilder";
 import { AiCopilot } from "../AiCopilot";
 import { ProcessInspector } from "../ProcessInspector";
+import { FontEditor } from "../FontEditor";
+import { FpgEditor } from "../FpgEditor";
+import { MapEditor } from "../MapEditor";
 
 import { DivRuntime } from "../../engine/runtime";
 import { DivGraphic, DivProcess } from "../../types";
@@ -124,6 +130,38 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
       minWidth: 500,
       minHeight: 380,
     },
+    fpg: {
+      id: "fpg",
+      title: "Gestor de Paquetes FPG",
+      subtitle: "Empaquetador de Sprites & Assets",
+      category: "graphics",
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      zIndex: 4,
+      x: 50,
+      y: 35,
+      width: 920,
+      height: 640,
+      minWidth: 540,
+      minHeight: 400,
+    },
+    map: {
+      id: "map",
+      title: "Editor de Gráficos .MAP",
+      subtitle: "Mapas y Fondos Individuales",
+      category: "graphics",
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      zIndex: 4,
+      x: 65,
+      y: 40,
+      width: 880,
+      height: 620,
+      minWidth: 520,
+      minHeight: 380,
+    },
     sprites: {
       id: "sprites",
       title: "Editor de Sprites FPG Paint",
@@ -139,6 +177,22 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
       height: 620,
       minWidth: 480,
       minHeight: 360,
+    },
+    fonts: {
+      id: "fonts",
+      title: "Editor de Fuentes FNT",
+      subtitle: "Tipografía Bitmap DIV",
+      category: "graphics",
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      zIndex: 4,
+      x: 70,
+      y: 45,
+      width: 860,
+      height: 620,
+      minWidth: 520,
+      minHeight: 400,
     },
     sound: {
       id: "sound",
@@ -617,7 +671,10 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
     game: <Gamepad2 className="w-3.5 h-3.5" />,
     code: <FileCode className="w-3.5 h-3.5" />,
     mode8: <Compass className="w-3.5 h-3.5" />,
+    fpg: <Package className="w-3.5 h-3.5 text-cyan-400" />,
+    map: <FileImage className="w-3.5 h-3.5 text-emerald-400" />,
     sprites: <Paintbrush className="w-3.5 h-3.5" />,
+    fonts: <Type className="w-3.5 h-3.5" />,
     sound: <Volume2 className="w-3.5 h-3.5" />,
     explosions: <Flame className="w-3.5 h-3.5" />,
     visual: <Wand2 className="w-3.5 h-3.5" />,
@@ -697,6 +754,49 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           />
         </WindowFrame>
 
+        {/* Render Window: FPG Package Manager */}
+        <WindowFrame
+          window={windows.fpg}
+          icon={windowIcons.fpg}
+          isActive={activeWindowId === "fpg"}
+          onFocus={() => handleFocusWindow("fpg")}
+          onClose={() => handleCloseWindow("fpg")}
+          onMinimize={() => handleMinimizeWindow("fpg")}
+          onToggleMaximize={() => handleToggleMaximize("fpg")}
+          onUpdateBounds={(b) => handleUpdateBounds("fpg", b)}
+          desktopBounds={desktopBounds}
+        >
+          <FpgEditor
+            runtime={runtime}
+            onInsertCode={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+            onOpenSpriteEditor={() => handleOpenAndFocusWindow("sprites")}
+          />
+        </WindowFrame>
+
+        {/* Render Window: MAP Editor */}
+        <WindowFrame
+          window={windows.map}
+          icon={windowIcons.map}
+          isActive={activeWindowId === "map"}
+          onFocus={() => handleFocusWindow("map")}
+          onClose={() => handleCloseWindow("map")}
+          onMinimize={() => handleMinimizeWindow("map")}
+          onToggleMaximize={() => handleToggleMaximize("map")}
+          onUpdateBounds={(b) => handleUpdateBounds("map", b)}
+          desktopBounds={desktopBounds}
+        >
+          <MapEditor
+            runtime={runtime}
+            onInsertCode={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+          />
+        </WindowFrame>
+
         {/* Render Window: Sprites Paint Editor */}
         <WindowFrame
           window={windows.sprites}
@@ -710,6 +810,28 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           desktopBounds={desktopBounds}
         >
           <SpriteEditor fpg={fpg} onUpdateFpg={onUpdateFpg} />
+        </WindowFrame>
+
+        {/* Render Window: Font Editor (.FNT) */}
+        <WindowFrame
+          window={windows.fonts}
+          icon={windowIcons.fonts}
+          isActive={activeWindowId === "fonts"}
+          onFocus={() => handleFocusWindow("fonts")}
+          onClose={() => handleCloseWindow("fonts")}
+          onMinimize={() => handleMinimizeWindow("fonts")}
+          onToggleMaximize={() => handleToggleMaximize("fonts")}
+          onUpdateBounds={(b) => handleUpdateBounds("fonts", b)}
+          desktopBounds={desktopBounds}
+        >
+          <FontEditor
+            runtime={runtime}
+            onCodeInsert={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+            onRunGame={onRunGame}
+          />
         </WindowFrame>
 
         {/* Render Window: Sound Synth Editor */}

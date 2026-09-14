@@ -1,6 +1,8 @@
 import { DivProcess, DivGraphic, DivText, DivPrimitive, DivScroll, DivMode7, DivMode8, DivMode8Door, DivMode8Trigger, DivMode8Entity, Camera3DInfo, C_M7, C_M8 } from "../types";
 import { soundEngine } from "./sound";
 import { DEFAULT_SPRITES, createGraphicCanvas } from "./graphics";
+import { DivFont, DEFAULT_DIV_FONTS, renderDivBitmapText, FONT_0_SYSTEM, FONT_1_ARCADE_GOLD } from "./fonts";
+import { DivFpgPackage, DivMapFile, getInitialFpgPackages, getInitialMapFiles } from "./fpgManager";
 
 export interface EngineStats {
   fps: number;
@@ -56,6 +58,12 @@ export class DivRuntime {
   }
 
   public texts: Map<number, DivText> = new Map();
+  public fonts: Map<number, DivFont> = new Map();
+  public fpgPackages: Map<number, DivFpgPackage> = new Map();
+  public mapFiles: Map<number, DivMapFile> = new Map();
+  public loadedSounds: Map<number, { id: number; name: string; filename: string; synthId: number }> = new Map();
+  public loadedSongs: Map<number, { id: number; name: string; filename: string }> = new Map();
+  public currentSongId: number = 0;
   public primitives: DivPrimitive[] = [];
   public permanentPrimitives: DivPrimitive[] = [];
   public scrolls: DivScroll[] = [];
@@ -98,6 +106,9 @@ export class DivRuntime {
     this.initMode7();
     this.initMode8();
     this.loadFPG(DEFAULT_SPRITES);
+    DEFAULT_DIV_FONTS.forEach((f) => this.fonts.set(f.id, f));
+    getInitialFpgPackages().forEach((p) => this.fpgPackages.set(p.id, p));
+    getInitialMapFiles().forEach((m) => this.mapFiles.set(m.id, m));
   }
 
   private initMode7() {
@@ -241,16 +252,112 @@ export class DivRuntime {
 
   public loadFPG(graphics: DivGraphic[] | Map<number, DivGraphic>) {
     this.fpg = graphics;
+    if (this.fpgPackages.has(0)) {
+      const p = this.fpgPackages.get(0)!;
+      p.graphics = Array.isArray(graphics) ? graphics : Array.from(graphics.values());
+    }
   }
 
-  public getGraphic(id: number): DivGraphic | undefined {
+  public load_fpg(filename: string): number {
+    const clean = filename.trim().toLowerCase();
+    for (const [id, pkg] of this.fpgPackages.entries()) {
+      if (
+        pkg.filename.toLowerCase() === clean ||
+        pkg.filename.toLowerCase().replace(".fpg", "") === clean.replace(".fpg", "") ||
+        pkg.name.toLowerCase() === clean
+      ) {
+        return id;
+      }
+    }
+    // Create new virtual FPG package seeded with default sprites
+    const newId = Math.max(0, ...Array.from(this.fpgPackages.keys())) + 1;
+    const baseGraphics =
+      this.fpgPackages.get(0)?.graphics ||
+      (Array.isArray(this.fpg) ? this.fpg : []) ||
+      DEFAULT_SPRITES;
+    this.fpgPackages.set(newId, {
+      id: newId,
+      name: filename.replace(/\.[^/.]+$/, ""),
+      filename: filename.endsWith(".fpg") ? filename : `${filename}.fpg`,
+      graphics: baseGraphics.map((g) => ({ ...g })),
+    });
+    return newId;
+  }
+
+  public unload_fpg(fileId: number): void {
+    if (fileId !== 0) {
+      this.fpgPackages.delete(fileId);
+    }
+  }
+
+  public load_map(filename: string): number {
+    const clean = filename.trim().toLowerCase();
+    for (const [id, mapFile] of this.mapFiles.entries()) {
+      if (mapFile.filename.toLowerCase() === clean) {
+        return id;
+      }
+    }
+    const newId = Math.max(100, ...Array.from(this.mapFiles.keys())) + 1;
+    const defaultGraphic = DEFAULT_SPRITES[0] || {
+      id: newId,
+      name: filename,
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ id: 0, x: 16, y: 16 }],
+      pixels: [],
+      palette: [],
+    };
+    this.mapFiles.set(newId, {
+      id: newId,
+      name: filename.replace(/\.[^/.]+$/, ""),
+      filename: filename.endsWith(".map") ? filename : `${filename}.map`,
+      graphic: { ...defaultGraphic, id: newId },
+    });
+    return newId;
+  }
+
+  public unload_map(mapId: number): void {
+    this.mapFiles.delete(mapId);
+  }
+
+  public getGraphic(id: number, file: number = 0): DivGraphic | undefined {
     let g: DivGraphic | undefined;
-    if (this._fpg && typeof this._fpg.get === "function") {
-      g = this._fpg.get(id);
-    } else if (this.fpg && typeof this.fpg.get === "function") {
-      g = this.fpg.get(id);
-    } else if (Array.isArray(this.fpg)) {
-      g = (this.fpg as unknown as DivGraphic[]).find((item) => item.id === id);
+
+    // 1. If file specified (>0), check that specific FPG package
+    if (file > 0) {
+      const pkg = this.fpgPackages.get(file);
+      if (pkg) {
+        g = pkg.graphics.find((item) => item.id === id);
+      }
+    }
+
+    // 2. Check main FPG package (file 0)
+    if (!g) {
+      const mainPkg = this.fpgPackages.get(0);
+      if (mainPkg) {
+        g = mainPkg.graphics.find((item) => item.id === id);
+      }
+    }
+
+    // 3. Check legacy _fpg or fpg array
+    if (!g) {
+      if (this._fpg && typeof this._fpg.get === "function") {
+        g = this._fpg.get(id);
+      } else if (this.fpg && typeof this.fpg.get === "function") {
+        g = this.fpg.get(id);
+      } else if (Array.isArray(this.fpg)) {
+        g = (this.fpg as unknown as DivGraphic[]).find((item) => item.id === id);
+      }
+    }
+
+    // 4. Check standalone map files (load_map)
+    if (!g) {
+      const mapFile = this.mapFiles.get(id);
+      if (mapFile) {
+        g = mapFile.graphic;
+      }
     }
 
     if (g && !g.canvas && typeof document !== "undefined" && g.pixels) {
@@ -411,22 +518,179 @@ export class DivRuntime {
   }
 
   /**
-   * Sound API
+   * Sound & Audio API (DIV Games Studio)
+   * Compatible con load_wav, load_snd, load_pcm, unload_wav, sound, load_song, song
    */
+  public load_wav(nameOrFile: string): number {
+    return this.load_snd(nameOrFile);
+  }
+
+  public load_pcm(nameOrFile: string): number {
+    return this.load_snd(nameOrFile);
+  }
+
+  public load_snd(nameOrFile: string): number {
+    const clean = nameOrFile.trim().toLowerCase();
+    // Check if already registered
+    for (const [id, snd] of this.loadedSounds.entries()) {
+      if (
+        snd.filename.toLowerCase() === clean ||
+        snd.name.toLowerCase() === clean ||
+        snd.filename.toLowerCase().replace(/\.(wav|snd|pcm)$/, "") === clean.replace(/\.(wav|snd|pcm)$/, "")
+      ) {
+        return id;
+      }
+    }
+
+    // Determine synthetic preset ID based on common retro sound names
+    let synthId = 1;
+    if (/laser|shoot|plasma|shot|disparo|bala/.test(clean)) synthId = 1;
+    else if (/explos|boom|bomb|detona/.test(clean)) synthId = 2;
+    else if (/hit|hurt|golpe|dano|alien|crash|choque|herido/.test(clean)) synthId = 3;
+    else if (/coin|moneda|pickup|oro|bonus|point/.test(clean)) synthId = 4;
+    else if (/jump|salto|brinco/.test(clean)) synthId = 5;
+    else if (/power|item|upgrade|subir/.test(clean)) synthId = 6;
+    else if (/blip|beep|bounce|wall|pared|rebote|ping|pong|paddle|pala/.test(clean)) synthId = 7;
+    else if (/door|puerta/.test(clean)) synthId = 8;
+    else if (/switch|click|boton|sensor|interruptor/.test(clean)) synthId = 9;
+    else if (/ammo|municion|recarga/.test(clean)) synthId = 10;
+    else if (/medikit|vida|salud|health|curar/.test(clean)) synthId = 11;
+    else if (/key|llave|fanfarria|gold|meta|goal|gol/.test(clean)) synthId = 12;
+    else synthId = ((this.loadedSounds.size % 12) + 1);
+
+    const newId = Math.max(0, ...Array.from(this.loadedSounds.keys())) + 1;
+    this.loadedSounds.set(newId, {
+      id: newId,
+      name: nameOrFile.replace(/\.[^/.]+$/, ""),
+      filename: clean.endsWith(".wav") ? clean : `${clean}.wav`,
+      synthId,
+    });
+    return newId;
+  }
+
+  public unload_wav(soundId: number) {
+    this.loadedSounds.delete(soundId);
+  }
+
+  public unload_snd(soundId: number) {
+    this.loadedSounds.delete(soundId);
+  }
+
+  public unload_pcm(soundId: number) {
+    this.loadedSounds.delete(soundId);
+  }
+
   public sound(id: number, vol: number = 100, freq: number = 256) {
-    soundEngine.playSound(id, vol, freq);
+    const loaded = this.loadedSounds.get(id);
+    if (!loaded) {
+      console.warn(
+        `[DIV Runtime Error] sound(): El sonido ID '${id}' no ha sido cargado con load_wav() o load_snd(). En DIV Games Studio todo sonido debe cargarse previamente.`
+      );
+      soundEngine.playSound(id, vol, freq);
+      return;
+    }
+    soundEngine.playSound(loaded.synthId, vol, freq);
+  }
+
+  public sound_play(id: number, vol: number = 100, freq: number = 256) {
+    this.sound(id, vol, freq);
+  }
+
+  public load_song(nameOrFile: string): number {
+    const clean = nameOrFile.trim().toLowerCase();
+    for (const [id, s] of this.loadedSongs.entries()) {
+      if (s.filename.toLowerCase() === clean) return id;
+    }
+    const newId = Math.max(0, ...Array.from(this.loadedSongs.keys())) + 1;
+    this.loadedSongs.set(newId, {
+      id: newId,
+      name: nameOrFile.replace(/\.[^/.]+$/, ""),
+      filename: clean,
+    });
+    return newId;
+  }
+
+  public unload_song(songId: number) {
+    if (this.currentSongId === songId) {
+      this.stop_song();
+    }
+    this.loadedSongs.delete(songId);
+  }
+
+  public song(songId: number) {
+    this.currentSongId = songId;
+  }
+
+  public stop_song() {
+    this.currentSongId = 0;
+  }
+
+  /**
+   * FNT Font management (DIV Games Studio)
+   */
+  public load_fnt(nameOrFont: string | DivFont): number {
+    if (typeof nameOrFont === "object") {
+      const id = typeof nameOrFont.id === "number" ? nameOrFont.id : this.fonts.size;
+      this.fonts.set(id, nameOrFont);
+      return id;
+    }
+    const clean = nameOrFont.trim().toLowerCase();
+    // Search existing font by filename or name
+    for (const [id, f] of this.fonts.entries()) {
+      if (
+        f.filename.toLowerCase() === clean ||
+        f.name.toLowerCase() === clean ||
+        f.filename.toLowerCase().replace(".fnt", "") === clean.replace(".fnt", "")
+      ) {
+        return id;
+      }
+    }
+    // Register font under new ID, cloning base font
+    const newId = Math.max(0, ...Array.from(this.fonts.keys())) + 1;
+    const baseFont = this.fonts.get(1) || FONT_1_ARCADE_GOLD;
+    this.fonts.set(newId, {
+      ...baseFont,
+      id: newId,
+      name: nameOrFont.replace(/\.[^/.]+$/, ""),
+      filename: clean.endsWith(".fnt") ? clean : `${clean}.fnt`,
+    });
+    return newId;
+  }
+
+  public unload_fnt(fontId: number) {
+    if (fontId > 3) {
+      this.fonts.delete(fontId);
+    }
+  }
+
+  public loadFNT(font: DivFont) {
+    this.fonts.set(font.id, font);
+  }
+
+  public getFont(id: number): DivFont {
+    return this.fonts.get(id) || this.fonts.get(0) || FONT_0_SYSTEM;
   }
 
   /**
    * Text management
    */
   public write(font: number, x: number, y: number, align: number, text: string): number {
+    if (font > 0 && !this.fonts.has(font)) {
+      console.warn(
+        `[DIV Runtime Error] write(): La fuente '${font}' no está cargada. Cárgala con load_fnt() antes de usar write().`
+      );
+    }
     const id = this.texts.size + 1;
     this.texts.set(id, { id, font, x, y, align, text });
     return id;
   }
 
   public writeInt(font: number, x: number, y: number, align: number, variableRef: string): number {
+    if (font > 0 && !this.fonts.has(font)) {
+      console.warn(
+        `[DIV Runtime Error] writeInt(): La fuente '${font}' no está cargada. Cárgala con load_fnt() antes de usar write_int().`
+      );
+    }
     const id = this.texts.size + 1;
     this.texts.set(id, { id, font, x, y, align, text: "", variableRef });
     return id;
@@ -605,6 +869,9 @@ export class DivRuntime {
     this.stop();
     this.processes.clear();
     this.texts.clear();
+    this.loadedSounds.clear();
+    this.loadedSongs.clear();
+    this.currentSongId = 0;
     this.primitives = [];
     this.permanentPrimitives = [];
     this.nextProcessId = 1;
@@ -729,7 +996,7 @@ export class DivRuntime {
       for (const proc of sortedProcs) {
         if (proc.isDead || proc.graph === 0) continue;
 
-        const graphic = this.getGraphic(proc.graph);
+        const graphic = this.getGraphic(proc.graph, proc.file || 0);
         if (!graphic || !graphic.canvas) continue;
 
         ctx.save();
@@ -804,25 +1071,30 @@ export class DivRuntime {
       }
     }
 
-    // Texts (HUD / Labels / Scores)
-    ctx.font = '13px "Fira Code", monospace';
-    ctx.textBaseline = "top";
+    // Texts (HUD / Labels / Scores / FNT Bitmap Fonts)
     for (const txt of this.texts.values()) {
-      ctx.fillStyle = "#ffffff";
-      if (txt.align === 1) {
-        ctx.textAlign = "center";
-      } else if (txt.align === 2) {
-        ctx.textAlign = "right";
-      } else {
-        ctx.textAlign = "left";
-      }
-
       let content = txt.text;
       if (txt.variableRef) {
         const val = this.globalVars[txt.variableRef] ?? 0;
         content = txt.text ? `${txt.text}: ${val}` : `${txt.variableRef.toUpperCase()}: ${val}`;
       }
-      ctx.fillText(content, txt.x, txt.y);
+
+      const font = this.fonts.get(txt.font) || (txt.font === 0 ? this.fonts.get(0) : undefined);
+      if (font) {
+        renderDivBitmapText(ctx, font, content, txt.x, txt.y, txt.align);
+      } else {
+        ctx.font = '13px "Fira Code", monospace';
+        ctx.textBaseline = "top";
+        ctx.fillStyle = "#ffffff";
+        if (txt.align === 1) {
+          ctx.textAlign = "center";
+        } else if (txt.align === 2) {
+          ctx.textAlign = "right";
+        } else {
+          ctx.textAlign = "left";
+        }
+        ctx.fillText(content, txt.x, txt.y);
+      }
     }
   }
 
@@ -967,7 +1239,7 @@ export class DivRuntime {
 
     for (const bb of billboards) {
       const { proc, screenX, screenY, scale, rotZ } = bb;
-      const graphic = this.getGraphic(proc.graph);
+      const graphic = this.getGraphic(proc.graph, proc.file || 0);
       if (!graphic || !graphic.canvas) continue;
 
       ctx.save();

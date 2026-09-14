@@ -96,8 +96,8 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
       ids: ["code", "game", "visual"] as WindowId[],
     },
     {
-      label: "3D y Gráficos",
-      ids: ["mode8", "sprites", "explosions"] as WindowId[],
+      label: "Gráficos, FPG, MAP y Fuentes",
+      ids: ["fpg", "map", "sprites", "fonts", "mode8", "explosions"] as WindowId[],
     },
     {
       label: "Audio e Inteligencia",

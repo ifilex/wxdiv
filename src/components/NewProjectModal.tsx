@@ -43,6 +43,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       code: `PROGRAM mi_juego_div;
 
 GLOBAL
+  fpg_juego = 0;
+  fnt_retro = 0;
   score = 0;
   vidas = 3;
 
@@ -54,9 +56,13 @@ BEGIN
   set_fps(60);
   screen_color(rgb(10, 15, 30));
 
-  write(1, 20, 25, 0, "MI JUEGO DIV - PROYECTO NUEVO");
-  write_int(1, 20, 50, 0, &score);
-  write_int(1, 520, 50, 0, &vidas);
+  // Carga explícita de recursos gráficos FPG y fuentes FNT (DIV Games Studio)
+  fpg_juego = load_fpg("juego.fpg");
+  fnt_retro = load_fnt("arcade.fnt");
+
+  write(fnt_retro, 20, 25, 0, "MI JUEGO DIV - PROYECTO NUEVO");
+  write_int(fnt_retro, 20, 50, 0, &score);
+  write_int(fnt_retro, 520, 50, 0, &vidas);
 
   // Iniciar proceso del jugador
   jugador(320, 240);
@@ -68,6 +74,7 @@ END
 
 PROCESS jugador(x, y)
 BEGIN
+  file = fpg_juego;
   graph = 1; // Sprite gráfico del jugador
   size = 120;
   LOOP
@@ -96,6 +103,7 @@ PROCESS destello(x, y)
 PRIVATE
   t = 8;
 BEGIN
+  file = fpg_juego;
   graph = 2;
   WHILE (t > 0)
     t--;
@@ -165,7 +173,7 @@ END
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-xl bg-[#080d1a] border border-slate-700 rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d1527] border-b border-slate-800">
