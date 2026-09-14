@@ -1,0 +1,6 @@
+{
+  "name": "WXDIV 3.0 - IDE DIV Games Studio AI",
+  "description": "Entorno multiplataforma de desarrollo de videojuegos con sintaxis DIV Games Studio, motor 2D y semi-3D (Modo 7 y Modo 8 Raycaster), editor visual de assets FPG, copiloto IA y exportador de proyectos completos en ZIP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

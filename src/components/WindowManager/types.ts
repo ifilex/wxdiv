@@ -1,0 +1,45 @@
+import React from "react";
+
+export type WindowId =
+  | "game"
+  | "code"
+  | "mode8"
+  | "sprites"
+  | "sound"
+  | "explosions"
+  | "visual"
+  | "ai"
+  | "processes";
+
+export interface WindowConfig {
+  id: WindowId;
+  title: string;
+  subtitle?: string;
+  category: "core" | "graphics" | "audio" | "tools";
+  isOpen: boolean;
+  isMinimized: boolean;
+  isMaximized: boolean;
+  zIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+  prevBounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export type LayoutPresetType =
+  | "code-game"
+  | "mode8-game"
+  | "sprites-game"
+  | "sound-code"
+  | "quadrant"
+  | "cascade"
+  | "game-max"
+  | "code-max";
