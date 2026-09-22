@@ -82,7 +82,7 @@ wxdiv no busca ser el motor más potente. Busca ser **el más accesible, el más
 
 ## Uso terapéutico (WineBOX)
 
-wxdiv es el motor detrás de **[WineBOX Cognitive](https://winebox.clinic)**, una plataforma clínica gratuita de estimulación neurocognitiva.
+wxdiv es el motor detrás de **[WineBOX Cognitive](https://winebox.cloud)**, una plataforma clínica gratuita de estimulación neurocognitiva.
 
 - **210+ juegos** ya en producción
 - **Todos hechos con wxdiv**
