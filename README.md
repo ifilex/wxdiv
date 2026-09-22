@@ -130,7 +130,7 @@ WineBOX incluye:
 ## Cómo empezar
 
 ### Opción 1: Usar wxdiv en WineBOX
-1. Abrí [winebox.clinic](https://winebox.cloud)
+1. Abrí [winebox.cloud](https://winebox.cloud)
 2. Probá los juegos existentes
 3. Usá el editor y el Copiloto IA para crear tu propio juego
 4. Exportá a HTML5 y compartilo
