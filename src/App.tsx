@@ -1,5 +1,3 @@
-// WXDIV 3.00
-
 import React, { useState, useEffect, useRef } from "react";
 import { IDEHeader, IDETabType } from "./components/IDEHeader";
 import { WindowManager } from "./components/WindowManager/WindowManager";
@@ -42,19 +40,7 @@ export default function App() {
     currentPreset.setupRuntime(runtime);
     runtime.start();
 
-    // Process tracking hook
-    const interval = setInterval(() => {
-      if (runtime) {
-        if (typeof runtime.getActiveProcesses === "function") {
-          setActiveProcesses(runtime.getActiveProcesses());
-        } else if (runtime.processes && typeof runtime.processes.values === "function") {
-          setActiveProcesses((Array.from(runtime.processes.values()) as DivProcess[]).filter((p) => !p.isDead));
-        }
-      }
-    }, 200);
-
     return () => {
-      clearInterval(interval);
       runtime.stop();
     };
   }, []);
@@ -229,27 +215,9 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#050811] text-slate-100 overflow-hidden font-sans">
-      {/* Top IDE Header */}
-      <IDEHeader
-        currentPresetId={currentPreset.id}
-        onSelectPreset={handleSelectPreset}
-        activeTab={activeTab}
-        onChangeTab={setActiveTab}
-        resolution={resolution}
-        onChangeResolution={handleChangeResolution}
-        isRunning={runtime.isRunning}
-        onRun={handleRunGame}
-        onRestart={handleRestart}
-        onOpenNewProject={() => setIsNewProjectOpen(true)}
-        onOpenExport={() => setIsExportOpen(true)}
-        onQuickExportZip={handleQuickExportZip}
-        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
-        onOpenAiSettings={() => setIsAiSettingsOpen(true)}
-      />
-
-      {/* Main Studio Desktop: Multi-Window Workspace (DIV Games Studio OS) */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+    <div className="flex flex-col h-screen w-screen bg-[#050811] text-slate-100 overflow-hidden font-sans select-none">
+      {/* Main Studio Desktop: 100% Screen Space Workspace with BeOS Deskbar */}
+      <main className="w-full h-full flex-1 flex flex-col overflow-hidden relative">
         <WindowManager
           runtime={runtime}
           code={code}
@@ -263,8 +231,15 @@ export default function App() {
           onApplyFullCode={handleApplyFullCode}
           activeProcesses={activeProcesses}
           resolution={resolution}
+          onChangeResolution={handleChangeResolution}
           onOpenAiSettings={() => setIsAiSettingsOpen(true)}
           requestedActiveTool={activeTab as WindowId}
+          currentPresetId={currentPreset.id}
+          onSelectPreset={handleSelectPreset}
+          onOpenNewProject={() => setIsNewProjectOpen(true)}
+          onOpenExport={() => setIsExportOpen(true)}
+          onQuickExportZip={handleQuickExportZip}
+          onOpenCloudSync={() => setIsCloudSyncOpen(true)}
         />
       </main>
 

@@ -1,8 +1,45 @@
-import { DivProcess, DivGraphic, DivText, DivPrimitive, DivScroll, DivMode7, DivMode8, DivMode8Door, DivMode8Trigger, DivMode8Entity, Camera3DInfo, C_M7, C_M8 } from "../types";
+import {
+  DivProcess,
+  DivGraphic,
+  DivText,
+  DivPrimitive,
+  DivScroll,
+  DivMode7,
+  DivMode8,
+  DivMode8Door,
+  DivMode8Trigger,
+  DivMode8Entity,
+  DivMode8Sector,
+  DivMode8Light,
+  DivMode8PlacedModel,
+  DivMode8PlacedVoxel,
+  DivVectorWall,
+  DivWorldFile,
+  DivFluidType,
+  DivMode8EngineMode,
+  DivDoomLinedef,
+  DivDoomSector,
+  Camera3DInfo,
+  C_M7,
+  C_M8,
+} from "../types";
 import { soundEngine } from "./sound";
 import { DEFAULT_SPRITES, createGraphicCanvas } from "./graphics";
 import { DivFont, DEFAULT_DIV_FONTS, renderDivBitmapText, FONT_0_SYSTEM, FONT_1_ARCADE_GOLD } from "./fonts";
 import { DivFpgPackage, DivMapFile, getInitialFpgPackages, getInitialMapFiles } from "./fpgManager";
+import {
+  BUILTIN_3D_MODELS,
+  BUILTIN_VOXELS,
+  Mode8FluidParticleEngine,
+  calculatePointLighting,
+  project3DPoint,
+  render3DModel,
+  renderVoxelObject,
+  renderFirstPersonWeapon3D,
+  Camera3DPose,
+} from "./mode8Enhanced";
+import { renderDoom2PolygonWorld, generateDoomStaircase } from "./doom2Engine";
+import { Mode8WorkerPool, RaycastWorkerTask } from "./mode8Worker";
 
 export interface EngineStats {
   fps: number;
@@ -22,6 +59,10 @@ export class DivRuntime {
   public height: number = 480;
   public targetFps: number = 60;
   public backgroundColor: string = "#0a0e17";
+
+  // Mode 8 Enhanced Fluid Simulation & Web Worker Acceleration
+  public fluidParticles: Mode8FluidParticleEngine = new Mode8FluidParticleEngine();
+  public mode8Workers: Mode8WorkerPool = new Mode8WorkerPool(4);
 
   // Engine state
   public isRunning: boolean = false;
@@ -73,6 +114,11 @@ export class DivRuntime {
   // ========================================================
   public m7: DivMode7[] = [];
   public m8: DivMode8[] = [];
+  public currentProcess: DivProcess | null = null;
+  public camara_id: number = 0;
+  public worldFiles: Map<string, DivWorldFile> = new Map();
+  public activePalName: string = "mundo.pal";
+  public activeFmpName: string = "texturas.fmp";
 
   public globalVars: Record<string, any> = {
     score: 0,
@@ -154,10 +200,165 @@ export class DivRuntime {
       [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ];
 
+    const defaultSectors: DivMode8Sector[][] = [];
+    for (let y = 0; y < 16; y++) {
+      const row: DivMode8Sector[] = [];
+      for (let x = 0; x < 16; x++) {
+        let floorHeight = 0;
+        let ceilHeight = 1.0;
+        let fluidType: DivFluidType = "none";
+        let lightLevel = 0.85;
+
+        // Elevated crypt steps in NW
+        if (x >= 2 && x <= 4 && y >= 2 && y <= 4) {
+          floorHeight = 0.35;
+          ceilHeight = 1.5;
+          lightLevel = 0.95;
+        }
+        // Central Lava Trench (bubbling fluid with fire embers)
+        else if (x >= 7 && x <= 9 && y >= 7 && y <= 9 && defaultMaze[y][x] === 0) {
+          floorHeight = -0.45;
+          ceilHeight = 1.8;
+          fluidType = "lava";
+          lightLevel = 1.1;
+        }
+        // Cathedral high vault in SE
+        else if (x >= 11 && x <= 14 && y >= 11 && y <= 14) {
+          floorHeight = 0.15;
+          ceilHeight = 2.4;
+          lightLevel = 0.9;
+        }
+        // Toxic Acid canal in SW
+        else if (x >= 1 && x <= 3 && y >= 12 && y <= 14 && defaultMaze[y][x] === 0) {
+          floorHeight = -0.35;
+          ceilHeight = 1.2;
+          fluidType = "acid";
+          lightLevel = 0.8;
+        }
+
+        row.push({ x, y, floorHeight, ceilHeight, fluidType, lightLevel });
+      }
+      defaultSectors.push(row);
+    }
+
+    const defaultLights: DivMode8Light[] = [
+      { id: "l1", x: 1.5, y: 1.5, z: 0.6, radius: 4.5, r: 245, g: 130, b: 32, intensity: 1.0, flicker: true, castShadows: true, name: "Antorcha Norte" },
+      { id: "l2", x: 8.5, y: 8.5, z: 0.2, radius: 6.5, r: 239, g: 68, b: 68, intensity: 1.2, flicker: true, castShadows: true, name: "Foso de Lava" },
+      { id: "l3", x: 12.5, y: 12.5, z: 0.9, radius: 5.5, r: 56, g: 189, b: 248, intensity: 1.0, flicker: false, castShadows: true, name: "Luz Catedral Mística" },
+      { id: "l4", x: 2.5, y: 13.5, z: 0.3, radius: 4.5, r: 34, g: 197, b: 94, intensity: 1.0, flicker: true, castShadows: true, name: "Vapor Tóxico Ácido" },
+    ];
+
+    const defaultModels: DivMode8PlacedModel[] = [
+      { id: "m1", modelId: "knight", x: 12.5, y: 12.5, z: 0.15, yaw: 180, scale: 1.0, currentAnimation: "idle", name: "Paladín de Élite MD2" },
+      { id: "m2", modelId: "gargoyle", x: 8.5, y: 8.5, z: 0.55, yaw: 45, scale: 1.05, currentAnimation: "flap", name: "Gárgola Demonio MD2" },
+      { id: "m3", modelId: "column", x: 6.5, y: 6.5, z: 0, yaw: 0, scale: 1.2, name: "Columna con Fuego MD3" },
+      { id: "m4", modelId: "drone", x: 3.5, y: 11.5, z: 0.45, yaw: 90, scale: 0.85, name: "Dron Guardián MD3" },
+    ];
+
+    const defaultVoxels: DivMode8PlacedVoxel[] = [
+      { id: "v1", voxelId: "voxel_potion", x: 3.5, y: 3.5, z: 0.25, yaw: 0, rotSpeed: 2.5, scale: 1.0, name: "Poción Mágica Vóxel" },
+      { id: "v2", voxelId: "voxel_skull", x: 13.5, y: 3.5, z: 0.35, yaw: 0, rotSpeed: 1.8, scale: 1.0, name: "Cráneo Reliquia Vóxel" },
+      { id: "v3", voxelId: "voxel_barrel", x: 2.5, y: 12.5, z: -0.3, yaw: 0, rotSpeed: 0, scale: 1.1, name: "Barril Tóxico Vóxel" },
+      { id: "v4", voxelId: "voxel_key", x: 12.5, y: 7.5, z: 0.2, yaw: 0, rotSpeed: 3.0, scale: 1.2, name: "Llave Dorada Vóxel" },
+    ];
+
+    const defaultVectorWalls: DivVectorWall[] = [
+      // Diagonal angled walls in NW and NE chambers (chamfered corners)
+      { id: "vw1", x1: 1.0, y1: 4.0, x2: 4.0, y2: 1.0, texture: 26, floorZ: 0, ceilZ: 1.5 },
+      { id: "vw2", x1: 12.0, y1: 1.0, x2: 15.0, y2: 4.0, texture: 26, floorZ: 0, ceilZ: 1.5 },
+      // Central hall diamond pillar
+      { id: "dp1", x1: 7.5, y1: 8.0, x2: 8.0, y2: 7.5, texture: 33, floorZ: 0, ceilZ: 1.8 },
+      { id: "dp2", x1: 8.0, y1: 7.5, x2: 8.5, y2: 8.0, texture: 33, floorZ: 0, ceilZ: 1.8 },
+      { id: "dp3", x1: 8.5, y1: 8.0, x2: 8.0, y2: 8.5, texture: 33, floorZ: 0, ceilZ: 1.8 },
+      { id: "dp4", x1: 8.0, y1: 8.5, x2: 7.5, y2: 8.0, texture: 33, floorZ: 0, ceilZ: 1.8 },
+    ];
+
+    const defaultDoors: DivMode8Door[] = [
+      {
+        id: 1,
+        x: 7,
+        y: 6,
+        state: "closed",
+        openAmount: 0,
+        texture: 31,
+        autoCloseTimer: 0,
+        name: "Puerta Principal",
+      },
+      {
+        id: 2,
+        x: 6,
+        y: 11,
+        state: "closed",
+        openAmount: 0,
+        texture: 38,
+        autoCloseTimer: 0,
+        name: "Reja de Mazmorra",
+      },
+    ];
+
+    const defaultTriggers: DivMode8Trigger[] = [
+      {
+        id: 1,
+        x: 7,
+        y: 5,
+        type: "sensor",
+        targetDoorId: 1,
+        activated: false,
+        texture: 37,
+        name: "Sensor de Presión",
+      },
+      {
+        id: 2,
+        x: 6,
+        y: 10,
+        type: "switch",
+        targetDoorId: 2,
+        activated: false,
+        texture: 32,
+        name: "Interruptor de Muro",
+      },
+    ];
+
+    const defaultEntities: DivMode8Entity[] = [
+      { id: "e1", type: "torch", x: 96, y: 96, graph: 28, name: "Antorcha Norte" },
+      { id: "e2", type: "torch", x: 864, y: 96, graph: 28, name: "Antorcha Este" },
+      { id: "e3", type: "key", x: 224, y: 224, graph: 34, name: "Tarjeta de Acceso" },
+      { id: "e4", type: "medikit", x: 544, y: 224, graph: 35, name: "Botiquín Táctico" },
+      { id: "e5", type: "ammo", x: 800, y: 224, graph: 36, name: "Caja de Munición" },
+      { id: "e6", type: "barrel", x: 224, y: 480, graph: 29, name: "Barril Tóxico" },
+    ];
+
+    const worldNivel1: DivWorldFile = {
+      name: "nivel1.wld",
+      version: 1,
+      width: 16,
+      height: 16,
+      ambientLight: 16,
+      skyColor: "#020617",
+      floorTexture: 25,
+      ceilTexture: 25,
+      map: defaultMaze,
+      sectors: defaultSectors,
+      vectorWalls: defaultVectorWalls,
+      doors: defaultDoors,
+      triggers: defaultTriggers,
+      entities: defaultEntities,
+      lights: defaultLights,
+      placedModels: defaultModels,
+      placedVoxels: defaultVoxels,
+      playerStart: { x: 3.5, y: 3.5, z: 0, angle: 0 },
+    };
+
+    this.worldFiles.set("nivel1.wld", worldNivel1);
+    this.worldFiles.set("nivel1", worldNivel1);
+    this.worldFiles.set("dungeon.wld", worldNivel1);
+    this.worldFiles.set("hexen.wld", worldNivel1);
+
     this.m8 = [
       {
         id: 0,
         file: 0,
+        worldName: "nivel1.wld",
         mapWalls: 25,
         mapFloor: 0,
         mapCeil: 0,
@@ -169,64 +370,26 @@ export class DivRuntime {
         pitch: 0,
         camera: 0,
         fogColor: "#030712",
-        fogDistance: 11,
+        fogDistance: 12,
         mapWidth: 16,
         mapHeight: 16,
         map: defaultMaze,
-        doors: [
-          {
-            id: 1,
-            x: 7,
-            y: 6,
-            state: "closed",
-            openAmount: 0,
-            texture: 31,
-            autoCloseTimer: 0,
-            name: "Puerta Principal",
-          },
-          {
-            id: 2,
-            x: 6,
-            y: 11,
-            state: "closed",
-            openAmount: 0,
-            texture: 38,
-            autoCloseTimer: 0,
-            name: "Reja de Mazmorra",
-          },
-        ],
-        triggers: [
-          {
-            id: 1,
-            x: 7,
-            y: 5,
-            type: "sensor",
-            targetDoorId: 1,
-            activated: false,
-            texture: 37,
-            name: "Sensor de Presión",
-          },
-          {
-            id: 2,
-            x: 6,
-            y: 10,
-            type: "switch",
-            targetDoorId: 2,
-            activated: false,
-            texture: 32,
-            name: "Interruptor de Muro",
-          },
-        ],
-        entities: [
-          { id: "e1", type: "torch", x: 96, y: 96, graph: 28, name: "Antorcha Norte" },
-          { id: "e2", type: "torch", x: 864, y: 96, graph: 28, name: "Antorcha Este" },
-          { id: "e3", type: "key", x: 224, y: 224, graph: 34, name: "Tarjeta de Acceso" },
-          { id: "e4", type: "medikit", x: 544, y: 224, graph: 35, name: "Botiquín Táctico" },
-          { id: "e5", type: "ammo", x: 800, y: 224, graph: 36, name: "Caja de Munición" },
-          { id: "e6", type: "barrel", x: 224, y: 480, graph: 29, name: "Barril Tóxico" },
-        ],
+        engineMode: "hybrid",
+        enableRaytracing: true,
+        enableFluids: true,
+        enableVoxels: true,
+        enable3DModels: true,
+        sectors: defaultSectors,
+        vectorWalls: defaultVectorWalls,
+        lights: defaultLights,
+        placedModels: defaultModels,
+        placedVoxels: defaultVoxels,
+        doors: defaultDoors,
+        triggers: defaultTriggers,
+        entities: defaultEntities,
         lightLevel: 0.85,
         torchFlicker: true,
+        showAutomap: false,
         active: false,
       },
     ];
@@ -238,6 +401,13 @@ export class DivRuntime {
       hi_score: 5000,
       lives: 3,
       level: 1,
+      m8_classic: "classic",
+      m8_hybrid: "hybrid",
+      fluid_water: "water",
+      fluid_lava: "lava",
+      fluid_acid: "acid",
+      fluid_blood: "blood",
+      fluid_none: "none",
       timer: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     };
   }
@@ -501,16 +671,210 @@ export class DivRuntime {
     return Math.round(deg);
   }
 
-  public advance(proc: DivProcess, speed: number) {
-    const rad = (proc.angle * Math.PI) / 180;
-    proc.x += Math.cos(rad) * speed;
-    proc.y += Math.sin(rad) * speed;
+  // DIV Games Studio standard aliases and helpers
+  public get_dist(x1: number, y1: number, x2: number, y2: number): number {
+    return this.getDist(x1, y1, x2, y2);
   }
 
-  public xadvance(proc: DivProcess, angle: number, speed: number) {
-    const rad = (angle * Math.PI) / 180;
-    proc.x += Math.cos(rad) * speed;
-    proc.y += Math.sin(rad) * speed;
+  public fget_dist(x1: number, y1: number, x2: number, y2: number): number {
+    return Math.hypot(x2 - x1, y2 - y1);
+  }
+
+  public get_angle(x1: number, y1: number, x2: number, y2: number): number {
+    return this.getAngle(x1, y1, x2, y2);
+  }
+
+  public fget_angle(x1: number, y1: number, x2: number, y2: number): number {
+    const rad = Math.atan2(y2 - y1, x2 - x1);
+    let deg = (rad * 180) / Math.PI;
+    if (deg < 0) deg += 360;
+    return deg;
+  }
+
+  public near_angle(currentAngle: number, targetAngle: number, step: number = 5): number {
+    let diff = (targetAngle - currentAngle) % 360;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    if (Math.abs(diff) <= step) return targetAngle;
+    return (currentAngle + Math.sign(diff) * step + 360) % 360;
+  }
+
+  public distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+    const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+  }
+
+  public moveMode8WithCollision(
+    x: number,
+    y: number,
+    dx: number,
+    dy: number,
+    radius: number = 0.22
+  ): { x: number; y: number } {
+    const m = this.m8[0];
+    if (!m || !m.map || !m.active) return { x: x + dx, y: y + dy };
+
+    const isBlocked = (testX: number, testY: number): boolean => {
+      if (testX < 0.2 || testX >= m.mapWidth - 0.2 || testY < 0.2 || testY >= m.mapHeight - 0.2) {
+        return true;
+      }
+      const corners = [
+        [testX - radius, testY - radius],
+        [testX + radius, testY - radius],
+        [testX - radius, testY + radius],
+        [testX + radius, testY + radius],
+      ];
+      for (const [cx, cy] of corners) {
+        const mx = Math.floor(cx);
+        const my = Math.floor(cy);
+        if (mx < 0 || mx >= m.mapWidth || my < 0 || my >= m.mapHeight) return true;
+        const wall = m.map[my]?.[mx];
+        if (wall && wall > 0) return true;
+
+        if (m.doors) {
+          const door = m.doors.find((d) => d.x === mx && d.y === my);
+          if (door && (door.state !== "open" || door.openAmount < 0.75)) {
+            return true;
+          }
+        }
+      }
+      if (m.vectorWalls && m.vectorWalls.length > 0) {
+        for (const vw of m.vectorWalls) {
+          const d = this.distToSegment(testX, testY, vw.x1, vw.y1, vw.x2, vw.y2);
+          if (d < radius) return true;
+        }
+      }
+      return false;
+    };
+
+    // Try direct movement
+    if (!isBlocked(x + dx, y + dy)) {
+      return { x: x + dx, y: y + dy };
+    }
+    // Slide along X axis
+    if (!isBlocked(x + dx, y)) {
+      return { x: x + dx, y };
+    }
+    // Slide along Y axis
+    if (!isBlocked(x, y + dy)) {
+      return { x, y: y + dy };
+    }
+    return { x, y };
+  }
+
+  public advance(arg1: DivProcess | number, arg2?: DivProcess | number) {
+    let proc: DivProcess | undefined;
+    let speed: number = 0;
+
+    if (typeof arg1 === "object" && arg1 !== null) {
+      proc = arg1;
+      speed = typeof arg2 === "number" ? arg2 : 0;
+    } else if (typeof arg2 === "object" && arg2 !== null) {
+      proc = arg2;
+      speed = typeof arg1 === "number" ? arg1 : 0;
+    } else {
+      speed = Number(arg1) || 0;
+      proc = this.currentProcess || this.processes.get(this.m8[0]?.camera || this.camara_id || 1);
+    }
+
+    if (!proc) return;
+
+    const rawAngle = proc.angle || 0;
+    const deg = Math.abs(rawAngle) >= 360 ? rawAngle / 1000 : rawAngle;
+    const rad = (deg * Math.PI) / 180;
+
+    if (this.m8[0]?.active && (proc.id === this.m8[0].camera || proc.id === this.camara_id || proc.id === 1)) {
+      const isPixelCoord = proc.x > 20 || proc.y > 20;
+      const currentWorldX = isPixelCoord ? proc.x / 64 : proc.x;
+      const currentWorldY = isPixelCoord ? proc.y / 64 : proc.y;
+
+      const tileSpeed = Math.abs(speed) >= 1 ? speed / 64 : speed;
+      const dx = Math.cos(rad) * tileSpeed;
+      const dy = Math.sin(rad) * tileSpeed;
+
+      const newPos = this.moveMode8WithCollision(currentWorldX, currentWorldY, dx, dy);
+      if (isPixelCoord) {
+        proc.x = newPos.x * 64;
+        proc.y = newPos.y * 64;
+      } else {
+        proc.x = newPos.x;
+        proc.y = newPos.y;
+      }
+      this.m8[0].x = newPos.x;
+      this.m8[0].y = newPos.y;
+    } else {
+      proc.x += Math.cos(rad) * speed;
+      proc.y += Math.sin(rad) * speed;
+    }
+  }
+
+  public xadvance(
+    arg1: DivProcess | number,
+    arg2?: DivProcess | number,
+    arg3?: DivProcess | number
+  ) {
+    let proc: DivProcess | undefined;
+    let angleOffset: number = 0;
+    let speed: number = 0;
+
+    if (typeof arg1 === "object" && arg1 !== null) {
+      proc = arg1;
+      speed = typeof arg2 === "number" ? arg2 : 0;
+      angleOffset = typeof arg3 === "number" ? arg3 : 0;
+    } else if (typeof arg3 === "object" && arg3 !== null) {
+      proc = arg3;
+      speed = typeof arg1 === "number" ? arg1 : 0;
+      angleOffset = typeof arg2 === "number" ? arg2 : 0;
+    } else {
+      // In DIV Games Studio: xadvance(speed, angle_offset) e.g. xadvance(4, 90000)
+      if (Math.abs(Number(arg2)) >= 360 || Math.abs(Number(arg2)) === 90 || Math.abs(Number(arg2)) === 180 || Math.abs(Number(arg2)) === 270) {
+        speed = Number(arg1) || 0;
+        angleOffset = Number(arg2) || 0;
+      } else if (Math.abs(Number(arg1)) >= 360) {
+        angleOffset = Number(arg1) || 0;
+        speed = Number(arg2) || 0;
+      } else {
+        speed = Number(arg1) || 0;
+        angleOffset = Number(arg2) || 0;
+      }
+      proc = this.currentProcess || this.processes.get(this.m8[0]?.camera || this.camara_id || 1);
+    }
+
+    if (!proc) return;
+
+    // Angle offset relative to current process direction
+    const procRaw = proc.angle || 0;
+    const procDeg = Math.abs(procRaw) >= 360 ? procRaw / 1000 : procRaw;
+    const offsetDeg = Math.abs(angleOffset) >= 360 ? angleOffset / 1000 : angleOffset;
+    const totalDeg = procDeg + offsetDeg;
+    const rad = (totalDeg * Math.PI) / 180;
+
+    if (this.m8[0]?.active && (proc.id === this.m8[0].camera || proc.id === this.camara_id || proc.id === 1)) {
+      const isPixelCoord = proc.x > 20 || proc.y > 20;
+      const currentWorldX = isPixelCoord ? proc.x / 64 : proc.x;
+      const currentWorldY = isPixelCoord ? proc.y / 64 : proc.y;
+
+      const tileSpeed = Math.abs(speed) >= 1 ? speed / 64 : speed;
+      const dx = Math.cos(rad) * tileSpeed;
+      const dy = Math.sin(rad) * tileSpeed;
+
+      const newPos = this.moveMode8WithCollision(currentWorldX, currentWorldY, dx, dy);
+      if (isPixelCoord) {
+        proc.x = newPos.x * 64;
+        proc.y = newPos.y * 64;
+      } else {
+        proc.x = newPos.x;
+        proc.y = newPos.y;
+      }
+      this.m8[0].x = newPos.x;
+      this.m8[0].y = newPos.y;
+    } else {
+      proc.x += Math.cos(rad) * speed;
+      proc.y += Math.sin(rad) * speed;
+    }
   }
 
   public rand(min: number, max: number): number {
@@ -521,16 +885,17 @@ export class DivRuntime {
    * Sound & Audio API (DIV Games Studio)
    * Compatible con load_wav, load_snd, load_pcm, unload_wav, sound, load_song, song
    */
-  public load_wav(nameOrFile: string): number {
+  public load_wav(nameOrFile: string | number): number {
     return this.load_snd(nameOrFile);
   }
 
-  public load_pcm(nameOrFile: string): number {
+  public load_pcm(nameOrFile: string | number): number {
     return this.load_snd(nameOrFile);
   }
 
-  public load_snd(nameOrFile: string): number {
-    const clean = nameOrFile.trim().toLowerCase();
+  public load_snd(nameOrFile: string | number): number {
+    if (nameOrFile === undefined || nameOrFile === null) return 1;
+    const clean = String(nameOrFile).trim().toLowerCase();
     // Check if already registered
     for (const [id, snd] of this.loadedSounds.entries()) {
       if (
@@ -561,8 +926,8 @@ export class DivRuntime {
     const newId = Math.max(0, ...Array.from(this.loadedSounds.keys())) + 1;
     this.loadedSounds.set(newId, {
       id: newId,
-      name: nameOrFile.replace(/\.[^/.]+$/, ""),
-      filename: clean.endsWith(".wav") ? clean : `${clean}.wav`,
+      name: String(nameOrFile).replace(/\.[^/.]+$/, ""),
+      filename: clean.endsWith(".wav") || clean.endsWith(".snd") || clean.endsWith(".pcm") ? clean : `${clean}.wav`,
       synthId,
     });
     return newId;
@@ -580,20 +945,73 @@ export class DivRuntime {
     this.loadedSounds.delete(soundId);
   }
 
-  public sound(id: number, vol: number = 100, freq: number = 256) {
-    const loaded = this.loadedSounds.get(id);
+  /**
+   * Reproduce un sonido en un canal y devuelve el identificador de canal (>0)
+   * Compatible con: canal = sound(id, volumen, frecuencia);
+   * Soporta tanto IDs devueltos por load_snd/load_wav como IDs numéricos directos de efectos (1..12).
+   */
+  public sound(id: number | string = 1, vol: number = 100, freq: number = 256): number {
+    if (id === undefined || id === null) return 0;
+    const numId = typeof id === "number" ? id : parseInt(String(id), 10) || 1;
+    const safeVol = typeof vol === "number" && !isNaN(vol) ? vol : 100;
+    const safeFreq = typeof freq === "number" && !isNaN(freq) && freq > 0 ? freq : 256;
+    const loaded = this.loadedSounds.get(numId);
     if (!loaded) {
-      console.warn(
-        `[DIV Runtime Error] sound(): El sonido ID '${id}' no ha sido cargado con load_wav() o load_snd(). En DIV Games Studio todo sonido debe cargarse previamente.`
-      );
-      soundEngine.playSound(id, vol, freq);
-      return;
+      // En DIV Games Studio si se pasa un ID directo o no registrado, reproducir preset sintético seguro sin romper
+      return soundEngine.playSound(numId, safeVol, safeFreq);
     }
-    soundEngine.playSound(loaded.synthId, vol, freq);
+    return soundEngine.playSound(loaded.synthId, safeVol, safeFreq);
   }
 
-  public sound_play(id: number, vol: number = 100, freq: number = 256) {
-    this.sound(id, vol, freq);
+  public sound_play(id: number | string = 1, vol: number = 100, freq: number = 256): number {
+    return this.sound(id, vol, freq);
+  }
+
+  /**
+   * Detiene un canal de sonido o todos los canales si no se especifica canal
+   */
+  public stop_sound(channelId?: number) {
+    soundEngine.stopSound(channelId);
+  }
+
+  public sound_stop(channelId?: number) {
+    soundEngine.stopSound(channelId);
+  }
+
+  /**
+   * Altera el volumen y la frecuencia de un sonido que se está reproduciendo
+   */
+  public change_sound(channelId: number, vol: number, freq?: number) {
+    soundEngine.changeSound(channelId, vol, freq);
+  }
+
+  /**
+   * Comprueba si un canal de sonido sigue reproduciéndose (devuelve 1 si está activo, 0 si terminó)
+   */
+  public is_playing_sound(channelId: number): number {
+    return soundEngine.isPlayingSound(channelId) ? 1 : 0;
+  }
+
+  /**
+   * Modifica el volumen de un canal de forma gradual
+   */
+  public fade_sound(channelId: number, targetVol: number, speed: number = 10) {
+    soundEngine.fadeSound(channelId, targetVol, speed);
+  }
+
+  /**
+   * Ajuste global de volumen maestro y efectos
+   */
+  public set_volume(vol: number) {
+    soundEngine.setMasterVolume(vol);
+  }
+
+  public set_sound_volume(vol: number) {
+    soundEngine.setMasterVolume(vol);
+  }
+
+  public set_music_volume(vol: number) {
+    soundEngine.setMasterVolume(vol);
   }
 
   public load_song(nameOrFile: string): number {
@@ -696,6 +1114,22 @@ export class DivRuntime {
     return id;
   }
 
+  public write_int(font: number, x: number, y: number, align: number, variableRef: string): number {
+    return this.writeInt(font, x, y, align, variableRef);
+  }
+
+  public write_string(font: number, x: number, y: number, align: number, text: string): number {
+    return this.write(font, x, y, align, text);
+  }
+
+  public move_text(id: number, x: number, y: number): void {
+    const t = this.texts.get(id);
+    if (t) {
+      t.x = x;
+      t.y = y;
+    }
+  }
+
   public deleteText(id: number | "all_text") {
     if (id === "all_text" || id === 0) {
       this.texts.clear();
@@ -704,11 +1138,19 @@ export class DivRuntime {
     }
   }
 
+  public delete_text(id: number | "all_text") {
+    this.deleteText(id);
+  }
+
   /**
    * Primitive drawing
    */
   public drawBox(x1: number, y1: number, x2: number, y2: number, color: string) {
     this.primitives.push({ id: this.primitives.length, type: "box", x1, y1, x2, y2, color });
+  }
+
+  public draw_box(x1: number, y1: number, x2: number, y2: number, color: string) {
+    this.drawBox(x1, y1, x2, y2, color);
   }
 
   public drawPermanentBox(x1: number, y1: number, x2: number, y2: number, color: string) {
@@ -723,16 +1165,32 @@ export class DivRuntime {
     this.primitives.push({ id: this.primitives.length, type: "circle", x1: x, y1: y, x2: x, y2: y, r, color });
   }
 
+  public draw_circle(x: number, y: number, r: number, color: string) {
+    this.drawCircle(x, y, r, color);
+  }
+
   public drawFCircle(x: number, y: number, r: number, color: string) {
     this.primitives.push({ id: this.primitives.length, type: "fcircle", x1: x, y1: y, x2: x, y2: y, r, color });
+  }
+
+  public draw_fcircle(x: number, y: number, r: number, color: string) {
+    this.drawFCircle(x, y, r, color);
   }
 
   public drawLine(x1: number, y1: number, x2: number, y2: number, color: string) {
     this.primitives.push({ id: this.primitives.length, type: "line", x1, y1, x2, y2, color });
   }
 
+  public draw_line(x1: number, y1: number, x2: number, y2: number, color: string) {
+    this.drawLine(x1, y1, x2, y2, color);
+  }
+
   public screenColor(color: string) {
     this.backgroundColor = color;
+  }
+
+  public screen_color(color: string) {
+    this.screenColor(color);
   }
 
   public clearScreen(color?: string) {
@@ -753,8 +1211,23 @@ export class DivRuntime {
    * Keyboard & Input check
    */
   public key(keyName: string): boolean {
+    if (!keyName) return false;
     const norm = keyName.toLowerCase().replace(/^_/, "");
-    return Boolean(this.keyState[norm]);
+    if (this.keyState[norm]) return true;
+    if (norm === "up" && (this.keyState["arrowup"] || this.keyState["w"] || this.keyState["keyw"])) return true;
+    if (norm === "down" && (this.keyState["arrowdown"] || this.keyState["s"] || this.keyState["keys"])) return true;
+    if (norm === "left" && (this.keyState["arrowleft"] || this.keyState["a"] || this.keyState["keya"])) return true;
+    if (norm === "right" && (this.keyState["arrowright"] || this.keyState["d"] || this.keyState["keyd"])) return true;
+    if (norm === "space" && (this.keyState[" "] || this.keyState["space"])) return true;
+    if (norm.startsWith("key") && this.keyState[norm.slice(3)]) return true;
+    if (norm.startsWith("digit") && this.keyState[norm.slice(5)]) return true;
+    if (this.keyState["key" + norm]) return true;
+    if (this.keyState["digit" + norm]) return true;
+    return false;
+  }
+
+  public isKeyDown(keyName: string): boolean {
+    return this.key(keyName);
   }
 
   public setResolution(res: "320x200" | "640x480" | "800x600" | "1024x768") {
@@ -791,6 +1264,167 @@ export class DivRuntime {
     if (this.m7[id]) this.m7[id].active = false;
   }
 
+  public currentPalette: string[] = [];
+
+  public setPalette(palette: string[]) {
+    if (Array.isArray(palette) && palette.length > 0) {
+      this.currentPalette = [...palette];
+    }
+  }
+
+  public getPalette(): string[] {
+    return this.currentPalette;
+  }
+
+  public load_pal(palFile: string): boolean {
+    this.activePalName = palFile || "mundo.pal";
+    return true;
+  }
+
+  /**
+   * Rota una sección de la paleta cíclicamente (ideal para animar agua o fuego sin coste de CPU)
+   * roll_palette(primer_color, ultimo_color, incremento)
+   */
+  public roll_palette(first: number, last: number, steps: number = 1) {
+    if (!this.currentPalette || this.currentPalette.length < 256) return;
+    const min = Math.max(0, Math.min(first, last));
+    const max = Math.min(255, Math.max(first, last));
+    if (max <= min) return;
+
+    for (let s = 0; s < Math.abs(steps); s++) {
+      if (steps > 0) {
+        const lastColor = this.currentPalette[max];
+        for (let i = max; i > min; i--) {
+          this.currentPalette[i] = this.currentPalette[i - 1];
+        }
+        this.currentPalette[min] = lastColor;
+      } else {
+        const firstColor = this.currentPalette[min];
+        for (let i = min; i < max; i++) {
+          this.currentPalette[i] = this.currentPalette[i + 1];
+        }
+        this.currentPalette[max] = firstColor;
+      }
+    }
+  }
+
+  /**
+   * Asigna componentes RGB a un color de la paleta (DIV DOS escala 0..63 o moderna 0..255)
+   */
+  public set_color(index: number, r: number, g: number, b: number) {
+    if (!this.currentPalette) return;
+    const idx = Math.max(0, Math.min(255, index));
+    // Si los valores vienen en rango DIV DOS (<= 63), convertirlos a 0..255
+    const r255 = r <= 63 ? Math.round((r / 63) * 255) : Math.min(255, r);
+    const g255 = g <= 63 ? Math.round((g / 63) * 255) : Math.min(255, g);
+    const b255 = b <= 63 ? Math.round((b / 63) * 255) : Math.min(255, b);
+    const toHex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+    this.currentPalette[idx] = `#${toHex(r255)}${toHex(g255)}${toHex(b255)}`;
+  }
+
+  public get_color(index: number) {
+    const idx = Math.max(0, Math.min(255, index));
+    const hex = this.currentPalette[idx] || "#000000";
+    return {
+      index: idx,
+      hex,
+    };
+  }
+
+  public fade_on() {}
+  public fade_off() {}
+
+  public load_fmp(fmpFile: string): boolean {
+    this.activeFmpName = fmpFile || "texturas.fmp";
+    return true;
+  }
+
+  public load_wld(wldFile: string, data?: DivWorldFile): DivWorldFile | null {
+    const clean = (wldFile || "").toLowerCase().trim();
+    if (data) {
+      this.worldFiles.set(clean, data);
+      return data;
+    }
+    return (
+      this.worldFiles.get(clean) ||
+      this.worldFiles.get(clean + ".wld") ||
+      this.worldFiles.get("nivel1.wld") ||
+      null
+    );
+  }
+
+  public save_wld(wldFile: string, data: DivWorldFile) {
+    const clean = (wldFile || "").toLowerCase().trim();
+    this.worldFiles.set(clean, data);
+    if (!clean.endsWith(".wld")) {
+      this.worldFiles.set(clean + ".wld", data);
+    }
+  }
+
+  /**
+   * DIV2 Style Raycast Start:
+   * start_raycast(archivo_wld, archivo_fmp_texturas, ambient_light)
+   * Example: start_raycast("nivel1.wld", "texturas.fmp", 16);
+   */
+  public start_raycast(
+    wldFile: string | number = "nivel1.wld",
+    fmpFile?: string | number,
+    ambientLight: number = 16
+  ) {
+    if (!this.m8[0]) this.initMode8();
+    const m = this.m8[0];
+
+    const wldName = typeof wldFile === "string" ? wldFile.trim() : `nivel${wldFile}.wld`;
+    const cleanKey = wldName.toLowerCase();
+    const world =
+      this.worldFiles.get(cleanKey) ||
+      this.worldFiles.get(cleanKey + ".wld") ||
+      this.worldFiles.get(cleanKey.replace(/\.wld$/, "")) ||
+      this.worldFiles.get("nivel1.wld");
+
+    if (world) {
+      m.worldName = wldName;
+      m.map = world.map.map((row) => [...row]);
+      m.mapHeight = world.map.length;
+      m.mapWidth = world.map[0]?.length || 16;
+      m.sectors = world.sectors?.map((row) => row.map((sec) => ({ ...sec })));
+      m.vectorWalls = world.vectorWalls ? world.vectorWalls.map((vw) => ({ ...vw })) : [];
+      m.doors = world.doors ? world.doors.map((d) => ({ ...d })) : [];
+      m.triggers = world.triggers ? world.triggers.map((t) => ({ ...t })) : [];
+      m.entities = world.entities ? world.entities.map((e) => ({ ...e })) : [];
+      m.lights = world.lights ? world.lights.map((l) => ({ ...l })) : [];
+      m.placedModels = world.placedModels ? world.placedModels.map((pm) => ({ ...pm })) : [];
+      m.placedVoxels = world.placedVoxels ? world.placedVoxels.map((pv) => ({ ...pv })) : [];
+      if (world.playerStart) {
+        m.x = world.playerStart.x;
+        m.y = world.playerStart.y;
+        m.z = world.playerStart.z || 0;
+        m.angle = world.playerStart.angle || 0;
+      }
+    }
+
+    if (fmpFile) {
+      this.load_fmp(typeof fmpFile === "string" ? fmpFile : "texturas.fmp");
+    }
+
+    m.lightLevel = Math.max(0.2, Math.min(1.5, Number(ambientLight) / 16));
+    m.showAutomap = false;
+    m.active = true;
+    this.camara_id = 1;
+    m.camera = 1;
+
+    const p1 = this.processes.get(1);
+    if (p1) {
+      p1.x = m.x * 64;
+      p1.y = m.y * 64;
+      p1.angle = m.angle * 1000;
+    }
+  }
+
+  public stop_raycast() {
+    this.stop_mode8(0);
+  }
+
   public start_mode8(
     id: number = 0,
     file: number = 0,
@@ -806,6 +1440,7 @@ export class DivRuntime {
     if (mapWalls > 0) m.mapWalls = mapWalls;
     if (mapFloor > 0) m.mapFloor = mapFloor;
     if (mapCeil > 0) m.mapCeil = mapCeil;
+    m.showAutomap = false;
     m.active = true;
   }
 
@@ -944,12 +1579,15 @@ export class DivRuntime {
 
       if (proc.generator) {
         try {
+          this.currentProcess = proc;
           const result = proc.generator.next();
+          this.currentProcess = null;
           if (result.done) {
             proc.isDead = true;
             this.processes.delete(id);
           }
         } catch (err: any) {
+          this.currentProcess = null;
           console.error(`Error in process ${proc.name} [id=${id}]:`, err);
           proc.isDead = true;
           this.processes.delete(id);
@@ -1338,13 +1976,20 @@ export class DivRuntime {
   }
 
   /**
-   * Sets new Mode 8 map, doors, triggers, and entities (used by Level Editor and code)
-   */
+  * Sets new Mode 8 map, doors, triggers, entities, sectors, lights, and 3D objects
+  */
   public setMode8Map(
     map: number[][],
     doors?: DivMode8Door[],
     triggers?: DivMode8Trigger[],
-    entities?: DivMode8Entity[]
+    entities?: DivMode8Entity[],
+    sectors?: DivMode8Sector[][],
+    lights?: DivMode8Light[],
+    placedModels?: DivMode8PlacedModel[],
+    placedVoxels?: DivMode8PlacedVoxel[],
+    engineMode?: DivMode8EngineMode,
+    enableRaytracing?: boolean,
+    enableFluids?: boolean
   ) {
     if (!this.m8[0]) this.initMode8();
     const m = this.m8[0];
@@ -1354,10 +1999,17 @@ export class DivRuntime {
     if (doors) m.doors = doors;
     if (triggers) m.triggers = triggers;
     if (entities) m.entities = entities;
+    if (sectors) m.sectors = sectors;
+    if (lights) m.lights = lights;
+    if (placedModels) m.placedModels = placedModels;
+    if (placedVoxels) m.placedVoxels = placedVoxels;
+    if (engineMode) m.engineMode = engineMode;
+    if (enableRaytracing !== undefined) m.enableRaytracing = enableRaytracing;
+    if (enableFluids !== undefined) m.enableFluids = enableFluids;
   }
 
   /**
-   * Frame tick for Mode 8 systems: sliding door movement, trigger activation, and item pickup
+   * Frame tick for Mode 8 systems: sliding doors, triggers, item pickups, fluid particles, and 3D object updates
    */
   private stepMode8() {
     const m = this.m8[0];
@@ -1436,24 +2088,72 @@ export class DivRuntime {
         }
       }
     }
+
+    // 4. Particle-based fluid simulation in hybrid mode
+    if (m.engineMode === "hybrid" && m.enableFluids !== false && m.sectors) {
+      this.fluidParticles.update(m.sectors, m.mapWidth, m.mapHeight);
+    }
+
+    // 5. Continuous 3D Voxel rotation & MD2/MD3 model animation frames
+    if (m.placedVoxels) {
+      for (const vox of m.placedVoxels) {
+        vox.yaw = (vox.yaw + (vox.rotSpeed ?? 2.5)) % 360;
+      }
+    }
+    if (m.placedModels) {
+      for (const mod of m.placedModels) {
+        mod.animFrame = ((mod.animFrame || 0) + (mod.animationSpeed || 0.08)) % 1;
+      }
+    }
+
+    // 6. First-Person 3D Weapon Attack and Walk Bobbing
+    if (m.weaponAttackTime !== undefined && m.weaponAttackTime > 0) {
+      m.weaponAttackTime += 0.09;
+      if (m.weaponAttackTime >= 1.0) {
+        m.weaponAttackTime = 0;
+      }
+    }
+    if (
+      this.keyState["w"] ||
+      this.keyState["W"] ||
+      this.keyState["s"] ||
+      this.keyState["S"] ||
+      this.keyState["ArrowUp"] ||
+      this.keyState["ArrowDown"]
+    ) {
+      m.walkCycle = ((m.walkCycle || 0) + 0.16) % (Math.PI * 2);
+    }
   }
 
   /**
-   * Render Mode 8: Enhanced Doom-like Raycasting Engine
-   * Features: DDA Raycasting with sliding doors, multi-textures, directional lighting, torch flicker, and 3D sprite sorting
+   * Render Mode 8: Hexen / GZDoom Enhanced 3D Raycasting Engine
+   * Supports both Classic 2D Retro Mode and Hybrid 3D Mode:
+   * - Hexen variable sector heights and depths (floor/ceiling)
+   * - Dynamic point lights with ray-traced shadow casting
+   * - MD2 / MD3 3D models with vertex projection and animations
+   * - 3D Voxel rotating sprites with depth occlusion
+   * - Particle-based fluid rendering (lava, acid, water, blood)
    */
   private renderMode8(ctx: CanvasRenderingContext2D) {
     const m = this.m8[0];
     if (!m) return;
 
     // Follow camera process if assigned
-    if (m.camera) {
-      const camTarget = this.processes.get(m.camera);
-      if (camTarget && !camTarget.isDead) {
+    const camId = m.camera || this.camara_id || 1;
+    const camTarget = this.processes.get(camId);
+    if (camTarget && !camTarget.isDead) {
+      if (camTarget.x > 20 || camTarget.y > 20) {
         m.x = camTarget.x / 64;
         m.y = camTarget.y / 64;
-        m.angle = camTarget.angle;
+      } else {
+        m.x = camTarget.x;
+        m.y = camTarget.y;
       }
+      if (camTarget.z !== undefined && camTarget.z !== 0) {
+        m.z = Math.abs(camTarget.z) > 10 ? camTarget.z / 64 : camTarget.z;
+      }
+      const rawAngle = camTarget.angle || 0;
+      m.angle = Math.abs(rawAngle) >= 360 ? rawAngle / 1000 : rawAngle;
     }
 
     const posX = m.x;
@@ -1465,134 +2165,180 @@ export class DivRuntime {
     const planeX = -dirY * planeLength;
     const planeY = dirX * planeLength;
 
-    // 1. Ceiling & Floor gradients with ambient lighting
+    const isHybrid = m.engineMode === "hybrid";
+    const isDoom2 = m.engineMode === "doom2" || (m.doomLinedefs && m.doomLinedefs.length > 0);
+    const pitchOffset = Math.max(-120, Math.min(120, m.pitch || 0));
     const halfH = Math.floor(this.height / 2);
+    const horizonY = halfH + pitchOffset;
+
+    // --- DOOM 2 TRUE POLYGON SECTOR & PORTAL RENDERER ---
+    if (isDoom2 && m.doomLinedefs && m.doomLinedefs.length > 0) {
+      renderDoom2PolygonWorld(
+        ctx,
+        this.width,
+        this.height,
+        {
+          x: posX,
+          y: posY,
+          z: (m.z || 0) + 0.6,
+          angle: m.angle || 0,
+          pitch: pitchOffset,
+        },
+        m.doomLinedefs,
+        m.doomSectors || [],
+        m.entities || [],
+        m.placedModels || [],
+        m.lights || [],
+        m.walkCycle || 0,
+        m.weaponModel,
+        m.weaponAttackTime || 0,
+        m.placedVoxels || []
+      );
+      return;
+    }
+
+    // Player current sector and eye height
+    const playerCellX = Math.max(0, Math.min(m.mapWidth - 1, Math.floor(posX)));
+    const playerCellY = Math.max(0, Math.min(m.mapHeight - 1, Math.floor(posY)));
+    const playerSector = m.sectors?.[playerCellY]?.[playerCellX];
+    const playerFloorZ = isHybrid ? (playerSector?.floorHeight ?? 0) : 0;
+    const playerEyeZ = (m.z || 0) + playerFloorZ + 0.5;
+
+    // Camera pose object used for 3D model, voxel, and particle projection
+    const camPose: Camera3DPose = {
+      x: posX,
+      y: posY,
+      z: playerEyeZ,
+      angle: m.angle || 0,
+      pitch: pitchOffset,
+      fov: 66,
+      screenWidth: this.width,
+      screenHeight: this.height,
+    };
+
+    // 1. Ceiling & Floor gradients with ambient lighting & Hexen atmosphere
     const lightLevel = (m.lightLevel ?? 0.85) + (m.torchFlicker ? Math.sin(this.frameCount * 0.22) * 0.04 : 0);
 
-    const ceilGrad = ctx.createLinearGradient(0, 0, 0, halfH);
+    const ceilGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
     ceilGrad.addColorStop(0, "#020617");
-    ceilGrad.addColorStop(1, "#0f172a");
+    ceilGrad.addColorStop(1, isHybrid ? "#0c1527" : "#0f172a");
     ctx.fillStyle = ceilGrad;
-    ctx.fillRect(0, 0, this.width, halfH);
+    ctx.fillRect(0, 0, this.width, horizonY);
 
-    const floorGrad = ctx.createLinearGradient(0, halfH, 0, this.height);
-    floorGrad.addColorStop(0, "#1e293b");
-    floorGrad.addColorStop(1, "#090d16");
+    // Fixed perspective floor plane anchored firmly to world space
+    const floorStart = Math.max(0, Math.floor(horizonY));
+    const floorGrad = ctx.createLinearGradient(0, floorStart, 0, this.height);
+    floorGrad.addColorStop(0, isHybrid ? "#162033" : "#1e293b");
+    floorGrad.addColorStop(0.35, isHybrid ? "#0f172a" : "#182334");
+    floorGrad.addColorStop(1, "#070b14");
     ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, halfH, this.width, halfH);
+    ctx.fillRect(0, floorStart, this.width, this.height - floorStart);
 
-    // 2. DDA Raycasting with Sliding Doors and Wall Textures
-    const colWidth = 2; // Crisp 2px columns
+    // Perspective depth lines on floor
+    ctx.save();
+    ctx.strokeStyle = isHybrid ? "rgba(56, 189, 248, 0.06)" : "rgba(148, 163, 184, 0.05)";
+    ctx.lineWidth = 1;
+    for (let fy = floorStart + 4; fy < this.height; fy += 14) {
+      ctx.beginPath();
+      ctx.moveTo(0, fy);
+      ctx.lineTo(this.width, fy);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. DDA + Vector Raycasting with Variable Heights, Sliding Doors and Dynamic Lighting
+    // Adaptive column resolution: maintains 160-220 crisp columns on all resolutions and devices
+    const colWidth = this.width >= 800 ? 4 : this.width >= 600 ? 3 : 2;
     const numCols = Math.ceil(this.width / colWidth);
-    const zBuffer = new Float32Array(numCols);
+
+    const workerTask: RaycastWorkerTask = {
+      colStart: 0,
+      colEnd: numCols,
+      numCols,
+      colWidth,
+      screenWidth: this.width,
+      screenHeight: this.height,
+      posX,
+      posY,
+      playerEyeZ,
+      dirX,
+      dirY,
+      planeX,
+      planeY,
+      horizonY,
+      isHybrid,
+      mapWidth: m.mapWidth,
+      mapHeight: m.mapHeight,
+      map: m.map,
+      sectors: m.sectors,
+      doors: m.doors,
+      vectorWalls: m.vectorWalls,
+    };
+
+    const workerResult = this.mode8Workers.executeSync(workerTask);
+    const zBuffer = workerResult.zBuffer;
+
+    // Pre-filter lights that can actually reach visible walls near player
+    const activeLights = (isHybrid && m.enableRaytracing !== false && m.lights && m.lights.length > 0)
+      ? m.lights.filter((l) => Math.hypot(l.x - posX, l.y - posY) <= (l.radius + 16))
+      : [];
+
+    let lastLightAlpha = 0;
+    let lastLightR = 0;
+    let lastLightG = 0;
+    let lastLightB = 0;
 
     for (let c = 0; c < numCols; c++) {
       const cameraX = (2 * c) / numCols - 1;
       const rayDirX = dirX + planeX * cameraX;
       const rayDirY = dirY + planeY * cameraX;
 
-      let mapX = Math.floor(posX);
-      let mapY = Math.floor(posY);
+      const perpWallDist = workerResult.zBuffer[c];
+      const wallType = workerResult.wallTypes[c];
+      const wallXFrac = workerResult.wallXFracs[c];
+      const drawStart = workerResult.drawStarts[c];
+      const drawEnd = workerResult.drawEnds[c];
+      const side = workerResult.sides[c];
 
-      const deltaDistX = Math.abs(1 / (rayDirX || 1e-6));
-      const deltaDistY = Math.abs(1 / (rayDirY || 1e-6));
+      const wallHitX = posX + perpWallDist * rayDirX;
+      const wallHitY = posY + perpWallDist * rayDirY;
+      const mapX = Math.floor(wallHitX);
+      const mapY = Math.floor(wallHitY);
 
-      let stepX = 0;
-      let stepY = 0;
-      let sideDistX = 0;
-      let sideDistY = 0;
-
-      if (rayDirX < 0) {
-        stepX = -1;
-        sideDistX = (posX - mapX) * deltaDistX;
-      } else {
-        stepX = 1;
-        sideDistX = (mapX + 1.0 - posX) * deltaDistX;
-      }
-      if (rayDirY < 0) {
-        stepY = -1;
-        sideDistY = (posY - mapY) * deltaDistY;
-      } else {
-        stepY = 1;
-        sideDistY = (mapY + 1.0 - posY) * deltaDistY;
-      }
-
-      let hit = 0;
-      let side = 0;
-      let wallType = 1;
-      let wallXFrac = 0;
-      let perpWallDist = 0;
-      let steps = 0;
-
-      while (hit === 0 && steps < 34) {
-        steps++;
-        if (sideDistX < sideDistY) {
-          sideDistX += deltaDistX;
-          mapX += stepX;
-          side = 0;
-        } else {
-          sideDistY += deltaDistY;
-          mapY += stepY;
-          side = 1;
+      if (isHybrid && m.sectors) {
+        const targetSec = m.sectors[mapY]?.[mapX];
+        const wallFloorZ = targetSec?.floorHeight ?? 0;
+        // Fluid trench floor rendering
+        if (targetSec?.fluidType && targetSec.fluidType !== "none" && drawEnd < this.height - 1) {
+          const fluidColors: Record<string, string> = {
+            lava: "rgba(239, 68, 68, 0.75)",
+            acid: "rgba(34, 197, 94, 0.75)",
+            water: "rgba(14, 165, 233, 0.75)",
+            blood: "rgba(185, 28, 28, 0.75)",
+          };
+          ctx.fillStyle = fluidColors[targetSec.fluidType] || "rgba(239, 68, 68, 0.75)";
+          ctx.fillRect(c * colWidth, drawEnd, colWidth, Math.min(18, this.height - drawEnd));
         }
 
-        // Out of bounds
-        if (mapX < 0 || mapX >= m.mapWidth || mapY < 0 || mapY >= m.mapHeight) {
-          hit = 1;
-          wallType = 1;
-          perpWallDist = side === 0
-            ? (mapX - posX + (1 - stepX) / 2) / (rayDirX || 1e-6)
-            : (mapY - posY + (1 - stepY) / 2) / (rayDirY || 1e-6);
-          break;
-        }
-
-        // Check if current tile is a sliding door
-        const door = this.getDoorAt(mapX, mapY);
-        if (door) {
-          // Mid-cell plane distance
-          const halfPlaneDist = side === 0
-            ? sideDistX - deltaDistX * 0.5
-            : sideDistY - deltaDistY * 0.5;
-
-          const hitCoord = side === 0
-            ? posY + halfPlaneDist * rayDirY
-            : posX + halfPlaneDist * rayDirX;
-
-          const cellFrac = hitCoord - Math.floor(hitCoord);
-
-          // Check if ray hits the door slab or passes through the open gap
-          if (cellFrac < (1.0 - door.openAmount)) {
-            hit = 1;
-            perpWallDist = halfPlaneDist;
-            wallXFrac = cellFrac + door.openAmount;
-            wallType = door.texture || 31;
-            break;
+        // If wall is raised above adjacent floor, draw lower step to eliminate flying gap
+        if (drawEnd < this.height - 1) {
+          const stepX = rayDirX < 0 ? -1 : 1;
+          const stepY = rayDirY < 0 ? -1 : 1;
+          const adjX = side === 0 ? mapX - stepX : mapX;
+          const adjY = side === 1 ? mapY - stepY : mapY;
+          const adjFloorZ = m.sectors[adjY]?.[adjX]?.floorHeight ?? playerFloorZ;
+          if (wallFloorZ > adjFloorZ) {
+            const stepBottomY = Math.min(
+              this.height - 1,
+              Math.floor(horizonY + ((playerEyeZ - adjFloorZ) * (this.height * 0.8)) / perpWallDist)
+            );
+            if (stepBottomY > drawEnd) {
+              ctx.fillStyle = "#1e293b";
+              ctx.fillRect(c * colWidth, drawEnd, colWidth, stepBottomY - drawEnd);
+            }
           }
-          // If through open gap, ray continues forward!
-        }
-
-        // Check for normal wall or switch wall
-        const cellVal = m.map[mapY][mapX];
-        if (cellVal > 0) {
-          hit = 1;
-          wallType = cellVal;
-          perpWallDist = side === 0
-            ? (mapX - posX + (1 - stepX) / 2) / (rayDirX || 1e-6)
-            : (mapY - posY + (1 - stepY) / 2) / (rayDirY || 1e-6);
-
-          if (side === 0) wallXFrac = posY + perpWallDist * rayDirY;
-          else wallXFrac = posX + perpWallDist * rayDirX;
-          wallXFrac -= Math.floor(wallXFrac);
-          break;
         }
       }
-
-      perpWallDist = Math.max(0.1, perpWallDist);
-      zBuffer[c] = perpWallDist;
-
-      const lineHeight = Math.floor((this.height / perpWallDist) * 1.05);
-      const drawStart = Math.max(0, Math.floor(-lineHeight / 2 + halfH));
-      const drawEnd = Math.min(this.height - 1, Math.floor(lineHeight / 2 + halfH));
 
       // Resolve texture graphic
       let textureId = 25; // default brick
@@ -1613,28 +2359,138 @@ export class DivRuntime {
           c * colWidth,
           drawStart,
           colWidth,
-          drawEnd - drawStart
+          Math.max(1, drawEnd - drawStart)
         );
 
-        // Doom-style lighting & distance falloff: Side 1 is 22% darker
-        const fogFactor = Math.min(0.92, perpWallDist / (m.fogDistance || 12));
-        const sideShade = side === 1 ? 0.22 : 0.0;
-        const totalDarkness = Math.min(0.95, (1 - lightLevel) * 0.5 + sideShade + fogFactor * 0.7);
+        // Ray-traced dynamic lighting with shadows in hybrid mode
+        // Smooth 2-column sampling for 2x faster lighting across walls
+        if (activeLights.length > 0) {
+          if (c % 2 === 0 || lastLightAlpha === 0) {
+            const hitWx = posX + perpWallDist * rayDirX;
+            const hitWy = posY + perpWallDist * rayDirY;
+            const hitWz = 0.5;
+            const colStepX = rayDirX < 0 ? -1 : 1;
+            const colStepY = rayDirY < 0 ? -1 : 1;
+            const normX = side === 0 ? -colStepX : 0;
+            const normY = side === 1 ? -colStepY : 0;
 
-        if (totalDarkness > 0.05) {
+            const pLight = calculatePointLighting(
+              hitWx,
+              hitWy,
+              hitWz,
+              normX,
+              normY,
+              0,
+              activeLights,
+              m.map,
+              m.mapWidth,
+              m.mapHeight,
+              m.lightLevel ?? 0.35,
+              m.fogColor || "#030712",
+              true
+            );
+
+            lastLightAlpha = Math.min(0.6, pLight.intensity * 0.5);
+            lastLightR = pLight.r;
+            lastLightG = pLight.g;
+            lastLightB = pLight.b;
+          }
+
+          if (lastLightAlpha > 0.06) {
+            ctx.fillStyle = `rgba(${lastLightR}, ${lastLightG}, ${lastLightB}, ${lastLightAlpha})`;
+            ctx.fillRect(c * colWidth, drawStart, colWidth, Math.max(1, drawEnd - drawStart));
+          }
+        }
+
+        // Distance fog and directional wall darkness
+        const fogFactor = Math.min(0.92, perpWallDist / (m.fogDistance || 12));
+        const sideShade = side === 1 ? 0.2 : 0.0;
+        const totalDarkness = Math.min(0.95, (1 - lightLevel) * 0.45 + sideShade + fogFactor * 0.65);
+
+        if (totalDarkness > 0.06) {
           ctx.fillStyle = `rgba(2, 6, 23, ${totalDarkness})`;
-          ctx.fillRect(c * colWidth, drawStart, colWidth, drawEnd - drawStart);
+          ctx.fillRect(c * colWidth, drawStart, colWidth, Math.max(1, drawEnd - drawStart));
         }
       } else {
         ctx.fillStyle = wallType === 2 ? "#15803d" : "#991b1b";
-        ctx.fillRect(c * colWidth, drawStart, colWidth, drawEnd - drawStart);
+        ctx.fillRect(c * colWidth, drawStart, colWidth, Math.max(1, drawEnd - drawStart));
       }
     }
 
-    // 3. 3D Sprites with Z-Buffer Occlusion (processes + map entities)
+    // 3. Particle-Based Fluid Simulation Rendering (Lava, Acid, Water, Blood)
+    if (isHybrid && m.enableFluids !== false && this.fluidParticles.particles.length > 0) {
+      for (const p of this.fluidParticles.particles) {
+        const proj = project3DPoint(p.x, p.y, p.z, camPose);
+        if (proj.visible && proj.screenX >= 0 && proj.screenX < this.width) {
+          const colIdx = Math.floor(proj.screenX / colWidth);
+          if (colIdx >= 0 && colIdx < numCols && proj.depth < zBuffer[colIdx]) {
+            const rad = Math.max(1.5, Math.min(10, (p.size * 22) / proj.depth));
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.alpha;
+            ctx.beginPath();
+            ctx.arc(proj.screenX, proj.screenY, rad, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+          }
+        }
+      }
+    }
+
+    // 4. Render 3D MD2 / MD3 Models with Z-Buffer Occlusion
+    if (isHybrid && m.enable3DModels !== false && m.placedModels && m.placedModels.length > 0) {
+      // Sort models far-to-near
+      const sortedModels = [...m.placedModels].sort((a, b) => {
+        const distA = Math.hypot(a.x - posX, a.y - posY);
+        const distB = Math.hypot(b.x - posX, b.y - posY);
+        return distB - distA;
+      });
+
+      for (const placed of sortedModels) {
+        const modelDef = BUILTIN_3D_MODELS[placed.modelId];
+        if (modelDef) {
+          render3DModel(
+            ctx,
+            modelDef,
+            placed,
+            camPose,
+            zBuffer,
+            colWidth,
+            m.lights,
+            m.fogColor || "#030712"
+          );
+        }
+      }
+    }
+
+    // 5. Render 3D Voxel Objects with Depth Occlusion
+    if (isHybrid && m.enableVoxels !== false && m.placedVoxels && m.placedVoxels.length > 0) {
+      const sortedVoxels = [...m.placedVoxels].sort((a, b) => {
+        const distA = Math.hypot(a.x - posX, a.y - posY);
+        const distB = Math.hypot(b.x - posX, b.y - posY);
+        return distB - distA;
+      });
+
+      for (const placed of sortedVoxels) {
+        const voxelDef = BUILTIN_VOXELS[placed.voxelId];
+        if (voxelDef) {
+          renderVoxelObject(
+            ctx,
+            voxelDef,
+            placed,
+            camPose,
+            zBuffer,
+            colWidth,
+            m.lights,
+            m.fogColor || "#030712"
+          );
+        }
+      }
+    }
+
+    // 6. 3D Billboard Sprites with Z-Buffer Occlusion (processes + map entities)
     const m8Sprites: { x: number; y: number; graph: number; size: number; dist: number }[] = [];
 
-    // Mode 8 dynamic processes (monsters, player, etc.)
+    // Dynamic processes
     for (const proc of this.processes.values()) {
       if (proc.isDead || proc.graph === 0 || proc.id === m.camera) continue;
       const gx = proc.x / 64;
@@ -1643,7 +2499,7 @@ export class DivRuntime {
       m8Sprites.push({ x: proc.x, y: proc.y, graph: proc.graph, size: proc.size || 100, dist });
     }
 
-    // Mode 8 placed level entities (keycards, medikits, ammo, torches, barrels)
+    // Level pickups and decorative entities
     if (m.entities) {
       for (const ent of m.entities) {
         const gx = ent.x / 64;
@@ -1653,7 +2509,6 @@ export class DivRuntime {
       }
     }
 
-    // Sort far-to-near (Painter's algorithm combined with Z-buffer)
     m8Sprites.sort((a, b) => b.dist - a.dist);
 
     for (const item of m8Sprites) {
@@ -1674,8 +2529,8 @@ export class DivRuntime {
       const isPickup = item.graph === 34 || item.graph === 35 || item.graph === 36;
       const bobY = isPickup ? Math.sin(this.frameCount * 0.12 + item.x) * (sprHeight * 0.08) : 0;
 
-      const drawStartY = Math.max(0, Math.floor(-sprHeight / 2 + halfH - bobY));
-      const drawEndY = Math.min(this.height - 1, Math.floor(sprHeight / 2 + halfH - bobY));
+      const drawStartY = Math.max(0, Math.floor(-sprHeight / 2 + horizonY - bobY));
+      const drawEndY = Math.min(this.height - 1, Math.floor(sprHeight / 2 + horizonY - bobY));
       const drawStartX = Math.max(0, Math.floor(-sprWidth / 2 + sprScreenX));
       const drawEndX = Math.min(this.width - 1, Math.floor(sprWidth / 2 + sprScreenX));
 
@@ -1696,84 +2551,435 @@ export class DivRuntime {
               stripe,
               drawStartY,
               colWidth,
-              drawEndY - drawStartY
+              Math.max(1, drawEndY - drawStartY)
             );
           }
         }
       }
     }
 
-    // 4. First-person Weapon HUD (ID 30: Plasma Blaster)
-    const weaponG = this.getGraphic(30);
-    if (weaponG && weaponG.canvas) {
-      const bobbing = Math.sin(this.frameCount * 0.15) * 4;
-      const wSize = 135;
-      const wx = this.width / 2 - wSize / 2;
-      const wy = this.height - wSize + 10 + bobbing;
-      ctx.drawImage(weaponG.canvas, wx, wy, wSize, wSize);
+    // 7. First-person 3D MD2 / MD3 weapon or 2D weapon HUD
+    if (m.weaponModel) {
+      renderFirstPersonWeapon3D(
+        ctx,
+        m.weaponModel,
+        m.weaponAttackTime || 0,
+        m.walkCycle || 0,
+        this.width,
+        this.height
+      );
+    } else {
+      const weaponG = this.getGraphic(30);
+      if (weaponG && weaponG.canvas) {
+        const bobbing = Math.sin(this.frameCount * 0.15) * 4;
+        const wSize = 135;
+        const wx = this.width / 2 - wSize / 2;
+        const wy = this.height - wSize + 10 + bobbing;
+        ctx.drawImage(weaponG.canvas, wx, wy, wSize, wSize);
+      }
     }
 
-    // 5. Dungeon Mini-Radar with Doors and Triggers
-    const radarSize = 104;
-    const tileW = radarSize / m.mapWidth;
-    const tileH = radarSize / m.mapHeight;
-    const rx = this.width - radarSize - 16;
-    const ry = 16;
+    // 8. Hexen / GZDoom Tactical Mini-Radar (Automap)
+    // In DIV Games Studio 2 Mode 8, the automap/radar is NOT displayed during gameplay unless requested or toggled with Tab.
+    if (m.showAutomap) {
+      const radarSize = 108;
+      const tileW = radarSize / m.mapWidth;
+      const tileH = radarSize / m.mapHeight;
+      const rx = this.width - radarSize - 16;
+      const ry = 16;
 
-    ctx.fillStyle = "rgba(10, 15, 29, 0.88)";
-    ctx.fillRect(rx, ry, radarSize, radarSize);
-    ctx.strokeStyle = "#0284c7";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(rx, ry, radarSize, radarSize);
+      ctx.fillStyle = "rgba(10, 15, 29, 0.88)";
+      ctx.fillRect(rx, ry, radarSize, radarSize);
+      ctx.strokeStyle = isHybrid ? "#38bdf8" : "#0284c7";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rx, ry, radarSize, radarSize);
 
-    // Map walls
-    for (let my = 0; my < m.mapHeight; my++) {
-      for (let mx = 0; mx < m.mapWidth; mx++) {
-        if (m.map[my][mx] > 0) {
-          ctx.fillStyle = m.map[my][mx] === 2 ? "#16a34a" : "#dc2626";
-          ctx.fillRect(rx + mx * tileW, ry + my * tileH, tileW, tileH);
+      // Fluid tiles on radar
+      if (isHybrid && m.sectors) {
+        for (let my = 0; my < m.mapHeight; my++) {
+          for (let mx = 0; mx < m.mapWidth; mx++) {
+            const sec = m.sectors[my]?.[mx];
+            if (sec && sec.fluidType !== "none") {
+              const fluidColor = sec.fluidType === "lava" ? "#b91c1c" : sec.fluidType === "acid" ? "#15803d" : "#0284c7";
+              ctx.fillStyle = fluidColor;
+              ctx.fillRect(rx + mx * tileW, ry + my * tileH, tileW, tileH);
+            }
+          }
         }
       }
-    }
 
-    // Doors on radar
-    if (m.doors) {
-      for (const d of m.doors) {
-        ctx.fillStyle = d.openAmount > 0.5 ? "#22c55e" : "#06b6d4";
-        ctx.fillRect(rx + d.x * tileW + 1, ry + d.y * tileH + 1, tileW - 2, tileH - 2);
+      // Map walls
+      for (let my = 0; my < m.mapHeight; my++) {
+        for (let mx = 0; mx < m.mapWidth; mx++) {
+          if (m.map[my][mx] > 0) {
+            ctx.fillStyle = m.map[my][mx] === 2 ? "#16a34a" : "#dc2626";
+            ctx.fillRect(rx + mx * tileW, ry + my * tileH, tileW, tileH);
+          }
+        }
+      }
+
+      // Dynamic lights on radar
+      if (m.lights) {
+        for (const lt of m.lights) {
+          ctx.fillStyle = `rgb(${lt.r}, ${lt.g}, ${lt.b})`;
+          ctx.beginPath();
+          ctx.arc(rx + lt.x * tileW, ry + lt.y * tileH, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 3D Models on radar (cyan diamond)
+      if (m.placedModels) {
+        for (const mod of m.placedModels) {
+          ctx.fillStyle = "#22d3ee";
+          ctx.fillRect(rx + mod.x * tileW - 1.5, ry + mod.y * tileH - 1.5, 3, 3);
+        }
+      }
+
+      // 3D Voxels on radar (purple diamond)
+      if (m.placedVoxels) {
+        for (const vox of m.placedVoxels) {
+          ctx.fillStyle = "#c084fc";
+          ctx.fillRect(rx + vox.x * tileW - 1.5, ry + vox.y * tileH - 1.5, 3, 3);
+        }
+      }
+
+      // Doors on radar
+      if (m.doors) {
+        for (const d of m.doors) {
+          ctx.fillStyle = d.openAmount > 0.5 ? "#22c55e" : "#06b6d4";
+          ctx.fillRect(rx + d.x * tileW + 1, ry + d.y * tileH + 1, tileW - 2, tileH - 2);
+        }
+      }
+
+      // Triggers / Sensors on radar
+      if (m.triggers) {
+        for (const tr of m.triggers) {
+          ctx.fillStyle = tr.activated ? "#eab308" : "#8b5cf6";
+          ctx.fillRect(rx + tr.x * tileW + 2, ry + tr.y * tileH + 2, tileW - 4, tileH - 4);
+        }
+      }
+
+      // Entities & pickups on radar
+      if (m.entities) {
+        for (const ent of m.entities) {
+          const emx = (ent.x / 64) * tileW;
+          const emy = (ent.y / 64) * tileH;
+          ctx.fillStyle = ent.type === "key" ? "#facc15" : ent.type === "medikit" ? "#ef4444" : "#3b82f6";
+          ctx.fillRect(rx + emx - 1, ry + emy - 1, 2.5, 2.5);
+        }
+      }
+
+      // Player position and vision cone
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.arc(rx + posX * tileW, ry + posY * tileH, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(rx + posX * tileW, ry + posY * tileH);
+      ctx.lineTo(rx + (posX + dirX * 2.2) * tileW, ry + (posY + dirY * 2.2) * tileH);
+      ctx.stroke();
+
+      // Mode badge on radar
+      ctx.fillStyle = isHybrid ? "#38bdf8" : "#94a3b8";
+      ctx.font = "8px monospace";
+      ctx.fillText(isHybrid ? "HEXEN/GZ HYBRID" : "CLASSIC 2D", rx + 4, ry + radarSize - 4);
+    }
+  }
+
+  /**
+   * Toggles the automap / radar visibility in Mode 8 (called on TAB or programmatically)
+   */
+  public toggleMode8Automap(visible?: boolean) {
+    if (this.m8[0]) {
+      this.m8[0].showAutomap = visible !== undefined ? visible : !this.m8[0].showAutomap;
+    }
+  }
+
+  /**
+   * Switches Mode 8 between 'classic' 2D raycasting and 'hybrid' 3D engine mode
+   */
+  public m8_mode(mode: DivMode8EngineMode) {
+    if (this.m8[0]) {
+      this.m8[0].engineMode = mode;
+    }
+  }
+
+  /**
+   * Starts Mode 8 in advanced Hybrid 3D mode
+   */
+  public start_mode8_hybrid(file: number, mapWalls: number, mapFloor: number, mapCeil: number) {
+    this.start_mode8(file, mapWalls, mapFloor, mapCeil);
+    if (this.m8[0]) {
+      this.m8[0].engineMode = "hybrid";
+      this.m8[0].enableRaytracing = true;
+      this.m8[0].enableFluids = true;
+      this.m8[0].enable3DModels = true;
+      this.m8[0].enableVoxels = true;
+    }
+  }
+
+  /**
+   * Starts Mode 8 in DOOM 2 True Polygon Sector & Portal mode
+   */
+  public start_mode8_doom2(file: number = 0) {
+    this.start_mode8(file, 25, 44, 45);
+    if (this.m8[0]) {
+      this.m8[0].engineMode = "doom2";
+      this.m8[0].enable3DModels = true;
+      this.m8[0].enableRaytracing = false; // Doom 2 uses sector lightmaps & portal depth
+      if (!this.m8[0].doomLinedefs) this.m8[0].doomLinedefs = [];
+      if (!this.m8[0].doomSectors) this.m8[0].doomSectors = [];
+    }
+  }
+
+  /**
+   * Sets the Doom 2 polygonal linedef and sector geometry
+   */
+  public m8_set_doom_map(linedefs: DivDoomLinedef[], sectors: DivDoomSector[]) {
+    if (!this.m8[0]) this.initMode8();
+    if (this.m8[0]) {
+      this.m8[0].engineMode = "doom2";
+      this.m8[0].doomLinedefs = linedefs;
+      this.m8[0].doomSectors = sectors;
+    }
+  }
+
+  /**
+   * Adds a complete staircase with progressive sector floor heights and STEP textures
+   */
+  public m8_add_doom_staircase(
+    startX: number,
+    startY: number,
+    dirX: number,
+    dirY: number,
+    stepCount: number = 5,
+    stepWidth: number = 2.0,
+    stepLength: number = 0.5,
+    baseFloorHeight: number = 0,
+    stepHeightDelta: number = 0.25,
+    stairTexture: string = "STEP1"
+  ) {
+    const res = generateDoomStaircase(
+      startX,
+      startY,
+      dirX,
+      dirY,
+      stepCount,
+      stepWidth,
+      stepLength,
+      baseFloorHeight,
+      stepHeightDelta,
+      1.6,
+      stairTexture
+    );
+
+    if (!this.m8[0]) this.initMode8();
+    const m = this.m8[0];
+    if (m) {
+      if (!m.doomLinedefs) m.doomLinedefs = [];
+      if (!m.doomSectors) m.doomSectors = [];
+      m.doomLinedefs.push(...res.linedefs);
+      m.doomSectors.push(...res.sectors);
+    }
+  }
+
+  /**
+   * Configures sector floor and ceiling height (Hexen style depth & vaults)
+   */
+  public m8_set_height(x: number, y: number, floorHeight: number, ceilHeight: number) {
+    const m = this.m8[0];
+    if (m && m.sectors && m.sectors[y] && m.sectors[y][x]) {
+      m.sectors[y][x].floorHeight = floorHeight;
+      m.sectors[y][x].ceilHeight = ceilHeight;
+    }
+  }
+
+  /**
+   * Full sector configuration
+   */
+  public m8_set_sector(
+    x: number,
+    y: number,
+    floorHeight: number,
+    ceilHeight: number,
+    floorTex?: number,
+    ceilTex?: number,
+    lightLevel?: number,
+    fluidType?: DivFluidType
+  ) {
+    const m = this.m8[0];
+    if (m && m.sectors && m.sectors[y] && m.sectors[y][x]) {
+      const sec = m.sectors[y][x];
+      sec.floorHeight = floorHeight;
+      sec.ceilHeight = ceilHeight;
+      if (floorTex !== undefined) sec.floorTex = floorTex;
+      if (ceilTex !== undefined) sec.ceilTex = ceilTex;
+      if (lightLevel !== undefined) sec.lightLevel = lightLevel;
+      if (fluidType !== undefined) sec.fluidType = fluidType;
+    }
+  }
+
+  /**
+   * Adds a dynamic point light with optional ray-traced shadows and flicker
+   */
+  public m8_add_light(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    flicker: boolean = false,
+    castShadows: boolean = true
+  ): string {
+    const m = this.m8[0];
+    if (!m) return "";
+    if (!m.lights) m.lights = [];
+    const id = "l_" + Math.random().toString(36).substr(2, 6);
+    m.lights.push({ id, x, y, z, radius, r, g, b, intensity: 1.0, flicker, castShadows });
+    return id;
+  }
+
+  /**
+   * Adds a placed 3D MD2/MD3 model into the Mode 8 world
+   */
+  public m8_add_model(
+    modelId: string,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number = 0,
+    currentAnimation: string = "idle",
+    scale: number = 1.0
+  ): string {
+    const m = this.m8[0];
+    if (!m) return "";
+    if (!m.placedModels) m.placedModels = [];
+    const id = "mod_" + Math.random().toString(36).substr(2, 6);
+    m.placedModels.push({
+      id,
+      modelId,
+      x,
+      y,
+      z,
+      yaw,
+      pitch: 0,
+      roll: 0,
+      scale,
+      currentAnimation,
+      animFrame: 0,
+      animationSpeed: 0.1,
+    });
+    return id;
+  }
+
+  /**
+   * Adds a placed 3D Voxel object into the Mode 8 world
+   */
+  public m8_add_voxel(
+    voxelId: string,
+    x: number,
+    y: number,
+    z: number,
+    scale: number = 1.0,
+    rotSpeed: number = 2.0
+  ): string {
+    const m = this.m8[0];
+    if (!m) return "";
+    if (!m.placedVoxels) m.placedVoxels = [];
+    const id = "vox_" + Math.random().toString(36).substr(2, 6);
+    m.placedVoxels.push({
+      id,
+      voxelId,
+      x,
+      y,
+      z,
+      yaw: 0,
+      scale,
+      rotSpeed,
+    });
+    return id;
+  }
+
+  /**
+   * Configures Web Worker multi-threading pool for Mode 8 raycasting
+   */
+  public m8_workers(count: number = 4) {
+    if (this.mode8Workers) {
+      this.mode8Workers.setWorkerCount(count);
+    }
+    if (this.m8[0]) {
+      this.m8[0].useWorkers = true;
+      this.m8[0].workerCount = count;
+    }
+  }
+
+  /**
+   * Equips a 3D first-person MD2 weapon (e.g. "sword3d", "staff3d")
+   */
+  public m8_set_weapon(weaponModel: string = "sword3d") {
+    if (this.m8[0]) {
+      this.m8[0].weaponModel = weaponModel;
+      this.m8[0].weaponAttackTime = 0;
+      this.m8[0].walkCycle = 0;
+    }
+  }
+
+  /**
+   * Triggers an attack swing with the equipped first-person weapon
+   */
+  public m8_attack() {
+    const m = this.m8[0];
+    if (!m) return;
+    if (!m.weaponAttackTime || m.weaponAttackTime === 0) {
+      m.weaponAttackTime = 0.01;
+      if (m.weaponModel?.includes("shotgun")) {
+        soundEngine.playExplosion(0.75, 1.5);
+      } else if (m.weaponModel?.includes("pistol")) {
+        soundEngine.playLaser(0.6, 1.1);
+      } else {
+        soundEngine.playSound(1);
       }
     }
+  }
 
-    // Triggers / Sensors on radar
-    if (m.triggers) {
-      for (const tr of m.triggers) {
-        ctx.fillStyle = tr.activated ? "#eab308" : "#8b5cf6";
-        ctx.fillRect(rx + tr.x * tileW + 2, ry + tr.y * tileH + 2, tileW - 4, tileH - 4);
-      }
+  /**
+   * Sets fluid trench type for a sector
+   */
+  public m8_set_fluid(x: number, y: number, fluidType: DivFluidType) {
+    const m = this.m8[0];
+    if (m && m.sectors && m.sectors[y] && m.sectors[y][x]) {
+      m.sectors[y][x].fluidType = fluidType;
     }
+  }
 
-    // Entities & pickups on radar
-    if (m.entities) {
-      for (const ent of m.entities) {
-        const emx = (ent.x / 64) * tileW;
-        const emy = (ent.y / 64) * tileH;
-        ctx.fillStyle = ent.type === "key" ? "#facc15" : ent.type === "medikit" ? "#ef4444" : "#3b82f6";
-        ctx.fillRect(rx + emx - 1, ry + emy - 1, 2.5, 2.5);
-      }
+  /**
+   * Configures ray tracing options
+   */
+  public m8_raytracing(enabled: boolean) {
+    const m = this.m8[0];
+    if (m) {
+      m.enableRaytracing = enabled;
     }
+  }
 
-    // Player position and vision cone
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(rx + posX * tileW, ry + posY * tileH, 3.5, 0, Math.PI * 2);
-    ctx.fill();
+  /**
+   * Loads MD2 3D model asset identifier
+   */
+  public load_md2(modelName: string): string {
+    return modelName;
+  }
 
-    ctx.strokeStyle = "#facc15";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(rx + posX * tileW, ry + posY * tileH);
-    ctx.lineTo(rx + (posX + dirX * 2.2) * tileW, ry + (posY + dirY * 2.2) * tileH);
-    ctx.stroke();
+  /**
+   * Loads MD3 3D model asset identifier
+   */
+  public load_md3(modelName: string): string {
+    return modelName;
   }
 
   /**

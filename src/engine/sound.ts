@@ -5,17 +5,35 @@ import { DivSoundEffect } from "../types";
  * Emulates PC Speaker / AdLib / Sound Blaster retro synth
  */
 
+interface ActiveChannel {
+  id: number;
+  soundId: number;
+  gainNode: GainNode;
+  oscillator?: OscillatorNode;
+  sourceNode?: AudioBufferSourceNode;
+  baseFrequency: number;
+  startTime: number;
+  duration: number;
+}
+
 class SoundEngine {
   private ctx: AudioContext | null = null;
-  private soundCache: Map<number, (volume?: number, pitch?: number) => void> = new Map();
+  private masterGain: GainNode | null = null;
+  private soundCache: Map<number, (vol?: number, pitch?: number, channelId?: number) => ActiveChannel | void> = new Map();
   private customSounds: Map<number, DivSoundEffect> = new Map();
+  private activeChannels: Map<number, ActiveChannel> = new Map();
+  private nextChannelId: number = 1;
   public isMuted: boolean = false;
+  private masterVolume: number = 1.0;
 
   private initCtx() {
     if (!this.ctx && typeof window !== "undefined") {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
       }
     }
     if (this.ctx && this.ctx.state === "suspended") {
@@ -27,41 +45,48 @@ class SoundEngine {
     this.registerDefaults();
   }
 
+  public setMasterVolume(vol: number) {
+    this.masterVolume = Math.max(0, Math.min(1, vol / 100));
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+    }
+  }
+
   private registerDefaults() {
     // 1 = Laser / Shoot
-    this.soundCache.set(1, (vol = 1, pitch = 1) => this.playLaser(vol, pitch));
+    this.soundCache.set(1, (vol = 1, pitch = 1, ch = 0) => this.playLaser(vol, pitch, ch));
     // 2 = Explosion
-    this.soundCache.set(2, (vol = 1, pitch = 1) => this.playExplosion(vol, pitch));
+    this.soundCache.set(2, (vol = 1, pitch = 1, ch = 0) => this.playExplosion(vol, pitch, ch));
     // 3 = Hit / Hurt
-    this.soundCache.set(3, (vol = 1, pitch = 1) => this.playHit(vol, pitch));
+    this.soundCache.set(3, (vol = 1, pitch = 1, ch = 0) => this.playHit(vol, pitch, ch));
     // 4 = Coin / Pickup
-    this.soundCache.set(4, (vol = 1, pitch = 1) => this.playCoin(vol, pitch));
+    this.soundCache.set(4, (vol = 1, pitch = 1, ch = 0) => this.playCoin(vol, pitch, ch));
     // 5 = Jump
-    this.soundCache.set(5, (vol = 1, pitch = 1) => this.playJump(vol, pitch));
+    this.soundCache.set(5, (vol = 1, pitch = 1, ch = 0) => this.playJump(vol, pitch, ch));
     // 6 = Powerup
-    this.soundCache.set(6, (vol = 1, pitch = 1) => this.playPowerup(vol, pitch));
+    this.soundCache.set(6, (vol = 1, pitch = 1, ch = 0) => this.playPowerup(vol, pitch, ch));
     // 7 = Beep / Blip
-    this.soundCache.set(7, (vol = 1, pitch = 1) => this.playBlip(vol, pitch));
+    this.soundCache.set(7, (vol = 1, pitch = 1, ch = 0) => this.playBlip(vol, pitch, ch));
     // 8 = 3D Door Slide (Doom/Wolfenstein style)
-    this.soundCache.set(8, (vol = 1, pitch = 1) => this.playDoor(vol, pitch));
+    this.soundCache.set(8, (vol = 1, pitch = 1, ch = 0) => this.playDoor(vol, pitch, ch));
     // 9 = Switch Click / Device Activate
-    this.soundCache.set(9, (vol = 1, pitch = 1) => this.playSwitch(vol, pitch));
+    this.soundCache.set(9, (vol = 1, pitch = 1, ch = 0) => this.playSwitch(vol, pitch, ch));
     // 10 = Ammo Pickup
-    this.soundCache.set(10, (vol = 1, pitch = 1) => this.playAmmo(vol, pitch));
+    this.soundCache.set(10, (vol = 1, pitch = 1, ch = 0) => this.playAmmo(vol, pitch, ch));
     // 11 = Medikit / Health
-    this.soundCache.set(11, (vol = 1, pitch = 1) => this.playMedikit(vol, pitch));
+    this.soundCache.set(11, (vol = 1, pitch = 1, ch = 0) => this.playMedikit(vol, pitch, ch));
     // 12 = Keycard Access
-    this.soundCache.set(12, (vol = 1, pitch = 1) => this.playKey(vol, pitch));
+    this.soundCache.set(12, (vol = 1, pitch = 1, ch = 0) => this.playKey(vol, pitch, ch));
   }
 
   public registerCustomSound(sound: DivSoundEffect) {
     this.customSounds.set(sound.id, sound);
-    this.soundCache.set(sound.id, (vol = 1, pitch = 1) => {
-      this.playCustomSound({
+    this.soundCache.set(sound.id, (vol = 1, pitch = 1, ch = 0) => {
+      return this.playCustomSound({
         ...sound,
         volume: sound.volume * vol,
         frequency: sound.frequency * pitch,
-      });
+      }, ch);
     });
   }
 
@@ -69,24 +94,112 @@ class SoundEngine {
     return Array.from(this.customSounds.values());
   }
 
-  public playSound(id: number, volume: number = 100, frequency: number = 256) {
-    if (this.isMuted) return;
+  /**
+   * Plays sound and returns unique positive channel ID (DIV Games Studio sound() return value)
+   */
+  public playSound(id: number, volume: number = 100, frequency: number = 256): number {
+    if (this.isMuted) return 0;
     this.initCtx();
-    if (!this.ctx) return;
+    if (!this.ctx) return 0;
 
+    const channelId = this.nextChannelId++;
     const normalizedVol = Math.max(0, Math.min(1, volume / 100));
     const normalizedPitch = Math.max(0.2, Math.min(4, frequency / 256));
 
     const synth = this.soundCache.get(id);
+    let channel: ActiveChannel | void;
     if (synth) {
-      synth(normalizedVol, normalizedPitch);
+      channel = synth(normalizedVol, normalizedPitch, channelId);
     } else {
-      // Generic tone for unknown sound id
-      this.playTone(440 * normalizedPitch, 0.1, "square", normalizedVol);
+      channel = this.playTone(440 * normalizedPitch, 0.12, "square", normalizedVol, channelId);
+    }
+
+    if (channel) {
+      this.activeChannels.set(channelId, channel);
+      setTimeout(() => {
+        this.activeChannels.delete(channelId);
+      }, (channel.duration + 0.1) * 1000);
+    }
+
+    return channelId;
+  }
+
+  /**
+   * Stops a specific sound channel or all channels (DIV stop_sound)
+   */
+  public stopSound(channelId?: number) {
+    this.initCtx();
+    if (!this.ctx) return;
+
+    if (channelId && channelId > 0) {
+      const ch = this.activeChannels.get(channelId);
+      if (ch) {
+        try {
+          ch.gainNode.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+          if (ch.oscillator) ch.oscillator.stop(this.ctx.currentTime + 0.01);
+          if (ch.sourceNode) ch.sourceNode.stop(this.ctx.currentTime + 0.01);
+        } catch (e) {}
+        this.activeChannels.delete(channelId);
+      }
+    } else {
+      // Stop all sounds
+      this.activeChannels.forEach((ch) => {
+        try {
+          ch.gainNode.gain.setValueAtTime(0.0001, this.ctx!.currentTime);
+          if (ch.oscillator) ch.oscillator.stop(this.ctx!.currentTime + 0.01);
+          if (ch.sourceNode) ch.sourceNode.stop(this.ctx!.currentTime + 0.01);
+        } catch (e) {}
+      });
+      this.activeChannels.clear();
     }
   }
 
-  public playLaser(vol: number = 0.5, pitch: number = 1) {
+  /**
+   * Modifies volume and frequency of an active sound channel in real time (DIV change_sound)
+   */
+  public changeSound(channelId: number, volume: number, frequency?: number) {
+    if (!channelId || channelId <= 0) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const ch = this.activeChannels.get(channelId);
+    if (!ch) return;
+
+    const t = this.ctx.currentTime;
+    const normalizedVol = Math.max(0, Math.min(1, volume / 100));
+    ch.gainNode.gain.setValueAtTime(normalizedVol, t);
+
+    if (frequency !== undefined && ch.oscillator) {
+      const normalizedPitch = Math.max(0.2, Math.min(4, frequency / 256));
+      ch.oscillator.frequency.setValueAtTime(ch.baseFrequency * normalizedPitch, t);
+    }
+  }
+
+  /**
+   * Checks if a sound channel is currently playing (DIV is_playing_sound)
+   */
+  public isPlayingSound(channelId: number): boolean {
+    return this.activeChannels.has(channelId);
+  }
+
+  /**
+   * Fades sound channel volume gradually (DIV fade_sound)
+   */
+  public fadeSound(channelId: number, targetVolume: number, speed: number = 10) {
+    if (!channelId || channelId <= 0) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const ch = this.activeChannels.get(channelId);
+    if (!ch) return;
+
+    const t = this.ctx.currentTime;
+    const duration = Math.max(0.05, 1.0 / Math.max(1, speed));
+    const normalizedVol = Math.max(0, Math.min(1, targetVolume / 100));
+    ch.gainNode.gain.linearRampToValueAtTime(normalizedVol, t + duration);
+  }
+
+  public playLaser(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -101,12 +214,22 @@ class SoundEngine {
     gain.gain.linearRampToValueAtTime(0.01, t + 0.15);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + 0.15);
+
+    return {
+      id: channelId,
+      soundId: 1,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: 880,
+      startTime: t,
+      duration: 0.15,
+    };
   }
 
-  public playExplosion(vol: number = 0.6, pitch: number = 1) {
+  public playExplosion(vol: number = 0.6, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const bufferSize = this.ctx.sampleRate * 0.35;
@@ -130,12 +253,22 @@ class SoundEngine {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
 
     noise.start();
+
+    return {
+      id: channelId,
+      soundId: 2,
+      gainNode: gain,
+      sourceNode: noise,
+      baseFrequency: 800,
+      startTime: this.ctx.currentTime,
+      duration: 0.35,
+    };
   }
 
-  public playHit(vol: number = 0.5, pitch: number = 1) {
+  public playHit(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -150,12 +283,22 @@ class SoundEngine {
     gain.gain.linearRampToValueAtTime(0.01, t + 0.1);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + 0.1);
+
+    return {
+      id: channelId,
+      soundId: 3,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: 240,
+      startTime: t,
+      duration: 0.1,
+    };
   }
 
-  public playCoin(vol: number = 0.5, pitch: number = 1) {
+  public playCoin(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -170,12 +313,22 @@ class SoundEngine {
     gain.gain.linearRampToValueAtTime(0.01, t + 0.3);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + 0.3);
+
+    return {
+      id: channelId,
+      soundId: 4,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: 987,
+      startTime: t,
+      duration: 0.3,
+    };
   }
 
-  public playJump(vol: number = 0.4, pitch: number = 1) {
+  public playJump(vol: number = 0.4, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -190,123 +343,80 @@ class SoundEngine {
     gain.gain.linearRampToValueAtTime(0.01, t + 0.15);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + 0.15);
+
+    return {
+      id: channelId,
+      soundId: 5,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: 150,
+      startTime: t,
+      duration: 0.15,
+    };
   }
 
-  public playPowerup(vol: number = 0.5, pitch: number = 1) {
-    this.initCtx();
-    if (!this.ctx) return;
-    const notes = [330, 392, 659, 523, 587, 784];
-    notes.forEach((freq, idx) => {
-      setTimeout(() => {
-        this.playTone(freq * pitch, 0.08, "square", vol * 0.2);
-      }, idx * 60);
-    });
+  public playPowerup(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(659 * pitch, 0.25, "square", vol * 0.3, channelId);
   }
 
-  public playBlip(vol: number = 0.3, pitch: number = 1) {
-    this.playTone(600 * pitch, 0.05, "sine", vol * 0.3);
+  public playBlip(vol: number = 0.3, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(600 * pitch, 0.05, "sine", vol * 0.3, channelId);
   }
 
   // 3D Engine specific sounds
-  public playDoor(vol: number = 0.6, pitch: number = 1) {
+  public playDoor(vol: number = 0.6, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-
-    // Heavy servo motor rumble + sliding noise
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
 
     osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(95 * pitch, t);
-    osc.frequency.linearRampToValueAtTime(160 * pitch, t + 0.45);
-
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(450, t);
-
-    gain.gain.setValueAtTime(0.4 * vol, t);
-    gain.gain.setValueAtTime(0.4 * vol, t + 0.35);
-    gain.gain.linearRampToValueAtTime(0.01, t + 0.5);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(t);
-    osc.stop(t + 0.5);
-  }
-
-  public playSwitch(vol: number = 0.5, pitch: number = 1) {
-    this.initCtx();
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-
-    // Sharp mechanical relay click
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = "square";
-    osc.frequency.setValueAtTime(750 * pitch, t);
-    osc.frequency.exponentialRampToValueAtTime(180 * pitch, t + 0.06);
-
-    gain.gain.setValueAtTime(0.4 * vol, t);
-    gain.gain.linearRampToValueAtTime(0.01, t + 0.06);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(t);
-    osc.stop(t + 0.06);
-  }
-
-  public playAmmo(vol: number = 0.4, pitch: number = 1) {
-    this.initCtx();
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-
-    // Metallic reload clack
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(400 * pitch, t);
-    osc.frequency.setValueAtTime(800 * pitch, t + 0.04);
+    osc.frequency.setValueAtTime(120 * pitch, t);
+    osc.frequency.linearRampToValueAtTime(80 * pitch, t + 0.5);
 
     gain.gain.setValueAtTime(0.3 * vol, t);
-    gain.gain.linearRampToValueAtTime(0.01, t + 0.12);
+    gain.gain.linearRampToValueAtTime(0.01, t + 0.5);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
-    osc.stop(t + 0.12);
+    osc.stop(t + 0.5);
+
+    return {
+      id: channelId,
+      soundId: 8,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: 120,
+      startTime: t,
+      duration: 0.5,
+    };
   }
 
-  public playMedikit(vol: number = 0.5, pitch: number = 1) {
-    this.initCtx();
-    if (!this.ctx) return;
-    const notes = [523, 659, 784, 1046]; // C5, E5, G5, C6
-    notes.forEach((freq, idx) => {
-      setTimeout(() => {
-        this.playTone(freq * pitch, 0.07, "sine", vol * 0.25);
-      }, idx * 45);
-    });
+  public playSwitch(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(750 * pitch, 0.06, "square", vol * 0.4, channelId);
   }
 
-  public playKey(vol: number = 0.4, pitch: number = 1) {
-    this.playTone(1200 * pitch, 0.08, "square", vol * 0.2);
-    setTimeout(() => {
-      this.playTone(1600 * pitch, 0.1, "square", vol * 0.25);
-    }, 90);
+  public playAmmo(vol: number = 0.4, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(600 * pitch, 0.12, "triangle", vol * 0.3, channelId);
+  }
+
+  public playMedikit(vol: number = 0.5, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(659 * pitch, 0.25, "sine", vol * 0.35, channelId);
+  }
+
+  public playKey(vol: number = 0.4, pitch: number = 1, channelId: number = 0): ActiveChannel | void {
+    return this.playTone(1200 * pitch, 0.15, "square", vol * 0.3, channelId);
   }
 
   /**
    * Plays a custom configured retro sound with ADSR envelope, pitch slide and filter
    */
-  public playCustomSound(params: DivSoundEffect) {
+  public playCustomSound(params: DivSoundEffect, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx || this.isMuted) return;
 
@@ -340,9 +450,17 @@ class SoundEngine {
         noise.connect(gain);
       }
 
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain || this.ctx.destination);
       noise.start(t);
-      return;
+      return {
+        id: channelId,
+        soundId: params.id,
+        gainNode: gain,
+        sourceNode: noise,
+        baseFrequency: 440,
+        startTime: t,
+        duration: totalDuration,
+      };
     }
 
     const osc = this.ctx.createOscillator();
@@ -384,9 +502,19 @@ class SoundEngine {
       osc.connect(gain);
     }
 
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + totalDuration);
+
+    return {
+      id: channelId,
+      soundId: params.id,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: params.frequency,
+      startTime: t,
+      duration: totalDuration,
+    };
   }
 
   /**
@@ -471,7 +599,7 @@ class SoundEngine {
     return new Blob([wavHeader, buffer], { type: "audio/wav" });
   }
 
-  private playTone(freq: number, duration: number, type: OscillatorType = "sine", vol: number = 0.3) {
+  private playTone(freq: number, duration: number, type: OscillatorType = "sine", vol: number = 0.3, channelId: number = 0): ActiveChannel | void {
     this.initCtx();
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -485,9 +613,19 @@ class SoundEngine {
     gain.gain.linearRampToValueAtTime(0.001, t + duration);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.masterGain || this.ctx.destination);
     osc.start(t);
     osc.stop(t + duration);
+
+    return {
+      id: channelId,
+      soundId: 0,
+      gainNode: gain,
+      oscillator: osc,
+      baseFrequency: freq,
+      startTime: t,
+      duration,
+    };
   }
 }
 

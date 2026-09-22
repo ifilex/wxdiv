@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Cpu,
   Tv,
+  Palette,
 } from "lucide-react";
 import { WindowConfig, WindowId, LayoutPresetType } from "./types";
 
@@ -23,6 +24,10 @@ interface DesktopTaskbarProps {
   onApplyLayoutPreset: (preset: LayoutPresetType) => void;
   onMinimizeAll: () => void;
   onRestoreAll: () => void;
+  onResetWindows?: () => void;
+  isWxDivOpen?: boolean;
+  onToggleWxDiv?: () => void;
+  onOpenThemeConfig?: () => void;
   windowIcons: Record<WindowId, React.ReactNode>;
   activeProcessCount: number;
   resolution: string;
@@ -37,6 +42,10 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   onApplyLayoutPreset,
   onMinimizeAll,
   onRestoreAll,
+  onResetWindows,
+  isWxDivOpen = false,
+  onToggleWxDiv,
+  onOpenThemeConfig,
   windowIcons,
   activeProcessCount,
   resolution,
@@ -96,8 +105,8 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
       ids: ["code", "game", "visual"] as WindowId[],
     },
     {
-      label: "Gráficos, FPG, MAP y Fuentes",
-      ids: ["fpg", "map", "sprites", "fonts", "mode8", "explosions"] as WindowId[],
+      label: "Gráficos, FPG, MAP, Paletas y Fuentes",
+      ids: ["fpg", "map", "sprites", "palette", "fonts", "mode8", "md2viewer", "spritegenerator", "explosions"] as WindowId[],
     },
     {
       label: "Audio e Inteligencia",
@@ -115,23 +124,28 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
         <button
           id="btn-taskbar-start"
           onClick={() => {
-            setIsStartMenuOpen(!isStartMenuOpen);
-            setIsLayoutMenuOpen(false);
+            if (onToggleWxDiv) {
+              onToggleWxDiv();
+            } else {
+              setIsStartMenuOpen(!isStartMenuOpen);
+            }
           }}
-          className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm ${
-            isStartMenuOpen
-              ? "bg-cyan-600 border-cyan-400 text-white shadow-cyan-900/50"
-              : "bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 border-cyan-500/40 text-white"
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all border shadow-sm ${
+            isWxDivOpen
+              ? "bg-[#163573] border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.4)] ring-1 ring-cyan-400/50"
+              : "bg-gradient-to-b from-[#16274a] to-[#0d1933] hover:from-[#1d3361] hover:to-[#122347] border-[#2f497a] text-slate-100 hover:text-white hover:border-cyan-500/60"
           }`}
-          title="Menú de herramientas y ventanas del sistema DIV"
+          title="Menú Inicio DIV Games Studio (Estilo Windows 7 / 10)"
         >
-          <FolderKanban className="w-3.5 h-3.5" />
-          <span className="font-mono tracking-wide">DIV Ventanas</span>
-          <ChevronUp
-            className={`w-3 h-3 transition-transform ${
-              isStartMenuOpen ? "rotate-180" : ""
-            }`}
-          />
+          {/* Windows-style 4-color Tiled Logo */}
+          <div className="w-3.5 h-3.5 grid grid-cols-2 gap-0.5 flex-shrink-0">
+            <span className="bg-amber-400 rounded-xs" />
+            <span className="bg-cyan-400 rounded-xs" />
+            <span className="bg-blue-500 rounded-xs" />
+            <span className="bg-emerald-400 rounded-xs" />
+          </div>
+          <span className="font-bold tracking-wide text-xs">Inicio</span>
+          <ChevronUp className={`w-3 h-3 text-cyan-300 transition-transform ${isWxDivOpen ? "rotate-180 text-cyan-200" : ""}`} />
         </button>
 
         {/* Start Menu Popover */}
@@ -147,6 +161,24 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
               </div>
               <span className="text-[10px] text-cyan-400 font-mono">DIV 3.0</span>
             </div>
+
+            {onToggleWxDiv && (
+              <div className="p-2 border-b border-slate-800 bg-slate-950/50">
+                <button
+                  onClick={() => {
+                    onToggleWxDiv();
+                    setIsStartMenuOpen(false);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-300 text-xs font-mono font-semibold flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="px-1 py-0.2 bg-amber-400 text-slate-950 font-black text-[10px] rounded">DIV</span>
+                    <span>{isWxDivOpen ? "Ocultar Controlador WXDIV" : "Abrir Controlador WXDIV"}</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400 font-bold">F5</span>
+                </button>
+              </div>
+            )}
 
             {/* Tool List grouped by category */}
             <div className="p-2 space-y-3 max-h-96 overflow-y-auto">
@@ -291,6 +323,23 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
                 Disposiciones de Pantalla
               </div>
 
+              {onResetWindows && (
+                <>
+                  <button
+                    onClick={() => {
+                      onResetWindows();
+                      setIsLayoutMenuOpen(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-800/50 text-cyan-300 font-semibold flex items-center gap-2 transition-colors"
+                    title="Centrar y colocar todas las ventanas abiertas en pantalla"
+                  >
+                    <Grid2X2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Restablecer a la Pantalla</span>
+                  </button>
+                  <div className="border-t border-slate-800 my-1" />
+                </>
+              )}
+
               <button
                 onClick={() => {
                   onApplyLayoutPreset("code-game");
@@ -396,6 +445,19 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
             <span>{resolution}</span>
           </span>
         </div>
+
+        {/* Theme and Appearance Config Button */}
+        {onOpenThemeConfig && (
+          <button
+            id="btn-taskbar-theme"
+            onClick={onOpenThemeConfig}
+            className="p-1 rounded bg-slate-900 hover:bg-cyan-950 border border-slate-800 hover:border-cyan-600/50 text-slate-400 hover:text-cyan-300 transition-colors flex items-center gap-1 text-[11px] font-mono px-1.5"
+            title="Configuración de colores y fondo del IDE DIV"
+          >
+            <Palette className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Tema</span>
+          </button>
+        )}
 
         {/* Digital Clock */}
         <div className="px-2 py-0.5 bg-slate-900 border border-slate-800 rounded text-[11px] font-mono text-slate-300">

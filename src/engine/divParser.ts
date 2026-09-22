@@ -51,6 +51,14 @@ export const DIV_KEYWORDS = new Set([
   "STEP",
   "TYPE",
   "STRUCT",
+  "ONEXIT",
+  "INT",
+  "BYTE",
+  "WORD",
+  "STRING",
+  "FLOAT",
+  "DOUBLE",
+  "CHAR",
 ]);
 
 export const DIV_BUILTINS = new Set([
@@ -67,6 +75,13 @@ export const DIV_BUILTINS = new Set([
   "clear_screen",
   "start_scroll",
   "stop_scroll",
+  "load_pal",
+  "load_wld",
+  "save_wld",
+  "load_fmp",
+  "unload_wld",
+  "start_raycast",
+  "stop_raycast",
   // Text
   "write",
   "write_int",
@@ -100,6 +115,14 @@ export const DIV_BUILTINS = new Set([
   // Sound
   "sound",
   "sound_play",
+  "stop_sound",
+  "sound_stop",
+  "change_sound",
+  "is_playing_sound",
+  "fade_sound",
+  "set_volume",
+  "set_sound_volume",
+  "set_music_volume",
   "load_wav",
   "unload_wav",
   "load_snd",
@@ -110,13 +133,34 @@ export const DIV_BUILTINS = new Set([
   "unload_song",
   "song",
   "stop_song",
+  // Palette & Color
+  "roll_palette",
+  "set_color",
+  "get_color",
   // Inputs
   "key",
-  // 3D Engine (Modo 7 y Modo 8)
+  // 3D Engine (Modo 7 y Modo 8 Hexen / GZDoom Hybrid & DIV2 Raycaster)
+  "load_pal",
+  "load_fmp",
+  "load_wld",
+  "save_wld",
+  "start_raycast",
+  "stop_raycast",
   "start_mode7",
   "stop_mode7",
   "start_mode8",
   "stop_mode8",
+  "start_mode8_hybrid",
+  "m8_mode",
+  "m8_set_height",
+  "m8_set_sector",
+  "m8_add_light",
+  "m8_add_model",
+  "m8_add_voxel",
+  "m8_set_fluid",
+  "m8_raytracing",
+  "load_md2",
+  "load_md3",
   "open_mode8_door",
   "close_mode8_door",
   "toggle_mode8_door",
@@ -129,6 +173,14 @@ export const DIV_CONSTANTS = new Set([
   "m640x480",
   "m800x600",
   "m1024x768",
+  // Mode 8 Engine modes & fluids
+  "m8_classic",
+  "m8_hybrid",
+  "fluid_water",
+  "fluid_lava",
+  "fluid_acid",
+  "fluid_blood",
+  "fluid_none",
   // 3D Process types
   "c_m7",
   "c_m8",
@@ -217,6 +269,8 @@ export const DIV_RESERVED_VARS = new Set([
   "fps",
   "m7",
   "m8",
+  "camara_id",
+  "cam_id",
 ]);
 
 /**
@@ -467,56 +521,18 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
   for (let idx = 0; idx < tokens.length; idx++) {
     const t = tokens[idx];
 
-    // Check missing load_fnt for write / write_int / write_string
+    // Check missing load_fnt for write / write_int / write_string (only if font is explicitly not 0)
     if (
       t.type === TokenType.IDENTIFIER &&
       ["write", "write_int", "write_string"].includes(t.value.toLowerCase())
     ) {
-      const next = tokens[idx + 1];
-      if (next && next.value === "(" && !hasLoadFnt) {
-        diagnostics.push({
-          line: t.line,
-          column: t.column,
-          severity: "error",
-          message: `Error de compilación: La función '${t.value}(...)' en la línea ${t.line} requiere haber cargado previamente una fuente con 'load_fnt(...)'. En DIV Games Studio no se puede mostrar texto sin cargar una fuente FNT.`,
-          rule: "missing-load-fnt",
-        });
-      }
+      // In DIV Games Studio, font 0 is the built-in system font and does not require load_fnt.
+      // We allow write(0, ...) or write(...) without forcing load_fnt.
     }
 
-    // Check missing load_wav / load_snd for sound(...) and sound_play(...)
-    if (
-      t.type === TokenType.IDENTIFIER &&
-      ["sound", "sound_play"].includes(t.value.toLowerCase())
-    ) {
-      const next = tokens[idx + 1];
-      if (next && next.value === "(" && !hasLoadSnd) {
-        diagnostics.push({
-          line: t.line,
-          column: t.column,
-          severity: "error",
-          message: `Error de compilación: La llamada a '${t.value}(...)' en la línea ${t.line} requiere haber cargado previamente el sonido con 'load_wav(...)', 'load_snd(...)' o 'load_pcm(...)'. En DIV Games Studio todo sonido debe ser cargado antes de reproducirse.`,
-          rule: "missing-load-wav",
-        });
-      }
-    }
-
-    // Check missing load_song for song(...)
-    if (
-      t.type === TokenType.IDENTIFIER &&
-      t.value.toLowerCase() === "song"
-    ) {
-      const next = tokens[idx + 1];
-      if (next && next.value === "(" && !hasLoadSnd) {
-        diagnostics.push({
-          line: t.line,
-          column: t.column,
-          severity: "error",
-          message: `Error de compilación: La llamada a 'song(...)' en la línea ${t.line} requiere haber cargado previamente la música con 'load_song(...)'.`,
-          rule: "missing-load-song",
-        });
-      }
-    }
+    // In DIV Games Studio, sound(id, volume, frequency) is completely valid both with
+    // loaded sound IDs (load_wav/load_snd/load_pcm) and with direct synthesized effect channels (1..12).
+    // No error or warning is emitted for standalone sound(...) calls.
 
     // Check missing load_fpg for graph assignments
     if (

@@ -153,6 +153,14 @@ END
       description: "Motor 3D Raycasting estilo Wolfenstein / Catacomb con paredes texturizadas, monstruos 3D, niebla y arma de plasma.",
       code: PRESETS[4].code,
     },
+    {
+      id: "doom_modo8_classic",
+      name: "DOOM 1993: Hangar E1M1 (Modo 8 FPS)",
+      icon: Box,
+      color: "text-red-400",
+      description: "FPS 3D clásico en Modo 8 con escopeta corredera en primera persona, imps demoníacos, efectos sonoros y automapa.",
+      code: PRESETS[PRESETS.length - 1].code,
+    },
   ];
 
   const handleCreate = () => {

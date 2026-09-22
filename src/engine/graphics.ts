@@ -777,6 +777,256 @@ export function getDefaultFPG(): DivGraphic[] {
         return 1;
       }),
     },
+    // 39: Mode 8 Dark Obsidian Wall (Volcanic basalt with glowing magma fissures)
+    {
+      id: 39,
+      name: "pared_obsidiana",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#050508", "#12131a", "#222430",
+        "#3a1515", "#681212", "#9e1b1b", "#dc2626",
+        "#f97316", "#facc15", "#181a24", "#0a0a0f",
+        "#450a0a", "#7f1d1d", "#2d3142", "#11131c"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Obsidian stone blocks
+        const bx = x % 16;
+        const by = y % 16;
+        if (bx === 0 || by === 0) return 1; // Deep black crevice
+        // Glowing magma veins running diagonally
+        const vein1 = Math.abs(y - Math.floor(Math.sin(x * 0.4) * 3 + x * 0.8)) <= 1;
+        const vein2 = Math.abs((31 - y) - Math.floor(Math.cos(x * 0.3) * 2 + (x * 0.5 + 4))) <= 1;
+        if (vein1 || vein2) {
+          const core = ((x + y) % 3 === 0);
+          return core ? 9 : 7; // Gold/orange core, red magma glow
+        }
+        // Shaded dark reflective obsidian facets
+        const facet = (x * 3 + y * 7) % 11;
+        if (facet < 2) return 3; // Glossy edge
+        if (facet < 5) return 2; // Dark basalt facet
+        return 11; // Pure dark shadow
+      }),
+    },
+    // 40: Mode 8 Catacomb Wall of Skulls (Gothic crypt with human bones)
+    {
+      id: 40,
+      name: "pared_calaveras",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#080706", "#f8fafc", "#e2e8f0",
+        "#cbd5e1", "#94a3b8", "#64748b", "#475569",
+        "#334155", "#1e293b", "#7f1d1d", "#991b1b",
+        "#1c1917", "#292524", "#44403c", "#0f0e0d"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Repeated skulls pattern (2x2 skulls per 32x32 texture)
+        const sx = x % 16;
+        const sy = y % 16;
+        const cx = 8;
+        const cy = 7;
+        const d = Math.hypot(sx - cx, (sy - cy) * 1.15);
+        if (d <= 5.8) {
+          // Eye sockets (dark black cavities)
+          if ((sx === 6 || sx === 10) && sy >= 6 && sy <= 7) return 1;
+          // Nasal cavity
+          if (sx === 8 && sy === 9) return 1;
+          // Jaw & teeth
+          if (sy >= 11 && sy <= 13 && sx >= 6 && sx <= 10) {
+            if (sy === 12 && (sx === 6 || sx === 8 || sx === 10)) return 1; // Tooth gap
+            return 3; // Bone white teeth
+          }
+          // Skull forehead highlight & cranium
+          if (d <= 3.5 && sy < cy) return 2; // Bright skull highlight
+          return 4; // Aged bone ivory
+        }
+        // Dark soil / dried blood mortar surrounding skulls
+        return (sx + sy) % 5 === 0 ? 10 : 12;
+      }),
+    },
+    // 41: Mode 8 Corroded Gothic Iron Wall (Black iron with rust stains & rivets)
+    {
+      id: 41,
+      name: "pared_hierro_oxido",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#09090b", "#18181b", "#27272a",
+        "#3f3f46", "#52525b", "#71717a", "#a1a1aa",
+        "#451a03", "#78350f", "#9a3412", "#c2410c",
+        "#ea580c", "#7f1d1d", "#0f0f11", "#141417"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Outer iron plate frame
+        if (x === 0 || x === 31 || y === 0 || y === 31) return 1; // Black seam
+        if (x === 15 || x === 16 || y === 15 || y === 16) return 1; // Cross plate seams
+        // Iron heavy rivets
+        const isRivet = (x === 4 || x === 12 || x === 20 || x === 28) &&
+                        (y === 4 || y === 12 || y === 20 || y === 28);
+        if (isRivet) return 7; // Bright iron rivet
+        // Rust drip streaks flowing down plates
+        if ((x === 6 || x === 7 || x === 22 || x === 23) && y > 10) {
+          return ((x + y) % 3 === 0) ? 11 : 9; // Corroded rust brown
+        }
+        // Heavy textured steel sheet
+        return ((x * 7 + y * 13) % 17 < 5) ? 4 : 2;
+      }),
+    },
+    // 42: Mode 8 Runic Blood Basalt (Dark monolithic stone with glowing occult runes)
+    {
+      id: 42,
+      name: "pared_basalto_runas",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#030305", "#0b0b10", "#14141d",
+        "#1f1f2e", "#2e2e42", "#3b0764", "#581c87",
+        "#7e22ce", "#a855f7", "#c084fc", "#e9d5ff",
+        "#450a0a", "#7f1d1d", "#991b1b", "#101017"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        if (x === 0 || x === 31 || y === 0 || y === 31) return 1;
+        // Central occult glowing rune glyph
+        const inRuneCircle = Math.abs(Math.hypot(x - 16, y - 16) - 9) <= 0.8;
+        const inCrossX = Math.abs(x - 16) <= 1 && y >= 8 && y <= 24;
+        const inCrossY = Math.abs(y - 16) <= 1 && x >= 8 && x <= 24;
+        const inDiag1 = Math.abs((x - 16) - (y - 16)) <= 1 && Math.hypot(x - 16, y - 16) < 8;
+        if (inRuneCircle || inCrossX || inCrossY || inDiag1) {
+          const isCore = (x === 16 || y === 16);
+          return isCore ? 11 : 9; // Glowing neon violet rune
+        }
+        // Blood splatters along the bottom
+        if (y > 22 && ((x * 5 + y) % 4 === 0)) return 14; // Dried blood
+        // Heavy dark basalt stone
+        return ((x * 3 + y * 5) % 11 < 3) ? 4 : 2;
+      }),
+    },
+    // 43: Mode 8 Gothic Cathedral Stained Glass (Backlit demonic winged entity)
+    {
+      id: 43,
+      name: "pared_vitral_gotico",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#09090b", "#1e1b4b", "#312e81",
+        "#4338ca", "#6366f1", "#450a0a", "#7f1d1d",
+        "#991b1b", "#dc2626", "#ef4444", "#fbbf24",
+        "#064e3b", "#047857", "#10b981", "#1e293b"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Pointed gothic cathedral arch frame
+        const archTop = Math.abs(x - 16) * 1.4;
+        if (y < archTop || x === 0 || x === 31 || y === 31) return 1; // Heavy stone arch frame
+        // Lead came grid lines
+        if (x === 8 || x === 16 || x === 24 || y === 12 || y === 22) return 1;
+        // Central ruby demon wings and silhouette
+        if (y >= 10 && y <= 24 && Math.abs(x - 16) <= 10) {
+          if (Math.abs(x - 16) <= 2 && y >= 12 && y <= 20) return 1; // Black demon silhouette
+          return ((x + y) % 2 === 0) ? 9 : 8; // Glowing ruby stained glass
+        }
+        // Deep cobalt blue celestial glass background
+        return ((x * 2 + y) % 3 === 0) ? 4 : 3;
+      }),
+    },
+    // 44: Mode 8 Dark Flagstone Floor (Heavy black granite slabs)
+    {
+      id: 44,
+      name: "piso_losas_negras",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#050608", "#0f1117", "#181b24",
+        "#232733", "#303545", "#3e4457", "#50586f",
+        "#1c1917", "#292524", "#44403c", "#57534e",
+        "#450a0a", "#7f1d1d", "#0c0d12", "#13151d"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Staggered paving slab joints
+        const row = Math.floor(y / 16);
+        if (y % 16 === 0) return 1; // Horizontal mortar
+        const offset = row === 0 ? 0 : 16;
+        if ((x + offset) % 32 === 0) return 1; // Vertical mortar
+        // Cracked stone vein
+        if (Math.abs(y - (x * 0.4 + 6)) <= 0.6 && x > 8 && x < 24) return 1;
+        // Dark granite grain
+        return ((x * 5 + y * 7) % 9 < 3) ? 4 : 2;
+      }),
+    },
+    // 45: Mode 8 Dungeon Timber Vault Ceiling (Aged oak beams & cobwebs)
+    {
+      id: 45,
+      name: "techo_vigas_sombras",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#030303", "#0c0a09", "#1c1917",
+        "#292524", "#44403c", "#57534e", "#78716c",
+        "#1e293b", "#334155", "#475569", "#64748b",
+        "#0f172a", "#020617", "#172554", "#080b11"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Heavy oak beams running horizontally every 16px
+        if (y === 0 || y === 1 || y === 16 || y === 17) return 1;
+        if (y >= 2 && y <= 6) return ((x + y) % 4 === 0) ? 5 : 4; // Dark oak woodgrain
+        // Pitch black shadows and ceiling cobwebs
+        if ((x === 4 || x === 28) && y >= 7 && y <= 15) return 8; // Delicate cobweb gray
+        return 2; // Dark vault abyss
+      }),
+    },
+    // 46: Mode 8 Spiked Demon Portcullis Gate
+    {
+      id: 46,
+      name: "reja_demonios",
+      width: 32,
+      height: 32,
+      cx: 16,
+      cy: 16,
+      cpoints: [{ x: 16, y: 16, id: 0 }],
+      palette: [
+        "#00000000", "#050507", "#18181b", "#27272a",
+        "#3f3f46", "#52525b", "#71717a", "#a1a1aa",
+        "#e4e4e7", "#7f1d1d", "#991b1b", "#dc2626",
+        "#450a0a", "#141418", "#0f0f12", "#1e1e24"
+      ],
+      pixels: createPixelMatrix(32, 32, (x, y) => {
+        // Frame
+        if (x === 0 || x === 31 || y === 0 || y === 31) return 1;
+        // Spiked vertical bars with spear tips
+        if (x % 6 === 0) {
+          if (y <= 4 && (x % 6 === 0)) return 7; // Spear tip
+          return 5; // Heavy dark steel bar
+        }
+        // Crossbeams with spiked studs
+        if (y === 10 || y === 22) {
+          if ((x % 3 === 0)) return 8; // Steel spike stud
+          return 4;
+        }
+        // Open dark void behind gate
+        return 1;
+      }),
+    },
   ];
 
   // Initialize canvas for each graphic

@@ -41,35 +41,66 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
 
     // Keyboard listener
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent browser scrolling with game keys
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+      // Prevent browser scrolling and tab loss with game keys
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Tab"].includes(e.code) || e.key === "Tab") {
         e.preventDefault();
       }
 
-      const k = e.key.toLowerCase();
-      runtime.keyState[k] = true;
+      if (e.key === "Tab" || e.code === "Tab") {
+        runtime.toggleMode8Automap();
+        return;
+      }
 
-      // Also map arrow names
-      if (e.key === "ArrowUp") runtime.keyState["up"] = true;
-      if (e.key === "ArrowDown") runtime.keyState["down"] = true;
-      if (e.key === "ArrowLeft") runtime.keyState["left"] = true;
-      if (e.key === "ArrowRight") runtime.keyState["right"] = true;
-      if (e.code === "Space") runtime.keyState["space"] = true;
+      runtime.keyState[e.key.toLowerCase()] = true;
+      runtime.keyState[e.code.toLowerCase()] = true;
+
+      // Also map arrow and common game key names
+      if (e.key === "ArrowUp" || e.code === "KeyW") {
+        runtime.keyState["up"] = true;
+        runtime.keyState["w"] = true;
+      }
+      if (e.key === "ArrowDown" || e.code === "KeyS") {
+        runtime.keyState["down"] = true;
+        runtime.keyState["s"] = true;
+      }
+      if (e.key === "ArrowLeft" || e.code === "KeyA") {
+        runtime.keyState["left"] = true;
+        runtime.keyState["a"] = true;
+      }
+      if (e.key === "ArrowRight" || e.code === "KeyD") {
+        runtime.keyState["right"] = true;
+        runtime.keyState["d"] = true;
+      }
+      if (e.code === "Space" || e.key === " ") runtime.keyState["space"] = true;
       if (e.key === "Enter") runtime.keyState["enter"] = true;
       if (e.key === "Escape") runtime.keyState["esc"] = true;
+      if (e.code === "KeyE" || e.key.toLowerCase() === "e") runtime.keyState["e"] = true;
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      runtime.keyState[k] = false;
+      runtime.keyState[e.key.toLowerCase()] = false;
+      runtime.keyState[e.code.toLowerCase()] = false;
 
-      if (e.key === "ArrowUp") runtime.keyState["up"] = false;
-      if (e.key === "ArrowDown") runtime.keyState["down"] = false;
-      if (e.key === "ArrowLeft") runtime.keyState["left"] = false;
-      if (e.key === "ArrowRight") runtime.keyState["right"] = false;
-      if (e.code === "Space") runtime.keyState["space"] = false;
+      if (e.key === "ArrowUp" || e.code === "KeyW") {
+        runtime.keyState["up"] = false;
+        runtime.keyState["w"] = false;
+      }
+      if (e.key === "ArrowDown" || e.code === "KeyS") {
+        runtime.keyState["down"] = false;
+        runtime.keyState["s"] = false;
+      }
+      if (e.key === "ArrowLeft" || e.code === "KeyA") {
+        runtime.keyState["left"] = false;
+        runtime.keyState["a"] = false;
+      }
+      if (e.key === "ArrowRight" || e.code === "KeyD") {
+        runtime.keyState["right"] = false;
+        runtime.keyState["d"] = false;
+      }
+      if (e.code === "Space" || e.key === " ") runtime.keyState["space"] = false;
       if (e.key === "Enter") runtime.keyState["enter"] = false;
       if (e.key === "Escape") runtime.keyState["esc"] = false;
+      if (e.code === "KeyE" || e.key.toLowerCase() === "e") runtime.keyState["e"] = false;
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -235,13 +266,32 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
           onToggleGuides={() => setShowGuides(!showGuides)}
         />
 
-        <div className="relative max-w-full max-h-full aspect-[4/3] flex items-center justify-center shadow-2xl rounded-sm overflow-hidden border border-slate-800">
+        <div
+          className="relative max-w-full max-h-full flex items-center justify-center shadow-2xl rounded-sm overflow-hidden border border-slate-800"
+          style={{ aspectRatio: `${runtime.width} / ${runtime.height}` }}
+        >
           <canvas
             ref={canvasRef}
+            tabIndex={0}
             width={runtime.width}
             height={runtime.height}
-            className="w-full h-full object-contain pixelated bg-[#050811]"
+            className="w-full h-full object-contain pixelated bg-[#050811] focus:outline-none cursor-crosshair"
             style={{ imageRendering: "pixelated" }}
+            onMouseDown={(e) => {
+              e.currentTarget.focus({ preventScroll: true });
+              if (e.button === 0) runtime.mouseState.left = true;
+              if (e.button === 2) runtime.mouseState.right = true;
+            }}
+            onMouseUp={(e) => {
+              if (e.button === 0) runtime.mouseState.left = false;
+              if (e.button === 2) runtime.mouseState.right = false;
+            }}
+            onMouseMove={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              runtime.mouseState.x = Math.floor(((e.clientX - rect.left) / rect.width) * runtime.width);
+              runtime.mouseState.y = Math.floor(((e.clientY - rect.top) / rect.height) * runtime.height);
+            }}
+            onContextMenu={(e) => e.preventDefault()}
           />
 
           {/* CRT Scanline Shader Overlay */}
@@ -327,18 +377,18 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
       </div>
 
       {/* Stage Bottom Bar / Stats Telemetry */}
-      <div className="px-3 py-1.5 bg-[#0a0f1d] border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
+      <div className="px-3 py-1.5 bg-[#0a0f1d] border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400 select-none flex-shrink-0 h-8 overflow-hidden">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 min-w-[68px]">
             <span className="text-slate-500">FPS:</span>
-            <span className={`font-semibold ${stats.fps >= 55 ? "text-emerald-400" : "text-amber-400"}`}>
+            <span className={`font-semibold tabular-nums ${stats.fps >= 55 ? "text-emerald-400" : "text-amber-400"}`}>
               {stats.fps}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">Procesos:</span>
-            <span className="text-cyan-400 font-semibold">{stats.processCount}</span>
+          <div className="flex items-center gap-1 min-w-[85px]">
+            <span className="text-slate-500">Procs:</span>
+            <span className="text-cyan-400 font-semibold tabular-nums">{stats.processCount}</span>
           </div>
 
           {/* Real-time 3D Camera Telemetry Readout */}
@@ -348,22 +398,22 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
               className="flex items-center gap-1.5 text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/70 px-2 py-0.5 rounded border border-cyan-800/60 transition-colors cursor-pointer"
               title="Haz clic para abrir/cerrar el panel de depuración de la cámara 3D"
             >
-              <Compass className="w-3 h-3 text-cyan-400" />
-              <span className="text-[10px]">
-                CAM {cameraInfo.mode.toUpperCase()}: X:{cameraInfo.x.toFixed(1)} Y:{cameraInfo.y.toFixed(1)} ∠{Math.round(((cameraInfo.angle % 360 + 360) % 360))}° ({cameraInfo.cardinal})
+              <Compass className="w-3 h-3 text-cyan-400 flex-shrink-0" />
+              <span className="text-[10px] tabular-nums whitespace-nowrap">
+                X:{cameraInfo.x.toFixed(1)} Y:{cameraInfo.y.toFixed(1)} ∠{Math.round(((cameraInfo.angle % 360 + 360) % 360))}°
               </span>
             </button>
           )}
 
-          <div className="flex items-center gap-1.5 hidden sm:flex">
+          <div className="flex items-center gap-1 hidden sm:flex min-w-[70px]">
             <span className="text-slate-500">Frame:</span>
-            <span>{stats.frameIndex}</span>
+            <span className="tabular-nums">{stats.frameIndex}</span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-slate-500 hidden sm:inline">Render: {stats.renderTimeMs}ms</span>
-          <span className="text-slate-500">Controles: Flechas / WASD + ESPACIO</span>
+          <span className="text-slate-500 hidden sm:inline tabular-nums">Render: {stats.renderTimeMs.toFixed(1)}ms</span>
+          <span className="text-slate-500">WASD / Flechas + ESPACIO</span>
         </div>
       </div>
     </div>

@@ -1,14 +1,32 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Cpu, Power, Snowflake, Sun, Trash2 } from "lucide-react";
 import { DivProcess } from "../types";
 import { DivRuntime } from "../engine/runtime";
 
 interface ProcessInspectorProps {
   runtime: DivRuntime;
-  processes: DivProcess[];
+  processes?: DivProcess[];
 }
 
-export const ProcessInspector: React.FC<ProcessInspectorProps> = ({ runtime, processes }) => {
+export const ProcessInspector: React.FC<ProcessInspectorProps> = ({ runtime, processes: propProcesses }) => {
+  const [localProcesses, setLocalProcesses] = useState<DivProcess[]>(() => {
+    if (propProcesses && propProcesses.length > 0) return propProcesses;
+    return typeof runtime.getActiveProcesses === "function" ? runtime.getActiveProcesses() : [];
+  });
+
+  useEffect(() => {
+    // Only poll when the window is actually open and mounted!
+    const timer = setInterval(() => {
+      if (typeof runtime.getActiveProcesses === "function") {
+        setLocalProcesses(runtime.getActiveProcesses());
+      }
+    }, 400);
+
+    return () => clearInterval(timer);
+  }, [runtime]);
+
+  const activeList = propProcesses && propProcesses.length > 0 ? propProcesses : localProcesses;
+
   return (
     <div className="flex flex-col h-full bg-[#080d1a] border border-slate-800 rounded-lg overflow-hidden text-xs text-slate-300">
       {/* Header */}
@@ -17,7 +35,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({ runtime, pro
           <Cpu className="w-4 h-4 text-cyan-400" />
           <span className="font-semibold text-slate-100">Inspector de Procesos en Tiempo Real</span>
           <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/40 text-[10px] font-mono">
-            {processes.length} Procesos activos
+            {activeList.length} Procesos activos
           </span>
         </div>
 
@@ -48,14 +66,14 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({ runtime, pro
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
-            {processes.length === 0 ? (
+            {activeList.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-4 text-center text-slate-500 font-sans">
                   No hay procesos en ejecución. Inicia el juego para inspeccionar la memoria.
                 </td>
               </tr>
             ) : (
-              processes.map((proc) => (
+              activeList.map((proc) => (
                 <tr key={proc.id} className="hover:bg-slate-800/40">
                   <td className="p-2 text-cyan-400">#{proc.id}</td>
                   <td className="p-2 font-bold text-slate-200">{proc.name}</td>

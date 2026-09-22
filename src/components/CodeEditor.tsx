@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,8 +11,12 @@ import {
   ChevronUp,
   ArrowRight,
   Info,
+  Zap,
 } from "lucide-react";
 import { validateDivSyntax, DivDiagnostic } from "../engine/divParser";
+import { DIV_AUTOCOMPLETE_ITEMS, DivSuggestion } from "../engine/divKeywords";
+import { CodeAutocompletePopup } from "./CodeAutocompletePopup";
+import { getCaretCoordinates } from "../utils/caretCoordinates";
 
 interface CodeEditorProps {
   code: string;
@@ -33,8 +37,17 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
 
+  // Autocomplete state
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<DivSuggestion[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [autocompletePrefix, setAutocompletePrefix] = useState("");
+  const [autocompletePos, setAutocompletePos] = useState({ top: 40, left: 70 });
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const editorBodyRef = useRef<HTMLDivElement>(null);
 
   // Validate syntax whenever code changes
   useEffect(() => {
@@ -50,6 +63,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     if (textareaRef.current && gutterRef.current) {
       gutterRef.current.scrollTop = textareaRef.current.scrollTop;
     }
+    if (showAutocomplete) {
+      updateAutocompletePosition();
+    }
   };
 
   // Track cursor position (Line & Column)
@@ -60,6 +76,205 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     const currentLine = lineArr.length;
     const currentCol = lineArr[lineArr.length - 1].length + 1;
     setCursorPos({ line: currentLine, col: currentCol });
+  };
+
+  // Recalculate popup position based on current cursor in textarea
+  const updateAutocompletePosition = useCallback(() => {
+    if (!textareaRef.current || !editorBodyRef.current) return;
+    const cursor = textareaRef.current.selectionStart;
+    const caret = getCaretCoordinates(textareaRef.current, cursor);
+    const containerRect = editorBodyRef.current.getBoundingClientRect();
+    const containerW = containerRect.width;
+    const containerH = containerRect.height;
+
+    // Gutter width is 56px (w-14)
+    let leftPos = 56 + caret.left;
+    let topPos = caret.top + caret.lineHeight + 4;
+
+    const popupWidth = 520;
+    const popupHeight = 240;
+
+    if (leftPos + popupWidth > containerW - 10) {
+      leftPos = Math.max(60, containerW - popupWidth - 10);
+    }
+    if (topPos + popupHeight > containerH - 10) {
+      // Flip above cursor line
+      topPos = Math.max(8, caret.top - popupHeight - 4);
+    }
+
+    setAutocompletePos({ top: topPos, left: leftPos });
+  }, []);
+
+  // Trigger or evaluate autocomplete suggestions while user types
+  const evaluateAutocomplete = useCallback(
+    (currentCode: string, cursorIndex: number, forceOpen = false) => {
+      if (!autocompleteEnabled && !forceOpen) {
+        setShowAutocomplete(false);
+        return;
+      }
+
+      if (!textareaRef.current || !editorBodyRef.current) return;
+
+      const textBefore = currentCode.slice(0, cursorIndex);
+      const currentLineText = textBefore.split("\n").pop() || "";
+
+      // Don't show in single-line comments
+      if (currentLineText.includes("//")) {
+        const commentIdx = currentLineText.indexOf("//");
+        const cursorCol = currentLineText.length;
+        if (cursorCol > commentIdx) {
+          setShowAutocomplete(false);
+          return;
+        }
+      }
+
+      // Check if cursor is immediately inside quotes (string literal)
+      const quoteCount = (currentLineText.match(/"/g) || []).length;
+      if (quoteCount % 2 !== 0 && !forceOpen) {
+        setShowAutocomplete(false);
+        return;
+      }
+
+      // Extract token word prefix at cursor
+      const match = textBefore.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      const wordPrefix = match ? match[1] : "";
+
+      if (!wordPrefix && !forceOpen) {
+        setShowAutocomplete(false);
+        return;
+      }
+
+      const lowerPrefix = wordPrefix.toLowerCase();
+
+      // Find matching DIV items
+      const matches = DIV_AUTOCOMPLETE_ITEMS.filter((item) => {
+        if (!wordPrefix) return true; // Show all if force opened at empty
+        const lowerName = item.name.toLowerCase();
+        return (
+          lowerName.startsWith(lowerPrefix) ||
+          (wordPrefix.length >= 2 && lowerName.includes(lowerPrefix))
+        );
+      }).sort((a, b) => {
+        if (!wordPrefix) {
+          // If no prefix, prioritize core DIV keywords: PROCESS, BEGIN, END, FRAME, LOCAL, PRIVATE
+          if (a.type === "keyword" && b.type !== "keyword") return -1;
+          if (a.type !== "keyword" && b.type === "keyword") return 1;
+          return a.name.localeCompare(b.name);
+        }
+
+        const aStarts = a.name.toLowerCase().startsWith(lowerPrefix);
+        const bStarts = b.name.toLowerCase().startsWith(lowerPrefix);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        // Keywords always take top priority
+        if (a.type === "keyword" && b.type !== "keyword") return -1;
+        if (a.type !== "keyword" && b.type === "keyword") return 1;
+
+        return a.name.length - b.name.length;
+      });
+
+      if (matches.length === 0) {
+        setShowAutocomplete(false);
+        return;
+      }
+
+      setAutocompletePrefix(wordPrefix);
+      setAutocompleteSuggestions(matches.slice(0, 10));
+      setSelectedSuggestionIndex(0);
+      updateAutocompletePosition();
+      setShowAutocomplete(true);
+    },
+    [autocompleteEnabled, updateAutocompletePosition]
+  );
+
+  // Insert selected autocomplete suggestion
+  const insertSuggestion = useCallback(
+    (item: DivSuggestion) => {
+      if (!textareaRef.current) return;
+      const textarea = textareaRef.current;
+      const currentCursor = textarea.selectionStart;
+      const textBefore = code.slice(0, currentCursor);
+      const match = textBefore.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
+      const prefixLength = match ? match[1].length : 0;
+
+      const replaceStart = currentCursor - prefixLength;
+      const replaceEnd = currentCursor;
+
+      const nextChar = code.charAt(currentCursor);
+      let insertValue = item.name;
+
+      // Smart formatting for FRAME
+      if (item.name === "FRAME" && nextChar !== ";" && nextChar !== "(") {
+        insertValue = "FRAME;";
+      }
+
+      const newCode = code.substring(0, replaceStart) + insertValue + code.substring(replaceEnd);
+      onChange(newCode);
+
+      const newCursor = replaceStart + insertValue.length;
+      setShowAutocomplete(false);
+
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(newCursor, newCursor);
+        updateCursorPosition();
+      }, 10);
+    },
+    [code, onChange]
+  );
+
+  // Handle keyboard events in textarea (Arrow navigation, Tab/Enter insertion, Tab indent, Esc)
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ctrl+Space or Cmd+Space: Force trigger autocomplete
+    if ((e.ctrlKey || e.metaKey) && e.key === " ") {
+      e.preventDefault();
+      const cursor = e.currentTarget.selectionStart;
+      evaluateAutocomplete(code, cursor, true);
+      return;
+    }
+
+    if (showAutocomplete && autocompleteSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev + 1) % autocompleteSuggestions.length);
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestionIndex(
+          (prev) => (prev - 1 + autocompleteSuggestions.length) % autocompleteSuggestions.length
+        );
+        return;
+      }
+
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertSuggestion(autocompleteSuggestions[selectedSuggestionIndex]);
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowAutocomplete(false);
+        return;
+      }
+    }
+
+    // Standard Code Editor Tab indentation when autocomplete is closed
+    if (e.key === "Tab" && !showAutocomplete) {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newCode = code.substring(0, start) + "  " + code.substring(end);
+      onChange(newCode);
+      setTimeout(() => {
+        textarea.setSelectionRange(start + 2, start + 2);
+        updateCursorPosition();
+      }, 0);
+    }
   };
 
   // Jump to specific line in editor
@@ -135,8 +350,22 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </span>
         </div>
 
-        {/* Quick Snippets Inserter */}
+        {/* Quick Snippets Inserter & Autocomplete Toggle */}
         <div className="flex items-center gap-1.5 overflow-x-auto">
+          {/* Autocomplete Toggle */}
+          <button
+            onClick={() => setAutocompleteEnabled(!autocompleteEnabled)}
+            className={`px-2 py-1 rounded flex items-center gap-1.5 transition-colors text-xs font-sans border ${
+              autocompleteEnabled
+                ? "bg-emerald-950/70 border-emerald-600/50 text-emerald-300 hover:bg-emerald-900/60 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                : "bg-slate-800/80 border-slate-700 text-slate-400 hover:bg-slate-700"
+            }`}
+            title="Sugerir palabras clave DIV Games Studio al escribir (Ctrl+Espacio para invocar)"
+          >
+            <Zap className={`w-3 h-3 ${autocompleteEnabled ? "text-emerald-400 fill-emerald-400" : "text-slate-500"}`} />
+            <span className="font-medium">Auto-sugerencias {autocompleteEnabled ? "ON" : "OFF"}</span>
+          </button>
+
           <button
             onClick={() =>
               insertSnippet(
@@ -164,8 +393,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           <button
             onClick={() => insertSnippet(`sound(1, 100, 256);`)}
             className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors text-xs"
+            title="Reproducir sonido directo por ID"
           >
             + Sonido
+          </button>
+          <button
+            onClick={() => insertSnippet(`snd = load_snd("laser.wav");\nsound(snd, 100, 256);`)}
+            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors text-xs"
+            title="Cargar y reproducir archivo de audio con load_snd"
+          >
+            + load_snd
           </button>
           <button
             onClick={handleCopy}
@@ -179,7 +416,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       </div>
 
       {/* Editor Body with Synchronized Line Numbers */}
-      <div className="relative flex-1 flex overflow-hidden font-mono text-xs">
+      <div ref={editorBodyRef} className="relative flex-1 flex overflow-hidden font-mono text-xs">
         {/* Line Numbers Gutter */}
         <div
           ref={gutterRef}
@@ -232,18 +469,48 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           ref={textareaRef}
           value={code}
           onChange={(e) => {
-            onChange(e.target.value);
+            const val = e.target.value;
+            const curPos = e.target.selectionStart;
+            onChange(val);
             updateCursorPosition();
+            evaluateAutocomplete(val, curPos);
           }}
+          onKeyDown={handleKeyDown}
           onScroll={handleScroll}
-          onKeyUp={updateCursorPosition}
-          onClick={updateCursorPosition}
+          onKeyUp={(e) => {
+            updateCursorPosition();
+            // If user used navigation arrow keys without modifiers, close or re-evaluate
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+              if (showAutocomplete) {
+                setShowAutocomplete(false);
+              }
+            }
+          }}
+          onClick={() => {
+            updateCursorPosition();
+            if (showAutocomplete) {
+              setShowAutocomplete(false);
+            }
+          }}
           onSelect={updateCursorPosition}
           wrap="off"
           spellCheck={false}
           className="flex-1 py-3 px-3.5 bg-transparent text-slate-100 resize-none outline-none leading-6 h-full overflow-auto whitespace-pre font-mono text-xs selection:bg-emerald-600/30"
           placeholder="PROGRAM mi_juego;\nBEGIN\n  set_mode(m640x480);\n  LOOP\n    FRAME;\n  END\nEND"
         />
+
+        {/* Autocomplete Suggestions Popup Overlay */}
+        {showAutocomplete && autocompleteSuggestions.length > 0 && (
+          <CodeAutocompletePopup
+            suggestions={autocompleteSuggestions}
+            selectedIndex={selectedSuggestionIndex}
+            prefix={autocompletePrefix}
+            position={autocompletePos}
+            onSelect={insertSuggestion}
+            onHoverIndex={setSelectedSuggestionIndex}
+            onClose={() => setShowAutocomplete(false)}
+          />
+        )}
       </div>
 
       {/* Expandable Diagnostics Drawer (if toggled or errors exist) */}

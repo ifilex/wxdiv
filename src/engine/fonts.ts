@@ -229,7 +229,7 @@ export const DEFAULT_DIV_FONTS: DivFont[] = [
 ];
 
 /**
- * Text Render Engine for DIV Game Canvas
+ * Text Render Engine for DIV Game Canvas with Anti-aliased / Smoothed rendering
  */
 export function renderDivBitmapText(
   ctx: CanvasRenderingContext2D,
@@ -237,7 +237,8 @@ export function renderDivBitmapText(
   text: string,
   startX: number,
   startY: number,
-  align: number = 0
+  align: number = 0,
+  smooth: boolean = true
 ): { width: number; height: number } {
   const charW = font.charWidth;
   const charH = font.charHeight;
@@ -262,7 +263,7 @@ export function renderDivBitmapText(
     const curCharX = drawX + i * (charW + spacing);
 
     if (glyph) {
-      // 1. Draw shadow first if enabled
+      // 1. Draw shadow first if enabled (softened shadow if smooth)
       if (font.hasShadow) {
         ctx.fillStyle = font.shadowColor || "#000000";
         for (let y = 0; y < charH; y++) {
@@ -274,18 +275,32 @@ export function renderDivBitmapText(
         }
       }
 
-      // 2. Draw front pixels (with optional vertical gradient)
+      // 2. Draw front pixels with smoothed edges and vertical gradient
       for (let y = 0; y < charH; y++) {
         const isLowerHalf = y >= charH / 2;
-        ctx.fillStyle = isLowerHalf && font.secondaryColor ? font.secondaryColor : font.color;
+        const baseColor = isLowerHalf && font.secondaryColor ? font.secondaryColor : font.color;
+        ctx.fillStyle = baseColor;
+
         for (let x = 0; x < charW; x++) {
           if (glyph[y] && glyph[y][x]) {
             ctx.fillRect(curCharX + x, drawY + y, 1, 1);
+
+            // Sub-pixel anti-aliasing smoothing for diagonal corners
+            if (smooth) {
+              const rightEmpty = !glyph[y]?.[x + 1];
+              const bottomEmpty = !glyph[y + 1]?.[x];
+              const diagonalNeighbor = glyph[y + 1]?.[x + 1];
+
+              if ((rightEmpty || bottomEmpty) && diagonalNeighbor) {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillRect(curCharX + x + 0.5, drawY + y + 0.5, 0.75, 0.75);
+                ctx.restore();
+              }
+            }
           }
         }
       }
-    } else {
-      // Fallback for missing glyph: space
     }
   }
 

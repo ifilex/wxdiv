@@ -45,14 +45,39 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     initialH: number;
   }>({ isResizing: false, edge: null, startX: 0, startY: 0, initialW: 0, initialH: 0 });
 
-  // Titlebar drag handlers
+  // Titlebar drag handlers with global listener fallback
   const handleTitlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Only left click
-    if (e.button !== 0 || win.isMaximized) return;
+    if (e.button !== 0) return;
     onFocus();
 
+    // If window is maximized and user drags titlebar, unmaximize and position under cursor
+    if (win.isMaximized) {
+      onToggleMaximize();
+      const restoredW = win.prevBounds?.width ?? 640;
+      const restoredH = win.prevBounds?.height ?? 500;
+      const newX = Math.max(0, Math.min(e.clientX - restoredW / 2, desktopBounds.width - 100));
+      const newY = Math.max(0, Math.min(e.clientY - 18, desktopBounds.height - 40));
+      onUpdateBounds({
+        x: newX,
+        y: newY,
+        width: restoredW,
+        height: restoredH,
+      });
+      dragRef.current = {
+        isDragging: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        initialX: newX,
+        initialY: newY,
+      };
+      return;
+    }
+
     const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (err) {}
 
     dragRef.current = {
       isDragging: true,
@@ -92,6 +117,21 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     }
   };
 
+  // Global safety listener to ensure dragging/resizing never gets stuck if cursor slips
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (dragRef.current.isDragging) {
+        dragRef.current.isDragging = false;
+      }
+      if (resizeRef.current.isResizing) {
+        resizeRef.current.isResizing = false;
+        resizeRef.current.edge = null;
+      }
+    };
+    window.addEventListener("pointerup", handleGlobalPointerUp);
+    return () => window.removeEventListener("pointerup", handleGlobalPointerUp);
+  }, []);
+
   // Resize handlers
   const handleResizePointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
@@ -102,7 +142,9 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     onFocus();
 
     const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (err) {}
 
     resizeRef.current = {
       isResizing: true,
@@ -156,6 +198,12 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     return null;
   }
 
+  // Clamped Coordinates to guarantee window is ALWAYS reachable on screen
+  const safeX = Math.max(0, Math.min(win.x, Math.max(0, desktopBounds.width - 80)));
+  const safeY = Math.max(0, Math.min(win.y, Math.max(0, desktopBounds.height - 40)));
+  const safeW = Math.max(win.minWidth, Math.min(win.width, desktopBounds.width));
+  const safeH = Math.max(win.minHeight, Math.min(win.height, desktopBounds.height));
+
   // Maximize styling vs windowed positioning
   const style: React.CSSProperties = win.isMaximized
     ? {
@@ -168,10 +216,10 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       }
     : {
         position: "absolute",
-        top: `${win.y}px`,
-        left: `${win.x}px`,
-        width: `${win.width}px`,
-        height: `${win.height}px`,
+        top: `${safeY}px`,
+        left: `${safeX}px`,
+        width: `${safeW}px`,
+        height: `${safeH}px`,
         zIndex: win.zIndex,
       };
 

@@ -143,6 +143,204 @@ export interface DivMode8Entity {
   name?: string;
 }
 
+export type DivFluidType = "none" | "water" | "lava" | "acid" | "blood";
+
+export interface DivMode8Sector {
+  x?: number;
+  y?: number;
+  floorHeight: number; // 0 = standard floor, -0.6 = pool/trench, 0.5 = step, 1.0 = high ledge
+  ceilHeight: number;  // 1.0 = standard ceiling, 1.6 = vault, 2.4 = cathedral
+  floorTexture?: number;
+  ceilTexture?: number;
+  floorTex?: number;
+  ceilTex?: number;
+  wallTexture?: number;
+  lightLevel?: number; // 0.0 .. 1.0 local sector light
+  fluidType?: DivFluidType;
+  fluidDepth?: number; // fluid depth below floor
+  tag?: number; // Hexen sector action tag
+  isWindow?: boolean; // Window sector (see-through aperture with sill and lintel)
+  windowSill?: number; // lower boundary (e.g. 0.35)
+  windowTop?: number; // upper boundary (e.g. 0.85)
+  windowHasBars?: boolean; // vertical iron bars or grates
+  isColumn?: boolean; // 1x1 pillar or column sector
+}
+
+export interface DivMode8Light {
+  id: string | number;
+  x: number; // grid coords
+  y: number;
+  z: number; // height offset (0 = ground, 0.5 = eye level, 1.0 = ceiling)
+  radius: number; // reach in tiles
+  r: number; // 0..255
+  g: number;
+  b: number;
+  intensity?: number; // 0..1
+  flicker?: boolean;
+  castShadows?: boolean;
+  pulseSpeed?: number;
+  name?: string;
+}
+
+export interface DivModel3DVertex {
+  x: number;
+  y: number;
+  z: number;
+  u?: number;
+  v?: number;
+}
+
+export interface DivModel3DTriangle {
+  v: [number, number, number];
+  color?: string;
+  normal?: [number, number, number];
+  uv?: [[number, number], [number, number], [number, number]];
+}
+
+export interface DivModel3DFrame {
+  name: string;
+  vertices: DivModel3DVertex[];
+}
+
+export interface DivModel3DData {
+  id: string | number;
+  name: string;
+  format: "md2" | "md3" | "custom";
+  frames: DivModel3DFrame[];
+  triangles: DivModel3DTriangle[];
+  skinTexture?: number;
+  baseScale: number;
+}
+
+export interface DivMode8PlacedModel {
+  id: string | number;
+  modelId: string | number;
+  x: number; // grid tiles
+  y: number;
+  z: number;
+  yaw: number; // degrees
+  pitch?: number;
+  roll?: number;
+  scale: number;
+  currentAnimation?: string;
+  animation?: string;
+  animFrame?: number;
+  animationSpeed?: number;
+  name?: string;
+}
+
+export interface DivVoxelPoint {
+  x: number;
+  y: number;
+  z: number;
+  color: string;
+}
+
+export interface DivVoxelModel {
+  id: string | number;
+  name: string;
+  voxels: DivVoxelPoint[];
+  scale: number;
+}
+
+export interface DivMode8PlacedVoxel {
+  id: string | number;
+  voxelId: string | number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  rotSpeed?: number;
+  scale: number;
+  name?: string;
+}
+
+export interface DivDoomLinedef {
+  id: string | number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  frontSectorId: number;
+  backSectorId?: number;
+  isTwoSided?: boolean;
+  middleTexture?: string | number;
+  upperTexture?: string | number;
+  lowerTexture?: string | number;
+  blocking?: boolean;
+  secret?: boolean;
+  noDraw?: boolean;
+  special?: number;
+  tag?: number;
+}
+
+export interface DivDoomSector {
+  id: number;
+  floorHeight: number; // in world height units, e.g. 0, 0.25 (stair step), 0.5, 1.0
+  ceilHeight: number;  // e.g. 1.2 (standard room), 2.0 (high ceiling)
+  floorTexture?: string | number;
+  ceilTexture?: string | number;
+  lightLevel?: number; // 0..255
+  special?: number;
+  tag?: number;
+}
+
+export interface DivVectorWall {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  texture: number;
+  floorZ?: number;
+  ceilZ?: number;
+  isTwoSided?: boolean;
+  portalSector?: number;
+  isWindow?: boolean;
+  windowSill?: number;
+  windowTop?: number;
+}
+
+export interface DivWorldFile {
+  name: string; // e.g. "nivel1.wld"
+  version: number;
+  width: number;
+  height: number;
+  ambientLight: number;
+  skyColor?: string;
+  floorTexture?: number;
+  ceilTexture?: number;
+  map: number[][]; // Grid representation
+  sectors: DivMode8Sector[][];
+  vectorWalls?: DivVectorWall[]; // Free-form vector walls (any shape!)
+  doomLinedefs?: DivDoomLinedef[]; // Doom 2 Polygon Linedefs
+  doomSectors?: DivDoomSector[]; // Doom 2 Sectors (heights, flats, lighting)
+  doors: DivMode8Door[];
+  triggers: DivMode8Trigger[];
+  entities: DivMode8Entity[];
+  lights: DivMode8Light[];
+  placedModels: DivMode8PlacedModel[];
+  placedVoxels: DivMode8PlacedVoxel[];
+  playerStart: { x: number; y: number; z: number; angle: number };
+}
+
+export interface DivFluidParticle {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
+  type: "bubble" | "ember" | "droplet" | "steam";
+  alpha?: number;
+}
+
+export type DivMode8EngineMode = "classic" | "hybrid" | "doom2";
+
 export interface DivMode8 {
   id: number;
   file: number;
@@ -164,11 +362,38 @@ export interface DivMode8 {
   doors?: DivMode8Door[];
   triggers?: DivMode8Trigger[];
   entities?: DivMode8Entity[];
+  vectorWalls?: DivVectorWall[]; // Free-form vector walls (any shape/angle)
+  doomLinedefs?: DivDoomLinedef[]; // Doom 2 Polygon Linedefs
+  doomSectors?: DivDoomSector[]; // Doom 2 Sectors (heights, flats, lighting)
+  worldName?: string; // Loaded .wld file name (e.g. "nivel1.wld")
   floorTexture?: number;
   ceilTexture?: number;
   lightLevel?: number; // 0..1 ambient lighting (Doom-like)
   torchFlicker?: boolean;
+  showAutomap?: boolean; // Automap radar (only visible when requested or pressing Tab)
   active: boolean;
+  currentEyeZ?: number; // Damped eye height for smooth elevation changes
+
+  // Hexen & GZDoom Hybrid 3D Extensions:
+  engineMode?: DivMode8EngineMode; // "classic" (flat 2D retro), "hybrid" (Hexen/GZDoom 2.5D/3D AAA), or "doom2" (True Polygon Sector & Portal Engine)
+  sectors?: DivMode8Sector[][]; // Variable floor/ceil heights, depths and sector specials
+  lights?: DivMode8Light[]; // Dynamic point lights with ray-traced shadows
+  placedModels?: DivMode8PlacedModel[]; // Real 3D MD2/MD3 models inside raycast world
+  placedVoxels?: DivMode8PlacedVoxel[]; // 3D voxel objects
+  enableRaytracing?: boolean; // Optical ray-tracing (shadows, falloff, penumbra)
+  raytracingBounces?: number;
+  raytracingSamples?: number;
+  enableFluids?: boolean; // Particle-based fluid simulation (Lava, Acid, Water, Blood)
+  enableVoxels?: boolean; // 3D Voxel rendering
+  enable3DModels?: boolean; // 3D MD2/MD3 polygon rendering
+  ambientColor?: string;
+
+  // Web Workers Raycast Acceleration & 3D Weapons
+  useWorkers?: boolean;
+  workerCount?: number;
+  weaponModel?: string; // e.g. "sword3d", "staff3d"
+  weaponAttackTime?: number; // 0..1
+  walkCycle?: number;
 }
 
 export interface DivSoundEffect {
