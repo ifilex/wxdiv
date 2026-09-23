@@ -15,6 +15,7 @@ import {
   Palette as PaletteIcon,
   Box,
   Film,
+  LayoutGrid,
 } from "lucide-react";
 import { WindowConfig, WindowId, LayoutPresetType } from "./types";
 import { WindowFrame } from "./WindowFrame";
@@ -28,6 +29,7 @@ import { Mode8LevelEditor } from "../Mode8LevelEditor";
 import { SoundEditor } from "../SoundEditor";
 import { ExplosionCreator } from "../ExplosionCreator";
 import { VisualLogicBuilder } from "../VisualLogicBuilder";
+import { FormDesigner } from "../FormDesigner";
 import { AiCopilot } from "../AiCopilot";
 import { ProcessInspector } from "../ProcessInspector";
 import { FontEditor } from "../FontEditor";
@@ -298,6 +300,22 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
       height: 560,
       minWidth: 420,
       minHeight: 340,
+    },
+    designer: {
+      id: "designer",
+      title: "Diseñador Visual de Formularios & Apps (VB 3.0)",
+      subtitle: "WYSIWYG • UI Primitives DIV • Drag & Drop",
+      category: "core",
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      zIndex: 3,
+      x: 100,
+      y: 50,
+      width: 880,
+      height: 600,
+      minWidth: 500,
+      minHeight: 380,
     },
     ai: {
       id: "ai",
@@ -892,6 +910,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
     sound: <Volume2 className="w-3.5 h-3.5" />,
     explosions: <Flame className="w-3.5 h-3.5" />,
     visual: <Wand2 className="w-3.5 h-3.5" />,
+    designer: <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />,
     ai: <Sparkles className="w-3.5 h-3.5" />,
     processes: <Cpu className="w-3.5 h-3.5" />,
     md2viewer: <Box className="w-3.5 h-3.5 text-emerald-400" />,
@@ -1140,6 +1159,34 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
             onInsertCode={(snip) => {
               onInsertCode(snip);
               handleOpenAndFocusWindow("code");
+            }}
+          />
+        </WindowFrame>
+
+        {/* Render Window: Visual Form & App Designer (Visual Basic 3.0 Style) */}
+        <WindowFrame
+          window={windows.designer}
+          icon={windowIcons.designer}
+          isActive={activeWindowId === "designer"}
+          onFocus={() => handleFocusWindow("designer")}
+          onClose={() => handleCloseWindow("designer")}
+          onMinimize={() => handleMinimizeWindow("designer")}
+          onToggleMaximize={() => handleToggleMaximize("designer")}
+          onUpdateBounds={(b) => handleUpdateBounds("designer", b)}
+          desktopBounds={desktopBounds}
+        >
+          <FormDesigner
+            runtime={runtime}
+            onInsertCode={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+            onApplyFullCode={(fullCode) => {
+              onApplyFullCode(fullCode);
+              handleOpenAndFocusWindow("code");
+            }}
+            onRunPreview={() => {
+              handleOpenAndFocusWindow("game");
             }}
           />
         </WindowFrame>

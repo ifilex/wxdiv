@@ -15,6 +15,10 @@ import {
   Loader2,
   FileText,
   Image as ImageIcon,
+  Smartphone,
+  Monitor,
+  Cpu,
+  Zap,
 } from "lucide-react";
 import { DivGraphic } from "../types";
 import { exportProjectToZip, triggerZipDownload } from "../engine/zipExporter";
@@ -38,7 +42,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   resolution,
   presetId,
 }) => {
-  const [activeTab, setActiveTab] = useState<"zip" | "react" | "html5" | "excel" | "json">("zip");
+  const [activeTab, setActiveTab] = useState<"zip" | "targets" | "react" | "html5" | "excel" | "json">("zip");
   const [copied, setCopied] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
@@ -248,6 +252,17 @@ export default WxDivGame;
             <span>Exportar ZIP Completo (HTML5 + Assets)</span>
           </button>
           <button
+            onClick={() => setActiveTab("targets")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 border-b-2 font-semibold transition-colors whitespace-nowrap ${
+              activeTab === "targets"
+                ? "border-sky-400 text-sky-400 bg-sky-950/20"
+                : "border-transparent text-slate-300 hover:text-white"
+            }`}
+          >
+            <Smartphone className="w-4 h-4 text-sky-400" />
+            <span>Multi-Plataforma (Mobile, Desktop, PWA, WASM)</span>
+          </button>
+          <button
             onClick={() => setActiveTab("react")}
             className={`flex items-center gap-1.5 px-4 py-2.5 border-b-2 font-medium transition-colors whitespace-nowrap ${
               activeTab === "react"
@@ -388,9 +403,156 @@ export default WxDivGame;
                   </div>
 
                   <div className="flex items-center gap-2 p-1.5 rounded bg-slate-900/80 border border-slate-800">
+                    <Smartphone className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                    <span className="text-sky-300">dist/mobile/</span>
+                    <span className="text-slate-500 text-[10px] ml-auto">Capacitor scaffolding (Android Studio / iOS Xcode)</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-slate-900/80 border border-slate-800">
+                    <Monitor className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <span className="text-indigo-300">dist/desktop/</span>
+                    <span className="text-slate-500 text-[10px] ml-auto">Tauri (Rust) & Electron (Windows, macOS, Linux)</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-slate-900/80 border border-slate-800">
+                    <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span className="text-amber-300">dist/pwa/ & dist/wasm/</span>
+                    <span className="text-slate-500 text-[10px] ml-auto">Manifest PWA + Service Worker offline + WebAssembly Core</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-slate-900/80 border border-slate-800">
                     <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
                     <span className="text-slate-300">project.json & README.md</span>
-                    <span className="text-slate-500 text-[10px] ml-auto">Instrucciones de juego y metadatos ({resolution})</span>
+                    <span className="text-slate-500 text-[10px] ml-auto">Instrucciones de compilación multiplataforma ({resolution})</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Targets Tab */}
+          {activeTab === "targets" && (
+            <div className="flex flex-col gap-4">
+              <div className="p-4 rounded-xl bg-gradient-to-br from-sky-950/40 to-slate-900 border border-sky-800/40 shadow-lg">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-sky-300 flex items-center gap-2">
+                      <Cpu className="w-4 h-4" />
+                      <span>Ecosistema de Compilación Multiplataforma WXDIV 3.0</span>
+                    </h3>
+                    <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                      El proyecto generado compila código DIV Games Studio a <strong>5 entornos de ejecución nativos y web</strong>. Puedes descargar el paquete ZIP completo con las carpetas de scaffolding listas para compilar con un solo comando.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleExportZip}
+                    disabled={isExportingZip}
+                    className="flex-shrink-0 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 font-semibold text-white flex items-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Descargar Todo (.ZIP)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 5 Platforms Bento Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* 1. Web Target */}
+                <div className="p-3.5 rounded-xl bg-[#070c18] border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Globe className="w-4 h-4 text-cyan-400" />
+                      <span className="font-bold text-slate-100 text-xs">1. Web (HTML5 Standalone)</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-semibold">Listo</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Salida autónoma en <code className="text-cyan-300">dist/web/index.html</code>. No requiere servidor Node ni instalación previa; funciona haciendo doble clic en cualquier explorador moderno.
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Ubicación: dist/web/</span>
+                    <span className="text-cyan-400 font-semibold">Cero dependencias</span>
+                  </div>
+                </div>
+
+                {/* 2. Mobile Target */}
+                <div className="p-3.5 rounded-xl bg-[#070c18] border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Smartphone className="w-4 h-4 text-emerald-400" />
+                      <span className="font-bold text-slate-100 text-xs">2. Mobile (Capacitor / Cordova)</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/60 font-semibold">Android & iOS</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Scaffolding completo con <code className="text-emerald-300">capacitor.config.json</code>, D-Pad táctil virtual y soporte para sensores táctiles y hápticos en Android e iOS nativo.
+                    </p>
+                    <div className="mt-2 p-2 rounded bg-black/40 font-mono text-[10px] text-emerald-400 border border-emerald-950">
+                      npx cap add android &amp;&amp; npx cap run android
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Ubicación: dist/mobile/</span>
+                    <span className="text-emerald-400 font-semibold">Google Play / App Store</span>
+                  </div>
+                </div>
+
+                {/* 3. Desktop Target */}
+                <div className="p-3.5 rounded-xl bg-[#070c18] border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Monitor className="w-4 h-4 text-indigo-400" />
+                      <span className="font-bold text-slate-100 text-xs">3. Desktop (Tauri &amp; Electron)</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800/60 font-semibold">Win, Mac, Linux</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Doble soporte de escritorio: <strong>Tauri</strong> (binario Rust de ~8 MB) y <strong>Electron</strong> con instaladores preconfigurados (.exe, .dmg, .AppImage).
+                    </p>
+                    <div className="mt-2 p-2 rounded bg-black/40 font-mono text-[10px] text-indigo-300 border border-indigo-950">
+                      cargo tauri build  |  npm run dist
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Ubicación: dist/desktop/</span>
+                    <span className="text-indigo-400 font-semibold">60 FPS Hardware</span>
+                  </div>
+                </div>
+
+                {/* 4. PWA Target */}
+                <div className="p-3.5 rounded-xl bg-[#070c18] border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      <span className="font-bold text-slate-100 text-xs">4. PWA (Manifest &amp; Service Worker)</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800/60 font-semibold">Offline Ready</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Progressive Web App con <code className="text-amber-300">manifest.json</code> y Service Worker cacheando todo el motor para jugar o usar la app sin conexión a internet.
+                    </p>
+                    <div className="mt-2 p-2 rounded bg-black/40 font-mono text-[10px] text-amber-300 border border-amber-950">
+                      Instalable directamente desde el navegador
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Ubicación: dist/pwa/</span>
+                    <span className="text-amber-400 font-semibold">Cache offline v1</span>
+                  </div>
+                </div>
+
+                {/* 5. WASM Target */}
+                <div className="p-3.5 rounded-xl bg-[#070c18] border border-slate-800 flex flex-col justify-between md:col-span-2">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Cpu className="w-4 h-4 text-violet-400" />
+                      <span className="font-bold text-slate-100 text-xs">5. WASM Core (WebAssembly Acelerado)</span>
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-violet-950 text-violet-300 border border-violet-800/60 font-semibold">10x Rendimiento</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Módulo WebAssembly (<code className="text-violet-300">div_core.wat</code>) con cargador puente (<code className="text-violet-300">wasm_loader.js</code>) para acelerar operaciones numéricas pesadas, cálculo de colisiones AABB y punto fijo del raycaster.
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Ubicación: dist/wasm/</span>
+                    <span className="text-violet-400 font-semibold">Fallback automático a JS</span>
                   </div>
                 </div>
               </div>

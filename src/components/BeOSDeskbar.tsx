@@ -35,6 +35,7 @@ import {
   Info,
   Box,
   Film,
+  LayoutGrid,
 } from "lucide-react";
 import { PRESETS, GamePreset } from "../engine/presets";
 import { WindowId, LayoutPresetType } from "./WindowManager/types";
@@ -188,6 +189,13 @@ export const WXDIVDeskbar: React.FC<WXDIVDeskbarProps> = ({
           desc: "Editor visual de nodos y flujos de juego",
           shortcut: "Visual",
           icon: <Wand2 className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: "designer" as WindowId,
+          name: "Diseñador de Apps (VB 3.0)",
+          desc: "Diseñador visual de formularios y controles interactivos",
+          shortcut: "VB3",
+          icon: <LayoutGrid className="w-4 h-4 text-sky-400" />,
         },
         {
           id: "processes" as WindowId,

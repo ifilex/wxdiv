@@ -209,6 +209,57 @@ BEGIN
     FRAME;
   END
 END`;
+  } else if (p.includes("app") || p.includes("todo") || p.includes("tarea") || p.includes("login") || p.includes("formulario")) {
+    snippet = `PROGRAM todo_app;
+
+// Estado reactivo global
+STORE app
+  user: "alex"
+  tasks_count: 3
+  filter: "all"
+END
+
+GLOBAL
+  input_text = "Completar modulo WXDIV";
+  task1 = "Diseñar UI Primitives";
+  task2 = "Conectar Store Reactivo";
+  task3 = "Compilar a Mobile & Desktop";
+
+BEGIN
+  set_mode(m640x480);
+  set_fps(60);
+  screen_color(rgb(15, 23, 42));
+
+  // Inicializar base de datos local SQLite
+  load_sqlite("tasks.db");
+  sqlite_query("CREATE TABLE IF NOT EXISTS tasks (id INTEGER, text TEXT);");
+
+  LOOP
+    // Encabezado
+    draw_box(20, 20, 620, 70, rgb(30, 41, 59));
+    write(1, 30, 35, 0, "WXDIV 3.0 • GESTOR DE TAREAS MULTIPLATAFORMA");
+
+    // UI Primitives
+    draw_input(30, 85, 420, 36, input_text, "Escribe una nueva tarea...");
+    draw_button(460, 85, 150, 36, "+ AGREGAR", 101);
+
+    // Listado de tareas
+    draw_box(30, 135, 610, 185, rgb(20, 30, 45));
+    write(1, 45, 150, 0, "[✓] " + task1);
+
+    draw_box(30, 195, 610, 245, rgb(20, 30, 45));
+    write(1, 45, 210, 0, "[✓] " + task2);
+
+    draw_box(30, 255, 610, 305, rgb(20, 30, 45));
+    write(1, 45, 270, 0, "[ ] " + task3);
+
+    // Barra de estado reactiva
+    draw_tabs(30, 330, 320, 32, "Todas,Pendientes,Completadas", 0);
+    draw_button(500, 330, 110, 32, "GUARDAR", 102);
+
+    FRAME;
+  END
+END`;
   } else {
     snippet = `PROCESS entidad_dinamica(x, y)
 PRIVATE
@@ -393,8 +444,25 @@ Core syntax rules of DIV Games Studio:
    - Inputs: key(_left, _right, _up, _down, _space, _enter, _esc, _a, _s, _d, _w), mouse.x, mouse.y, mouse.left, mouse.right
 7. Process variables:
    - x, y, z, graph, flags (1=flip_x, 2=flip_y, 4=alpha), angle (0..360000 or 0..360), size, alpha, ctype, cnumber, id, father.
+8. Multi-platform App Architecture & Precode UI Primitives:
+   - UI Functions:
+     * draw_button(x, y, w, h, "Texto", callback_process_or_id)
+     * draw_input(x, y, w, h, value_var, "placeholder")
+     * draw_select(x, y, w, h, "Opcion1,Opcion2", selected_index)
+     * draw_table(x, y, w, h, "Col1,Col2", "Fila1,Val|Fila2,Val")
+     * draw_modal(x, y, w, h, "Titulo", "Mensaje del modal")
+     * draw_tabs(x, y, w, h, "Tab1,Tab2,Tab3", active_index)
+   - Layout & Reactive State Precode Blocks:
+     * STORE store_name ... var: type ... END
+     * LAYOUT vertical gap=8 ... FIELD campo ... BUTTON "Texto" ... END
+     * ON variable == value ... navigate("ruta") ... END
+   - Local DB & Persistence:
+     * load_sqlite("app.db"), sqlite_query("SQL_STATEMENT")
+     * save_json("file.json", var), load_json("file.json")
+     * fetch_api("https://url.com")
+     * store_set("key", value), store_get("key", default)
 
-When providing DIV code, wrap the complete game or process in \`\`\`div ... \`\`\` code blocks.
+When providing DIV code, wrap the complete game or app in \`\`\`div ... \`\`\` code blocks.
 Make sure the syntax is 100% compliant with DIV Games Studio. Provide concise, expert explanations in Spanish.`;
 
   const userPrompt = `Tarea: ${task}

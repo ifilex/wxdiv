@@ -1,5 +1,6 @@
 import { DivRuntime } from "./runtime";
 import { DivProcess } from "../types";
+import { APP_TEMPLATES } from "./appTemplates";
 
 export interface GamePreset {
   id: string;
@@ -2366,4 +2367,14 @@ END
       runtime.spawn("jugador_marine");
     },
   },
+  // Multiplatform App Templates mapped to Presets for direct execution in GameStage
+  ...APP_TEMPLATES.map((tmpl) => ({
+    id: tmpl.id,
+    name: `[App] ${tmpl.name}`,
+    genre: `App (${tmpl.category})`,
+    description: tmpl.description,
+    resolution: tmpl.resolution,
+    code: tmpl.code,
+    setupRuntime: tmpl.setupRuntime,
+  })),
 ];

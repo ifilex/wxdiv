@@ -22,6 +22,7 @@ import {
   Type,
   Package,
   FileImage,
+  LayoutGrid,
 } from "lucide-react";
 import { PRESETS, GamePreset } from "../engine/presets";
 
@@ -36,6 +37,7 @@ export type IDETabType =
   | "sound"
   | "explosions"
   | "visual"
+  | "designer"
   | "ai"
   | "processes";
 
@@ -266,6 +268,19 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         >
           <Wand2 className="w-3.5 h-3.5" />
           <span>Lógica Visual</span>
+        </button>
+
+        <button
+          onClick={() => onChangeTab("designer")}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
+            activeTab === "designer"
+              ? "bg-sky-950 text-sky-300 border border-sky-700/60 shadow-sm font-semibold"
+              : "text-slate-400 hover:text-sky-300"
+          }`}
+          title="Diseñador de Apps & Formularios estilo Visual Basic 3.0"
+        >
+          <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
+          <span>Diseñador Apps (VB3)</span>
         </button>
 
         <button

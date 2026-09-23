@@ -59,6 +59,13 @@ export const DIV_KEYWORDS = new Set([
   "FLOAT",
   "DOUBLE",
   "CHAR",
+  // WXDIV 3.0 App & Multiplatform Declarations
+  "STORE",
+  "LAYOUT",
+  "FIELD",
+  "BUTTON",
+  "ON",
+  "NAVIGATE",
 ]);
 
 export const DIV_BUILTINS = new Set([
@@ -165,6 +172,35 @@ export const DIV_BUILTINS = new Set([
   "close_mode8_door",
   "toggle_mode8_door",
   "interact_mode8",
+  // WXDIV 3.0 App UI Primitives
+  "draw_button",
+  "draw_input",
+  "draw_select",
+  "draw_table",
+  "draw_modal",
+  "draw_tabs",
+  // WXDIV 3.0 Layout System
+  "layout_begin",
+  "layout_next",
+  "layout_end",
+  // WXDIV 3.0 State, Router & Data Persistence
+  "store_create",
+  "store_get",
+  "store_set",
+  "on_data_change",
+  "onDataChange",
+  "save_json",
+  "load_json",
+  "load_sqlite",
+  "sqlite_query",
+  "fetch_api",
+  "navigate",
+  "on_route_change",
+  "on_click",
+  "on_submit",
+  "auth_login",
+  "auth_logout",
+  "rgb",
 ]);
 
 export const DIV_CONSTANTS = new Set([

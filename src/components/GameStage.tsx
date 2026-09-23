@@ -41,6 +41,14 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
 
     // Keyboard listener
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Forward key event to App UI Engine if an input field is active
+      if (runtime.appUiEngine) {
+        const handled = runtime.appUiEngine.handleKeyDown(e.key, e);
+        if (handled) {
+          return;
+        }
+      }
+
       // Prevent browser scrolling and tab loss with game keys
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Tab"].includes(e.code) || e.key === "Tab") {
         e.preventDefault();
@@ -279,17 +287,26 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
             style={{ imageRendering: "pixelated" }}
             onMouseDown={(e) => {
               e.currentTarget.focus({ preventScroll: true });
-              if (e.button === 0) runtime.mouseState.left = true;
+              if (e.button === 0) {
+                runtime.mouseState.left = true;
+                runtime.appUiEngine?.handleMouseDown(runtime.mouseState.x, runtime.mouseState.y);
+              }
               if (e.button === 2) runtime.mouseState.right = true;
             }}
             onMouseUp={(e) => {
-              if (e.button === 0) runtime.mouseState.left = false;
+              if (e.button === 0) {
+                runtime.mouseState.left = false;
+                runtime.appUiEngine?.handleMouseUp(runtime.mouseState.x, runtime.mouseState.y);
+              }
               if (e.button === 2) runtime.mouseState.right = false;
             }}
             onMouseMove={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              runtime.mouseState.x = Math.floor(((e.clientX - rect.left) / rect.width) * runtime.width);
-              runtime.mouseState.y = Math.floor(((e.clientY - rect.top) / rect.height) * runtime.height);
+              const mx = Math.floor(((e.clientX - rect.left) / rect.width) * runtime.width);
+              const my = Math.floor(((e.clientY - rect.top) / rect.height) * runtime.height);
+              runtime.mouseState.x = mx;
+              runtime.mouseState.y = my;
+              runtime.appUiEngine?.handleMouseMove(mx, my);
             }}
             onContextMenu={(e) => e.preventDefault()}
           />

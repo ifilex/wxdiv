@@ -102,7 +102,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   const categories = [
     {
       label: "Desarrollo y Ejecución",
-      ids: ["code", "game", "visual"] as WindowId[],
+      ids: ["code", "game", "designer", "visual"] as WindowId[],
     },
     {
       label: "Gráficos, FPG, MAP, Paletas y Fuentes",

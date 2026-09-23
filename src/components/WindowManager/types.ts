@@ -14,6 +14,7 @@ export type WindowId =
   | "sound"
   | "explosions"
   | "visual"
+  | "designer"
   | "ai"
   | "processes";
 

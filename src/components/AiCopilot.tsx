@@ -1,8 +1,25 @@
 import React, { useState, useEffect } from "react";
-import { Sparkles, Send, RefreshCw, Check, Copy, Code2, ArrowDownToLine, Flame, ShieldAlert, Key, Settings2 } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  RefreshCw,
+  Check,
+  Copy,
+  Code2,
+  ArrowDownToLine,
+  Flame,
+  ShieldAlert,
+  Key,
+  Settings2,
+  Smartphone,
+  Gamepad2,
+  Database,
+  LayoutGrid,
+} from "lucide-react";
 import { DivGraphic } from "../types";
 import { getAiConfig, getAiHeaders, AiConfig } from "../services/aiConfig";
 import { AiSettingsModal } from "./AiSettingsModal";
+import { APP_TEMPLATES, AppTemplate } from "../engine/appTemplates";
 
 interface AiCopilotProps {
   currentCode: string;
@@ -40,6 +57,8 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [aiConfig, setAiConfig] = useState<AiConfig>(getAiConfig());
+  const [chipsCategory, setChipsCategory] = useState<"games" | "apps">("apps");
+  const [selectedTemplate, setSelectedTemplate] = useState<AppTemplate | null>(null);
 
   // Listen for external config changes
   useEffect(() => {
@@ -94,7 +113,7 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Error de respuesta del servidor IA.");
+        throw new Error(data.error || data.message || "Error de respuesta del servidor IA.");
       }
 
       const data = await res.json();
@@ -105,6 +124,10 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
         else if (data.modelUsed.includes("lite")) setActiveModel("Gemini Flash Lite");
         else if (data.modelUsed.includes("pro")) setActiveModel("Gemini 1.5 Pro");
         else if (data.modelUsed.includes("fallback") || data.modelUsed.includes("offline")) setActiveModel("DIV Fallback Engine");
+      }
+
+      if (data.notice) {
+        setError(data.notice);
       }
 
       // Extract DIV code block if present
@@ -274,17 +297,114 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
         )}
       </div>
 
-      {/* Quick Action Chips */}
-      <div className="p-2 bg-[#0a1020] border-t border-slate-800/80 flex items-center gap-1.5 overflow-x-auto text-[11px]">
-        {quickPrompts.map((prompt, i) => (
+      {/* Quick Action Chips & Templates Bar */}
+      <div className="border-t border-slate-800/80 bg-[#0a1020]">
+        {/* Category Toggles */}
+        <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 border-b border-slate-900/60 text-[10px]">
           <button
-            key={i}
-            onClick={() => handleSendMessage(prompt)}
-            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 whitespace-nowrap transition-colors"
+            onClick={() => {
+              setChipsCategory("apps");
+              setSelectedTemplate(null);
+            }}
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
+              chipsCategory === "apps"
+                ? "bg-sky-950 text-sky-300 border border-sky-800/60"
+                : "text-slate-400 hover:text-white"
+            }`}
           >
-            {prompt}
+            <Smartphone className="w-3 h-3 text-sky-400" />
+            <span>Plantillas Apps (Precode WXDIV)</span>
           </button>
-        ))}
+          <button
+            onClick={() => {
+              setChipsCategory("games");
+              setSelectedTemplate(null);
+            }}
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
+              chipsCategory === "games"
+                ? "bg-amber-950 text-amber-300 border border-amber-800/60"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Gamepad2 className="w-3 h-3 text-amber-400" />
+            <span>Juegos Clásicos</span>
+          </button>
+        </div>
+
+        {/* Chips list */}
+        <div className="p-2 flex items-center gap-1.5 overflow-x-auto text-[11px]">
+          {chipsCategory === "apps" ? (
+            APP_TEMPLATES.map((tmpl) => (
+              <button
+                key={tmpl.id}
+                onClick={() => setSelectedTemplate(tmpl)}
+                className={`px-2.5 py-1 rounded border flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  selectedTemplate?.id === tmpl.id
+                    ? "bg-sky-900/60 text-sky-200 border-sky-500 font-semibold"
+                    : "bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800"
+                }`}
+              >
+                <LayoutGrid className="w-3 h-3 text-sky-400" />
+                <span>{tmpl.name}</span>
+              </button>
+            ))
+          ) : (
+            quickPrompts.map((prompt, i) => (
+              <button
+                key={i}
+                onClick={() => handleSendMessage(prompt)}
+                className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 whitespace-nowrap transition-colors"
+              >
+                {prompt}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Selected App Template Action Drawer */}
+        {selectedTemplate && (
+          <div className="mx-2 mb-2 p-2.5 rounded-lg bg-slate-900/90 border border-sky-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-sky-300">
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>{selectedTemplate.name}</span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">{selectedTemplate.description}</p>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => {
+                  onApplyCode(selectedTemplate.code);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: "assistant",
+                      content: `🚀 ¡Plantilla **${selectedTemplate.name}** aplicada al editor! Incluye arquitectura de estado Store, UI Primitives, layout responsive y persistencia.`,
+                    },
+                  ]);
+                  setSelectedTemplate(null);
+                }}
+                className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold flex items-center gap-1 text-[11px] shadow-sm transition-colors"
+              >
+                <Flame className="w-3 h-3 text-amber-300" />
+                <span>Cargar en Editor</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleSendMessage(
+                    `Adapta la plantilla ${selectedTemplate.name} (${selectedTemplate.description}) con nuevas características personalizadas.`
+                  );
+                  setSelectedTemplate(null);
+                }}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 text-[11px] transition-colors"
+              >
+                <Sparkles className="w-3 h-3 text-sky-400" />
+                <span>Personalizar con IA</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input Form */}

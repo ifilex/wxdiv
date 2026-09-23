@@ -40,6 +40,8 @@ import {
 } from "./mode8Enhanced";
 import { renderDoom2PolygonWorld, generateDoomStaircase } from "./doom2Engine";
 import { Mode8WorkerPool, RaycastWorkerTask } from "./mode8Worker";
+import { AppStore, appStore } from "./appStore";
+import { AppUiEngine, appUiEngine, ButtonOptions, InputOptions, TableOptions } from "./appUiEngine";
 
 export interface EngineStats {
   fps: number;
@@ -135,6 +137,10 @@ export class DivRuntime {
     left: false,
     right: false,
   };
+
+  // Modern Multiplatform App Engines (State Store, Routing & App UI Primitives)
+  public appStore: AppStore = new AppStore();
+  public appUiEngine: AppUiEngine = new AppUiEngine();
 
   // Callback hooks
   public onStatsUpdate?: (stats: EngineStats) => void;
@@ -417,6 +423,7 @@ export class DivRuntime {
     this.ctx = canvas.getContext("2d");
     if (this.ctx) {
       this.ctx.imageSmoothingEnabled = false; // Crisp pixel retro look
+      this.appUiEngine.setContext(canvas, this.ctx);
     }
   }
 
@@ -596,6 +603,10 @@ export class DivRuntime {
 
     this.processes.set(id, proc);
     return id;
+  }
+
+  public spawnProcess(name: string, args: any[] = [], fatherId: number = 0): number {
+    return this.spawn(name, args, fatherId);
   }
 
   /**
@@ -1122,6 +1133,10 @@ export class DivRuntime {
     return this.write(font, x, y, align, text);
   }
 
+  public drawText(font: number, x: number, y: number, align: number, text: string): number {
+    return this.write(font, x, y, align, text);
+  }
+
   public move_text(id: number, x: number, y: number): void {
     const t = this.texts.get(id);
     if (t) {
@@ -1197,6 +1212,241 @@ export class DivRuntime {
     if (color) this.backgroundColor = color;
     this.primitives = [];
     this.permanentPrimitives = [];
+  }
+
+  // ========================================================
+  // WXDIV 3.0 APP UI PRIMITIVES & LAYOUT SYSTEM
+  // ========================================================
+
+  public drawButton(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    onClick?: () => void,
+    options?: ButtonOptions
+  ) {
+    this.appUiEngine.drawButton(x, y, w, h, label, onClick, options);
+  }
+
+  public draw_button(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    onClick?: () => void,
+    options?: ButtonOptions
+  ) {
+    this.drawButton(x, y, w, h, label, onClick, options);
+  }
+
+  public drawInput(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    value: string,
+    onChange?: (newVal: string) => void,
+    placeholder?: string,
+    options?: InputOptions
+  ) {
+    this.appUiEngine.drawInput(x, y, w, h, value, onChange, placeholder, options);
+  }
+
+  public draw_input(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    value: string,
+    onChange?: (newVal: string) => void,
+    placeholder?: string,
+    options?: InputOptions
+  ) {
+    this.drawInput(x, y, w, h, value, onChange, placeholder, options);
+  }
+
+  public drawSelect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: string[],
+    value: string,
+    onChange?: (selected: string) => void
+  ) {
+    this.appUiEngine.drawSelect(x, y, w, h, options, value, onChange);
+  }
+
+  public draw_select(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: string[],
+    value: string,
+    onChange?: (selected: string) => void
+  ) {
+    this.drawSelect(x, y, w, h, options, value, onChange);
+  }
+
+  public drawTable(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    columns: string[],
+    rows: Array<Record<string, any> | any[]>,
+    options?: TableOptions
+  ) {
+    this.appUiEngine.drawTable(x, y, w, h, columns, rows, options);
+  }
+
+  public draw_table(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    columns: string[],
+    rows: Array<Record<string, any> | any[]>,
+    options?: TableOptions
+  ) {
+    this.drawTable(x, y, w, h, columns, rows, options);
+  }
+
+  public drawModal(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    title: string,
+    content: string,
+    onClose?: () => void
+  ) {
+    this.appUiEngine.drawModal(x, y, w, h, title, content, onClose);
+  }
+
+  public draw_modal(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    title: string,
+    content: string,
+    onClose?: () => void
+  ) {
+    this.drawModal(x, y, w, h, title, content, onClose);
+  }
+
+  public drawTabs(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    tabs: string[],
+    activeTab: string | number,
+    onTabChange?: (tab: string, index: number) => void
+  ) {
+    this.appUiEngine.drawTabs(x, y, w, h, tabs, activeTab, onTabChange);
+  }
+
+  public draw_tabs(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    tabs: string[],
+    activeTab: string | number,
+    onTabChange?: (tab: string, index: number) => void
+  ) {
+    this.drawTabs(x, y, w, h, tabs, activeTab, onTabChange);
+  }
+
+  public layout_begin(
+    direction: "vertical" | "horizontal" | "grid",
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    gap?: number,
+    padding?: number,
+    cols?: number
+  ) {
+    this.appUiEngine.layout_begin(direction, x, y, width, height, gap, padding, cols);
+  }
+
+  public layout_next(customW?: number, customH?: number) {
+    return this.appUiEngine.layout_next(customW, customH);
+  }
+
+  public layout_end() {
+    this.appUiEngine.layout_end();
+  }
+
+  // ========================================================
+  // REACTIVE STATE MANAGEMENT, ROUTER & PERSISTENCE
+  // ========================================================
+
+  public store_create(name: string, initialData: Record<string, any>) {
+    this.appStore.store_create(name, initialData);
+  }
+
+  public store_get(path: string, defaultValue?: any) {
+    return this.appStore.store_get(path, defaultValue);
+  }
+
+  public store_set(path: string, value: any) {
+    this.appStore.store_set(path, value);
+  }
+
+  public onDataChange(path: string, callback: (newVal: any, oldVal: any) => void) {
+    return this.appStore.onDataChange(path, callback);
+  }
+
+  public navigate(route: string, params?: Record<string, any>) {
+    this.appStore.navigate(route, params);
+  }
+
+  public onRouteChange(callback: (route: string, params: any) => void) {
+    this.appStore.onRouteChange(callback);
+  }
+
+  public onClick(elementId: string, callback: () => void) {
+    this.appStore.onClick(elementId, callback);
+  }
+
+  public onSubmit(formId: string, callback: (data: any) => void) {
+    this.appStore.onSubmit(formId, callback);
+  }
+
+  public save_json(filename: string, data: any): boolean {
+    return this.appStore.save_json(filename, data);
+  }
+
+  public load_json(filename: string, defaultValue?: any): any {
+    return this.appStore.load_json(filename, defaultValue);
+  }
+
+  public load_sqlite(dbName?: string): boolean {
+    return this.appStore.load_sqlite(dbName);
+  }
+
+  public sqlite_query(sql: string, params?: any[]): any[] {
+    return this.appStore.sqlite_query(sql, params);
+  }
+
+  public async fetch_api(url: string, options?: any, callback?: any) {
+    return this.appStore.fetch_api(url, options, callback);
+  }
+
+  public auth_login(user: string, token?: string) {
+    this.appStore.auth_login(user, token);
+  }
+
+  public auth_logout() {
+    this.appStore.auth_logout();
   }
 
   public fadeOn() {
@@ -1608,6 +1858,8 @@ export class DivRuntime {
   private render() {
     if (!this.ctx || !this.canvas) return;
 
+    this.appUiEngine.resetFrame();
+
     const ctx = this.ctx;
 
     // 1. Check for Active 3D Modes (Modo 7: Floor Perspective, Modo 8: Raycaster)
@@ -1734,6 +1986,9 @@ export class DivRuntime {
         ctx.fillText(content, txt.x, txt.y);
       }
     }
+
+    // 5. App UI Modal & Dialog Overlays
+    this.appUiEngine.renderOverlays();
   }
 
   /**
