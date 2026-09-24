@@ -6,6 +6,8 @@ export interface Token {
   value: string;
   line: number;
   column: number;
+  unclosed?: boolean;
+  quoteChar?: string;
 }
 
 export enum TokenType {
@@ -66,6 +68,9 @@ export const DIV_KEYWORDS = new Set([
   "BUTTON",
   "ON",
   "NAVIGATE",
+  "BIND",
+  "COMPONENT",
+  "EVENT",
 ]);
 
 export const DIV_BUILTINS = new Set([
@@ -82,6 +87,7 @@ export const DIV_BUILTINS = new Set([
   "clear_screen",
   "start_scroll",
   "stop_scroll",
+  "refresh_scroll",
   "load_pal",
   "load_wld",
   "save_wld",
@@ -96,8 +102,10 @@ export const DIV_BUILTINS = new Set([
   "delete_text",
   "move_text",
   "load_fnt",
+  "draw_text",
   // Drawing primitives
   "draw_box",
+  "draw_outline_box",
   "draw_line",
   "draw_circle",
   "draw_fcircle",
@@ -119,6 +127,8 @@ export const DIV_BUILTINS = new Set([
   "signal",
   "let_me_alone",
   "exists",
+  "exit",
+  "out_region",
   // Sound
   "sound",
   "sound_play",
@@ -144,6 +154,8 @@ export const DIV_BUILTINS = new Set([
   "roll_palette",
   "set_color",
   "get_color",
+  "rgb",
+  "rgba",
   // Inputs
   "key",
   // 3D Engine (Modo 7 y Modo 8 Hexen / GZDoom Hybrid & DIV2 Raycaster)
@@ -179,6 +191,8 @@ export const DIV_BUILTINS = new Set([
   "draw_table",
   "draw_modal",
   "draw_tabs",
+  "draw_checkbox",
+  "set_ui_theme",
   // WXDIV 3.0 Layout System
   "layout_begin",
   "layout_next",
@@ -187,20 +201,24 @@ export const DIV_BUILTINS = new Set([
   "store_create",
   "store_get",
   "store_set",
+  "store_watch",
   "on_data_change",
   "onDataChange",
   "save_json",
   "load_json",
   "load_sqlite",
   "sqlite_query",
+  "sqlite_create_table",
   "fetch_api",
+  "http_get",
+  "http_post",
   "navigate",
   "on_route_change",
   "on_click",
   "on_submit",
   "auth_login",
   "auth_logout",
-  "rgb",
+  "auth_is_logged",
 ]);
 
 export const DIV_CONSTANTS = new Set([
@@ -378,19 +396,35 @@ export function tokenizeDiv(code: string): Token[] {
     if (char === '"' || char === "'") {
       const quote = char;
       const startCol = col;
+      const startLine = line;
       let val = "";
       i++;
       col++;
       while (i < code.length && code[i] !== quote && code[i] !== "\n") {
+        if (code[i] === "\\" && i + 1 < code.length) {
+          val += code[i] + code[i + 1];
+          i += 2;
+          col += 2;
+          continue;
+        }
         val += code[i];
         i++;
         col++;
       }
-      if (code[i] === quote) {
+      let closed = false;
+      if (i < code.length && code[i] === quote) {
+        closed = true;
         i++;
         col++;
       }
-      tokens.push({ type: TokenType.STRING, value: val, line, column: startCol });
+      tokens.push({
+        type: TokenType.STRING,
+        value: val,
+        line: startLine,
+        column: startCol,
+        unclosed: !closed,
+        quoteChar: quote,
+      });
       continue;
     }
 
@@ -482,63 +516,16 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
 
   const tokens = tokenizeDiv(code);
 
-  // Check for unclosed strings or comments
-  for (let l = 0; l < lines.length; l++) {
-    const lineText = lines[l];
-    // Check unclosed double or single quotes that are not inside comments
-    const trimmed = lineText.trim();
-    if (!trimmed.startsWith("//") && !trimmed.startsWith("/*")) {
-      let inDQuote = false;
-      let inSQuote = false;
-      for (let c = 0; c < lineText.length; c++) {
-        const ch = lineText[c];
-        if (ch === '"' && !inSQuote && (c === 0 || lineText[c - 1] !== "\\")) {
-          inDQuote = !inDQuote;
-        } else if (ch === "'" && !inDQuote && (c === 0 || lineText[c - 1] !== "\\")) {
-          inSQuote = !inSQuote;
-        }
-      }
-      if (inDQuote) {
-        diagnostics.push({
-          line: l + 1,
-          column: lineText.lastIndexOf('"') + 1,
-          severity: "error",
-          message: `Cadena de texto sin cerrar con comillas dobles (") en la línea ${l + 1}.`,
-          rule: "unclosed-string",
-        });
-      }
-      if (inSQuote) {
-        diagnostics.push({
-          line: l + 1,
-          column: lineText.lastIndexOf("'") + 1,
-          severity: "error",
-          message: `Cadena de texto sin cerrar con comilla simple (') en la línea ${l + 1}.`,
-          rule: "unclosed-string",
-        });
-      }
-    }
-  }
-
-  // Pre-scan tokens for asset loaders (DIV Games Studio requirement)
-  let hasLoadFpg = false;
-  let hasLoadFnt = false;
-  let hasLoadSnd = false;
-  for (let i = 0; i < tokens.length; i++) {
-    const val = tokens[i].value.toLowerCase();
-    if (val === "load_fpg" || val === "load_map") {
-      hasLoadFpg = true;
-    }
-    if (val === "load_fnt") {
-      hasLoadFnt = true;
-    }
-    if (
-      val === "load_wav" ||
-      val === "load_snd" ||
-      val === "load_pcm" ||
-      val === "load_song" ||
-      val === "load_mod"
-    ) {
-      hasLoadSnd = true;
+  // Check for unclosed strings accurately from tokenizer
+  for (const t of tokens) {
+    if (t.type === TokenType.STRING && t.unclosed) {
+      diagnostics.push({
+        line: t.line,
+        column: t.column,
+        severity: "error",
+        message: `Cadena de texto sin cerrar iniciada con ${t.quoteChar || '"'} en la línea ${t.line}.`,
+        rule: "unclosed-string",
+      });
     }
   }
 
@@ -556,40 +543,6 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
 
   for (let idx = 0; idx < tokens.length; idx++) {
     const t = tokens[idx];
-
-    // Check missing load_fnt for write / write_int / write_string (only if font is explicitly not 0)
-    if (
-      t.type === TokenType.IDENTIFIER &&
-      ["write", "write_int", "write_string"].includes(t.value.toLowerCase())
-    ) {
-      // In DIV Games Studio, font 0 is the built-in system font and does not require load_fnt.
-      // We allow write(0, ...) or write(...) without forcing load_fnt.
-    }
-
-    // In DIV Games Studio, sound(id, volume, frequency) is completely valid both with
-    // loaded sound IDs (load_wav/load_snd/load_pcm) and with direct synthesized effect channels (1..12).
-    // No error or warning is emitted for standalone sound(...) calls.
-
-    // Check missing load_fpg for graph assignments
-    if (
-      t.type === TokenType.IDENTIFIER &&
-      t.value.toLowerCase() === "graph"
-    ) {
-      const next = tokens[idx + 1];
-      if (next && next.value === "=") {
-        const valToken = tokens[idx + 2];
-        const isZero = valToken && valToken.value === "0" && tokens[idx + 3]?.value === ";";
-        if (!isZero && !hasLoadFpg) {
-          diagnostics.push({
-            line: t.line,
-            column: t.column,
-            severity: "error",
-            message: `Error de compilación: Se asigna un gráfico ('graph = ...') en la línea ${t.line} sin haber cargado ningún fichero de sprites con 'load_fpg(...)'. En DIV Games Studio es obligatorio cargar el archivo FPG antes de asignar gráficos a los procesos.`,
-            rule: "missing-load-fpg",
-          });
-        }
-      }
-    }
 
     // Parentheses matching
     if (t.type === TokenType.PUNCTUATION) {
@@ -616,7 +569,7 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
       const up = t.value.toUpperCase();
 
       // Block openers that terminate with END
-      if (["BEGIN", "LOOP", "WHILE", "FOR", "IF", "SWITCH"].includes(up)) {
+      if (["BEGIN", "LOOP", "WHILE", "FOR", "IF", "SWITCH", "STORE", "STRUCT", "TYPE", "LAYOUT"].includes(up)) {
         blockStack.push({ keyword: up, line: t.line, column: t.column });
       } else if (up === "REPEAT") {
         blockStack.push({ keyword: "REPEAT", line: t.line, column: t.column });
@@ -626,7 +579,7 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
             line: t.line,
             column: t.column,
             severity: "error",
-            message: `'END' inesperado en la línea ${t.line}: no hay bloque abierto (BEGIN, LOOP, WHILE, FOR, IF) para cerrar.`,
+            message: `'END' inesperado en la línea ${t.line}: no hay bloque abierto (BEGIN, LOOP, WHILE, FOR, IF, STORE) para cerrar.`,
             rule: "extra-end",
           });
         } else {

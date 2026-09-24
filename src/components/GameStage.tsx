@@ -26,6 +26,7 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
   const [isMuted, setIsMuted] = useState(soundEngine.isMuted);
   const [crtFilter, setCrtFilter] = useState(false);
   const [showTouchControls, setShowTouchControls] = useState(false);
+  const [canvasCursor, setCanvasCursor] = useState("default");
 
   // Hook canvas to runtime
   useEffect(() => {
@@ -42,9 +43,11 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
     // Keyboard listener
     const handleKeyDown = (e: KeyboardEvent) => {
       // Forward key event to App UI Engine if an input field is active
-      if (runtime.appUiEngine) {
+      if (runtime.appUiEngine && runtime.appUiEngine.activeFocusId) {
         const handled = runtime.appUiEngine.handleKeyDown(e.key, e);
         if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
       }
@@ -283,8 +286,13 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
             tabIndex={0}
             width={runtime.width}
             height={runtime.height}
-            className="w-full h-full object-contain pixelated bg-[#050811] focus:outline-none cursor-crosshair"
-            style={{ imageRendering: "pixelated" }}
+            className="w-full h-full object-contain pixelated bg-[#050811] focus:outline-none touch-none"
+            style={{
+              imageRendering: "pixelated",
+              transform: "translateZ(0)",
+              willChange: "transform",
+              cursor: canvasCursor,
+            }}
             onMouseDown={(e) => {
               e.currentTarget.focus({ preventScroll: true });
               if (e.button === 0) {
@@ -307,6 +315,49 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
               runtime.mouseState.x = mx;
               runtime.mouseState.y = my;
               runtime.appUiEngine?.handleMouseMove(mx, my);
+              const dynCursor = runtime.appUiEngine?.getCursorAt(mx, my) || (runtime.appUiEngine?.hasWidgets() ? "default" : "crosshair");
+              if (dynCursor !== canvasCursor) {
+                setCanvasCursor(dynCursor);
+              }
+            }}
+            onTouchStart={(e) => {
+              const touch = e.touches[0];
+              if (!touch) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const tx = Math.floor(((touch.clientX - rect.left) / rect.width) * runtime.width);
+              const ty = Math.floor(((touch.clientY - rect.top) / rect.height) * runtime.height);
+              runtime.mouseState.x = tx;
+              runtime.mouseState.y = ty;
+              runtime.mouseState.left = true;
+              runtime.appUiEngine?.handleMouseMove(tx, ty);
+              runtime.appUiEngine?.handleMouseDown(tx, ty);
+            }}
+            onTouchMove={(e) => {
+              const touch = e.touches[0];
+              if (!touch) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const tx = Math.floor(((touch.clientX - rect.left) / rect.width) * runtime.width);
+              const ty = Math.floor(((touch.clientY - rect.top) / rect.height) * runtime.height);
+              runtime.mouseState.x = tx;
+              runtime.mouseState.y = ty;
+              runtime.appUiEngine?.handleMouseMove(tx, ty);
+            }}
+            onTouchEnd={() => {
+              runtime.mouseState.left = false;
+              runtime.appUiEngine?.handleMouseUp(runtime.mouseState.x, runtime.mouseState.y);
+            }}
+            onTouchCancel={() => {
+              runtime.mouseState.left = false;
+              runtime.appUiEngine?.handleMouseUp(runtime.mouseState.x, runtime.mouseState.y);
+            }}
+            onWheel={(e) => {
+              e.preventDefault();
+              if (runtime.appUiEngine) {
+                const handled = runtime.appUiEngine.handleWheel(e.deltaY, runtime.mouseState.x, runtime.mouseState.y);
+                if (handled) {
+                  runtime.wakeUp();
+                }
+              }
             }}
             onContextMenu={(e) => e.preventDefault()}
           />

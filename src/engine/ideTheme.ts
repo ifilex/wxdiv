@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 
 export type IdeThemeId =
   | "classic-div"
+  | "vb3-classic"
+  | "android-modern"
   | "amber-dos"
   | "green-phosphor"
   | "borland-blue"
@@ -64,6 +66,24 @@ export const THEME_PRESETS: Record<
     accentColor: "#38bdf8",
     textColor: "#e0f2fe",
     titlebarBg: "from-[#0c1e3d] via-[#071328] to-[#040918]",
+  },
+  "vb3-classic": {
+    name: "Visual Basic 3.0 / .NET",
+    description: "Gris clásico de Windows 3.11/95, barra azul profundo y controles biselados",
+    bgColor: "#c0c0c0",
+    borderColor: "#000080",
+    accentColor: "#000080",
+    textColor: "#000000",
+    titlebarBg: "from-[#000080] via-[#103090] to-[#000080]",
+  },
+  "android-modern": {
+    name: "Android Material You",
+    description: "Moderna interfaz Material You con acentos verdes esmeralda y dark surfaces",
+    bgColor: "#101622",
+    borderColor: "#10b981",
+    accentColor: "#34d399",
+    textColor: "#e2e8f0",
+    titlebarBg: "from-[#132238] via-[#182a44] to-[#101622]",
   },
   "amber-dos": {
     name: "Fósforo Ámbar",

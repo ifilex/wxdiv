@@ -1,3 +1,5 @@
+import { APP_AUTOCOMPLETE_ITEMS } from "./appKeywords";
+
 export type SuggestionType = "keyword" | "function" | "variable" | "constant" | "type";
 
 export interface DivSuggestion {
@@ -787,4 +789,8 @@ export const DIV_AUTOCOMPLETE_ITEMS: DivSuggestion[] = [
     insertText: "_right",
     categoryLabel: "Constante tecla",
   },
+  ...APP_AUTOCOMPLETE_ITEMS,
 ];
+
+export { APP_AUTOCOMPLETE_ITEMS };
+

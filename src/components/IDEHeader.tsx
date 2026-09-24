@@ -23,6 +23,7 @@ import {
   Package,
   FileImage,
   LayoutGrid,
+  Tv,
 } from "lucide-react";
 import { PRESETS, GamePreset } from "../engine/presets";
 
@@ -56,6 +57,7 @@ interface IDEHeaderProps {
   onQuickExportZip?: () => void;
   onOpenCloudSync: () => void;
   onOpenAiSettings?: () => void;
+  code?: string;
 }
 
 export const IDEHeader: React.FC<IDEHeaderProps> = ({
@@ -73,7 +75,17 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
   onQuickExportZip,
   onOpenCloudSync,
   onOpenAiSettings,
+  code,
 }) => {
+  const isAppProject = React.useMemo(() => {
+    if (code) {
+      return (
+        /PROGRAM\s+\w*(_app|app|form|landing|web|crm|pos|db|tarea|crud|gestor)\b/i.test(code) ||
+        /\b(STORE\s+\w+|draw_button|draw_input|draw_table|layout_begin|set_ui_theme|app_state)\b/i.test(code)
+      );
+    }
+    return currentPresetId.startsWith("app_") || currentPresetId.includes("landing");
+  }, [code, currentPresetId]);
   return (
     <header className="bg-[#0b1222] border-b border-slate-800 text-slate-200 px-3 py-2 flex flex-wrap items-center justify-between gap-2 select-none">
       {/* Brand & Project Preset */}
@@ -141,32 +153,55 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs (Juego, Code, Mode 8, Sprites, Sounds, Explosions, Logic, AI, Processes) */}
+      {/* Navigation Tabs (Diseñador Delphi/VB, Código, Pantalla en Vivo, Utilidades) */}
       <div className="flex items-center bg-[#070b14] p-1 rounded-lg border border-slate-800 text-xs overflow-x-auto max-w-full">
+        {/* Core Delphi / Visual Basic Style App Designer Tab */}
         <button
-          onClick={() => onChangeTab("game")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
-            activeTab === "game"
-              ? "bg-slate-800 text-emerald-400 shadow-sm font-semibold"
-              : "text-slate-400 hover:text-slate-200"
+          onClick={() => onChangeTab("designer")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition-all flex-shrink-0 ${
+            activeTab === "designer"
+              ? "bg-sky-600 text-white shadow-md shadow-sky-950 font-bold ring-1 ring-sky-400/50"
+              : "bg-sky-950/40 text-sky-300 border border-sky-800/40 hover:bg-sky-900/60"
           }`}
-          title="Ver o enfocar la Pantalla de Juego en vivo"
+          title="Diseñador Visual de Formularios y Aplicaciones estilo Borland Delphi & Visual Basic"
         >
-          <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Pantalla Juego</span>
+          <LayoutGrid className="w-3.5 h-3.5 text-sky-200" />
+          <span>Diseñador Apps (Delphi/VB)</span>
         </button>
 
         <button
           onClick={() => onChangeTab("code")}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
             activeTab === "code"
-              ? "bg-slate-800 text-cyan-400 shadow-sm"
+              ? "bg-slate-800 text-cyan-400 shadow-sm font-semibold"
               : "text-slate-400 hover:text-slate-200"
           }`}
+          title="Ver o editar el código DIV / Pascal (F12)"
         >
           <FileCode className="w-3.5 h-3.5" />
-          <span>Código</span>
+          <span>Código (F12)</span>
         </button>
+
+        <button
+          onClick={() => onChangeTab("game")}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
+            activeTab === "game"
+              ? isAppProject
+                ? "bg-slate-800 text-cyan-400 shadow-sm font-semibold"
+                : "bg-slate-800 text-emerald-400 shadow-sm font-semibold"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          title={isAppProject ? "Ejecutar y ver la Pantalla de App interactiva (F5)" : "Ejecutar y ver la Pantalla de Juego en vivo (F5)"}
+        >
+          {isAppProject ? (
+            <Tv className="w-3.5 h-3.5 text-cyan-400" />
+          ) : (
+            <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
+          )}
+          <span>{isAppProject ? "Pantalla App (F5)" : "Pantalla Juego (F5)"}</span>
+        </button>
+
+        <div className="h-4 w-[1px] bg-slate-800 mx-1 hidden sm:block" />
 
         <button
           onClick={() => onChangeTab("mode8")}
@@ -178,7 +213,7 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
           title="Editor de Niveles y Laberintos 3D (DIV 2 & Doom 1)"
         >
           <Compass className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Nivel Modo 8</span>
+          <span>Modo 8 (3D)</span>
         </button>
 
         <button
@@ -268,19 +303,6 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         >
           <Wand2 className="w-3.5 h-3.5" />
           <span>Lógica Visual</span>
-        </button>
-
-        <button
-          onClick={() => onChangeTab("designer")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-all flex-shrink-0 ${
-            activeTab === "designer"
-              ? "bg-sky-950 text-sky-300 border border-sky-700/60 shadow-sm font-semibold"
-              : "text-slate-400 hover:text-sky-300"
-          }`}
-          title="Diseñador de Apps & Formularios estilo Visual Basic 3.0"
-        >
-          <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
-          <span>Diseñador Apps (VB3)</span>
         </button>
 
         <button

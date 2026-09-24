@@ -29,6 +29,7 @@ export class AppStore {
   private elementClickHandlers: Map<string, () => void> = new Map();
   private formSubmitHandlers: Map<string, (data: any) => void> = new Map();
   private routeListeners: Array<(route: string, params: any) => void> = [];
+  public onStateMutated?: () => void;
 
   // Routing
   public currentRoute: string = "home";
@@ -71,6 +72,7 @@ export class AppStore {
   public store_create(name: string, initialData: Record<string, any>) {
     this.state[name] = { ...initialData };
     this.notifyWatchers(name, this.state[name], undefined);
+    this.onStateMutated?.();
   }
 
   public store_get(path: string, defaultValue: any = undefined): any {
@@ -101,6 +103,7 @@ export class AppStore {
 
     this.notifyWatchers(path, value, oldValue);
     this.checkConditions();
+    this.onStateMutated?.();
   }
 
   public store_update(path: string, updater: (currVal: any) => any): void {

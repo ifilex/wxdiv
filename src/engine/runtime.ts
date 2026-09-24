@@ -109,7 +109,16 @@ export class DivRuntime {
   public currentSongId: number = 0;
   public primitives: DivPrimitive[] = [];
   public permanentPrimitives: DivPrimitive[] = [];
+  public frameTexts: DivText[] = [];
   public scrolls: DivScroll[] = [];
+
+  // Dirty tracking & Idle CPU Optimization for Apps & Forms
+  private needsRedraw: boolean = true;
+  public renderOnlyOnDirty: boolean = false;
+
+  public markDirty() {
+    this.needsRedraw = true;
+  }
 
   // ========================================================
   // 3D ENGINES: MODO 7 (Perspective Floor) & MODO 8 (Raycaster)
@@ -161,6 +170,10 @@ export class DivRuntime {
     DEFAULT_DIV_FONTS.forEach((f) => this.fonts.set(f.id, f));
     getInitialFpgPackages().forEach((p) => this.fpgPackages.set(p.id, p));
     getInitialMapFiles().forEach((m) => this.mapFiles.set(m.id, m));
+
+    // Connect auto-dirty tracking to reactive store and App UI engine
+    this.appStore.onStateMutated = () => this.markDirty();
+    this.appUiEngine.onUiInteraction = () => this.markDirty();
   }
 
   private initMode7() {
@@ -558,6 +571,21 @@ export class DivRuntime {
     if (!this.processes || typeof this.processes.values !== "function") return [];
     return Array.from(this.processes.values());
   };
+
+  /**
+   * Checks if any 3D mode is active or any active process has visual/animated movement
+   */
+  public hasActiveProcesses(): boolean {
+    if (this.m7[0]?.active || this.m8[0]?.active) return true;
+    for (const p of this.processes.values()) {
+      if (!p.isDead && !p.isSleeping && !p.isFrozen) {
+        if (p.graph > 0 || (p.customState && p.customState.activeAnimation)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 
   public registerProcess(
     name: string,
@@ -1109,8 +1137,17 @@ export class DivRuntime {
         `[DIV Runtime Error] write(): La fuente '${font}' no está cargada. Cárgala con load_fnt() antes de usar write().`
       );
     }
+    // Prevent runaway duplicate allocation when write is called repeatedly in a loop
+    for (const [existingId, existing] of this.texts.entries()) {
+      if (existing.x === x && existing.y === y && existing.font === font && existing.align === align) {
+        existing.text = text;
+        this.markDirty();
+        return existingId;
+      }
+    }
     const id = this.texts.size + 1;
     this.texts.set(id, { id, font, x, y, align, text });
+    this.markDirty();
     return id;
   }
 
@@ -1120,8 +1157,16 @@ export class DivRuntime {
         `[DIV Runtime Error] writeInt(): La fuente '${font}' no está cargada. Cárgala con load_fnt() antes de usar write_int().`
       );
     }
+    for (const [existingId, existing] of this.texts.entries()) {
+      if (existing.x === x && existing.y === y && existing.font === font && existing.align === align) {
+        existing.variableRef = variableRef;
+        this.markDirty();
+        return existingId;
+      }
+    }
     const id = this.texts.size + 1;
     this.texts.set(id, { id, font, x, y, align, text: "", variableRef });
+    this.markDirty();
     return id;
   }
 
@@ -1134,7 +1179,14 @@ export class DivRuntime {
   }
 
   public drawText(font: number, x: number, y: number, align: number, text: string): number {
-    return this.write(font, x, y, align, text);
+    const id = -(this.frameTexts.length + 1);
+    this.frameTexts.push({ id, font, x, y, align, text });
+    this.markDirty();
+    return id;
+  }
+
+  public draw_text(font: number, x: number, y: number, align: number, text: string): number {
+    return this.drawText(font, x, y, align, text);
   }
 
   public move_text(id: number, x: number, y: number): void {
@@ -1364,6 +1416,86 @@ export class DivRuntime {
     this.drawTabs(x, y, w, h, tabs, activeTab, onTabChange);
   }
 
+  public drawCheckbox(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    checked: boolean,
+    onToggle?: () => void,
+    options?: { id?: string; disabled?: boolean }
+  ) {
+    this.appUiEngine.drawCheckbox(x, y, w, h, label, checked, onToggle, options);
+  }
+
+  public draw_checkbox(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    checked: boolean,
+    onToggle?: () => void,
+    options?: { id?: string; disabled?: boolean }
+  ) {
+    this.drawCheckbox(x, y, w, h, label, checked, onToggle, options);
+  }
+
+  public drawScrollBar(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    value: number,
+    max: number,
+    onChange?: (newVal: number) => void,
+    orientation: "vertical" | "horizontal" = "vertical",
+    options?: { id?: string }
+  ) {
+    this.appUiEngine.drawScrollBar(x, y, w, h, value, max, onChange, orientation, options);
+  }
+
+  public draw_scrollbar(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    value: number,
+    max: number,
+    onChange?: (newVal: number) => void,
+    orientation: "vertical" | "horizontal" = "vertical",
+    options?: { id?: string }
+  ) {
+    this.drawScrollBar(x, y, w, h, value, max, onChange, orientation, options);
+  }
+
+  public drawPictureBox(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    onPaint?: (ctx: CanvasRenderingContext2D, rect: { x: number; y: number; w: number; h: number }) => void,
+    options?: { id?: string; title?: string; bg?: string }
+  ) {
+    this.appUiEngine.drawPictureBox(x, y, w, h, onPaint, options);
+  }
+
+  public draw_picturebox(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    onPaint?: (ctx: CanvasRenderingContext2D, rect: { x: number; y: number; w: number; h: number }) => void,
+    options?: { id?: string; title?: string; bg?: string }
+  ) {
+    this.drawPictureBox(x, y, w, h, onPaint, options);
+  }
+
+  public set_ui_theme(mode: "android" | "vb3" | "dark") {
+    this.appUiEngine.setThemeMode(mode);
+  }
+
   public layout_begin(
     direction: "vertical" | "horizontal" | "grid",
     x: number,
@@ -1439,6 +1571,64 @@ export class DivRuntime {
 
   public async fetch_api(url: string, options?: any, callback?: any) {
     return this.appStore.fetch_api(url, options, callback);
+  }
+
+  // ========================================================
+  // NATIVE JS LIBRARIES & DLL BRIDGE (DIV Games Studio 2.0 DLL Model)
+  // Allows writing custom JavaScript extensions, hardware/API access & exports
+  // ========================================================
+  private jsLibraries: Map<string, Record<string, Function>> = new Map();
+
+  /**
+   * Register a custom JavaScript library (equivalent to old DIV DLLs)
+   * Example:
+   *   register_js_library("sys_hardware", {
+   *     vibrate: (ms) => navigator.vibrate?.(ms),
+   *     get_battery: async () => { ... }
+   *   });
+   */
+  public register_js_library(libName: string, exports: Record<string, Function>) {
+    this.jsLibraries.set(libName.toLowerCase(), exports);
+    console.log(`[WXDIV] Librería JS/DLL registrada: ${libName} (${Object.keys(exports).length} funciones)`);
+  }
+
+  /**
+   * Call a function inside a registered JS library / DLL
+   * Example: call_dll("sys_hardware", "vibrate", [200]);
+   */
+  public call_dll(libName: string, funcName: string, args: any[] = []): any {
+    const lib = this.jsLibraries.get(libName.toLowerCase());
+    if (!lib) {
+      console.warn(`[WXDIV DLL] Librería no encontrada: ${libName}`);
+      return null;
+    }
+    const fn = lib[funcName];
+    if (typeof fn !== "function") {
+      console.warn(`[WXDIV DLL] Función no encontrada en ${libName}: ${funcName}`);
+      return null;
+    }
+    try {
+      return fn(...args);
+    } catch (e: any) {
+      console.error(`[WXDIV DLL Error] Fallo ejecutando ${libName}.${funcName}:`, e);
+      return null;
+    }
+  }
+
+  /**
+   * Load and dynamically compile a JavaScript library string into the runtime
+   */
+  public load_js_library_code(libName: string, codeString: string) {
+    try {
+      const moduleFn = new Function("exports", "runtime", "window", codeString);
+      const exportsObj: Record<string, Function> = {};
+      moduleFn(exportsObj, this, window);
+      this.register_js_library(libName, exportsObj);
+      return true;
+    } catch (err: any) {
+      console.error(`[WXDIV DLL] Error compilando librería ${libName}:`, err);
+      return false;
+    }
   }
 
   public auth_login(user: string, token?: string) {
@@ -1754,12 +1944,14 @@ export class DivRuntime {
     this.stop();
     this.processes.clear();
     this.texts.clear();
+    this.frameTexts = [];
     this.loadedSounds.clear();
     this.loadedSongs.clear();
     this.currentSongId = 0;
     this.primitives = [];
     this.permanentPrimitives = [];
     this.nextProcessId = 1;
+    this.needsRedraw = true;
     this.initMode7();
     this.initMode8();
     this.setupDefaultGlobals();
@@ -1774,13 +1966,18 @@ export class DivRuntime {
 
     if (elapsed >= interval) {
       this.lastTick = now - (elapsed % interval);
-      const startRender = performance.now();
+      const shouldExecute = !this.renderOnlyOnDirty || this.needsRedraw || this.hasActiveProcesses();
 
-      this.step();
-      this.render();
-
-      this.renderDuration = performance.now() - startRender;
-      this.frameCount++;
+      if (shouldExecute) {
+        const startRender = performance.now();
+        this.step();
+        this.render();
+        this.needsRedraw = false;
+        this.renderDuration = performance.now() - startRender;
+        this.frameCount++;
+      } else {
+        this.renderDuration = 0;
+      }
 
       if (this.frameCount % 20 === 0) {
         this.currentFps = Math.round(1000 / Math.max(1, elapsed));
@@ -1807,6 +2004,8 @@ export class DivRuntime {
    * Single frame tick: updates processes and cleans up dead ones
    */
   private step() {
+    this.appUiEngine.beginStep();
+
     // Increment timers
     if (this.globalVars.timer) {
       for (let i = 0; i < this.globalVars.timer.length; i++) {
@@ -1814,8 +2013,9 @@ export class DivRuntime {
       }
     }
 
-    // Refresh dynamic frame primitives (drawn during the frame by processes)
+    // Refresh dynamic frame primitives and frame texts (drawn during the frame by processes)
     this.primitives = [];
+    this.frameTexts = [];
 
     // Step each active process until FRAME yield
     for (const [id, proc] of this.processes.entries()) {
@@ -1857,8 +2057,6 @@ export class DivRuntime {
    */
   private render() {
     if (!this.ctx || !this.canvas) return;
-
-    this.appUiEngine.resetFrame();
 
     const ctx = this.ctx;
 
@@ -1961,8 +2159,9 @@ export class DivRuntime {
       }
     }
 
-    // Texts (HUD / Labels / Scores / FNT Bitmap Fonts)
-    for (const txt of this.texts.values()) {
+    // Texts (HUD / Labels / Scores / FNT Bitmap Fonts + Dynamic Frame Texts)
+    const allTexts = [...this.texts.values(), ...this.frameTexts];
+    for (const txt of allTexts) {
       let content = txt.text;
       if (txt.variableRef) {
         const val = this.globalVars[txt.variableRef] ?? 0;
@@ -1987,7 +2186,8 @@ export class DivRuntime {
       }
     }
 
-    // 5. App UI Modal & Dialog Overlays
+    // 5. App UI Interactive Widgets and Modal & Dialog Overlays
+    this.appUiEngine.renderWidgets(ctx);
     this.appUiEngine.renderOverlays();
   }
 

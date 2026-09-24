@@ -15,6 +15,7 @@ import {
   Gamepad2,
   Database,
   LayoutGrid,
+  Globe,
 } from "lucide-react";
 import { DivGraphic } from "../types";
 import { getAiConfig, getAiHeaders, AiConfig } from "../services/aiConfig";
@@ -57,7 +58,7 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [aiConfig, setAiConfig] = useState<AiConfig>(getAiConfig());
-  const [chipsCategory, setChipsCategory] = useState<"games" | "apps">("apps");
+  const [chipsCategory, setChipsCategory] = useState<"games" | "apps" | "database" | "web">("apps");
   const [selectedTemplate, setSelectedTemplate] = useState<AppTemplate | null>(null);
 
   // Listen for external config changes
@@ -300,27 +301,55 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
       {/* Quick Action Chips & Templates Bar */}
       <div className="border-t border-slate-800/80 bg-[#0a1020]">
         {/* Category Toggles */}
-        <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 border-b border-slate-900/60 text-[10px]">
+        <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 border-b border-slate-900/60 text-[10px] overflow-x-auto">
           <button
             onClick={() => {
               setChipsCategory("apps");
               setSelectedTemplate(null);
             }}
-            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors flex-shrink-0 ${
               chipsCategory === "apps"
                 ? "bg-sky-950 text-sky-300 border border-sky-800/60"
                 : "text-slate-400 hover:text-white"
             }`}
           >
             <Smartphone className="w-3 h-3 text-sky-400" />
-            <span>Plantillas Apps (Precode WXDIV)</span>
+            <span>Apps UI (VB3)</span>
+          </button>
+          <button
+            onClick={() => {
+              setChipsCategory("database");
+              setSelectedTemplate(null);
+            }}
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors flex-shrink-0 ${
+              chipsCategory === "database"
+                ? "bg-emerald-950 text-emerald-300 border border-emerald-800/60"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Database className="w-3 h-3 text-emerald-400" />
+            <span>Base de Datos SQLite</span>
+          </button>
+          <button
+            onClick={() => {
+              setChipsCategory("web");
+              setSelectedTemplate(null);
+            }}
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors flex-shrink-0 ${
+              chipsCategory === "web"
+                ? "bg-indigo-950 text-indigo-300 border border-indigo-800/60"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Globe className="w-3 h-3 text-indigo-400" />
+            <span>Web & Site Builder</span>
           </button>
           <button
             onClick={() => {
               setChipsCategory("games");
               setSelectedTemplate(null);
             }}
-            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors ${
+            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors flex-shrink-0 ${
               chipsCategory === "games"
                 ? "bg-amber-950 text-amber-300 border border-amber-800/60"
                 : "text-slate-400 hover:text-white"
@@ -334,7 +363,7 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
         {/* Chips list */}
         <div className="p-2 flex items-center gap-1.5 overflow-x-auto text-[11px]">
           {chipsCategory === "apps" ? (
-            APP_TEMPLATES.map((tmpl) => (
+            APP_TEMPLATES.filter((t) => t.category !== "database" && t.category !== "web").map((tmpl) => (
               <button
                 key={tmpl.id}
                 onClick={() => setSelectedTemplate(tmpl)}
@@ -345,6 +374,36 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
                 }`}
               >
                 <LayoutGrid className="w-3 h-3 text-sky-400" />
+                <span>{tmpl.name}</span>
+              </button>
+            ))
+          ) : chipsCategory === "database" ? (
+            APP_TEMPLATES.filter((t) => t.category === "database").map((tmpl) => (
+              <button
+                key={tmpl.id}
+                onClick={() => setSelectedTemplate(tmpl)}
+                className={`px-2.5 py-1 rounded border flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  selectedTemplate?.id === tmpl.id
+                    ? "bg-emerald-900/60 text-emerald-200 border-emerald-500 font-semibold"
+                    : "bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800"
+                }`}
+              >
+                <Database className="w-3 h-3 text-emerald-400" />
+                <span>{tmpl.name}</span>
+              </button>
+            ))
+          ) : chipsCategory === "web" ? (
+            APP_TEMPLATES.filter((t) => t.category === "web").map((tmpl) => (
+              <button
+                key={tmpl.id}
+                onClick={() => setSelectedTemplate(tmpl)}
+                className={`px-2.5 py-1 rounded border flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  selectedTemplate?.id === tmpl.id
+                    ? "bg-indigo-900/60 text-indigo-200 border-indigo-500 font-semibold"
+                    : "bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800"
+                }`}
+              >
+                <Globe className="w-3 h-3 text-indigo-400" />
                 <span>{tmpl.name}</span>
               </button>
             ))

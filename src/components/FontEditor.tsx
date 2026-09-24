@@ -32,8 +32,9 @@ import {
 import { DivRuntime } from "../engine/runtime";
 
 interface FontEditorProps {
-  runtime: DivRuntime;
+  runtime?: DivRuntime;
   onCodeInsert?: (codeSnippet: string) => void;
+  onInsertCode?: (codeSnippet: string) => void;
   onRunGame?: () => void;
 }
 
@@ -51,12 +52,15 @@ const PRESET_COLORS = [
 export const FontEditor: React.FC<FontEditorProps> = ({
   runtime,
   onCodeInsert,
+  onInsertCode,
   onRunGame,
 }) => {
   // Available fonts list
   const [fonts, setFonts] = useState<DivFont[]>(() => {
     const list: DivFont[] = [];
-    runtime.fonts.forEach((f) => list.push(f));
+    if (runtime?.fonts) {
+      runtime.fonts.forEach((f) => list.push(f));
+    }
     return list.length > 0 ? list : DEFAULT_DIV_FONTS;
   });
 

@@ -42,6 +42,9 @@ export interface WindowConfig {
 }
 
 export type LayoutPresetType =
+  | "vb5-classic"
+  | "code-designer"
+  | "designer-delphi"
   | "code-game"
   | "mode8-game"
   | "sprites-game"

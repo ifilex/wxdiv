@@ -13,10 +13,11 @@ import { DivGraphic, DivProcess } from "./types";
 import { DivDiagnostic } from "./engine/divParser";
 
 export default function App() {
-  const [currentPreset, setCurrentPreset] = useState<GamePreset>(PRESETS[0]);
-  const [code, setCode] = useState<string>(PRESETS[0].code);
-  const [activeTab, setActiveTab] = useState<IDETabType>("code");
-  const [resolution, setResolution] = useState<"320x200" | "640x480" | "800x600">(PRESETS[0].resolution);
+  const defaultPreset = PRESETS.find((p) => p.id === "app_todo") || PRESETS[0];
+  const [currentPreset, setCurrentPreset] = useState<GamePreset>(defaultPreset);
+  const [code, setCode] = useState<string>(defaultPreset.code);
+  const [activeTab, setActiveTab] = useState<IDETabType>("designer");
+  const [resolution, setResolution] = useState<"320x200" | "640x480" | "800x600">(defaultPreset.resolution);
   const [fpg, setFpg] = useState<DivGraphic[]>(DEFAULT_SPRITES);
   const [activeProcesses, setActiveProcesses] = useState<DivProcess[]>([]);
   const [isExportOpen, setIsExportOpen] = useState(false);

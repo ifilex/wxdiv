@@ -12,11 +12,13 @@ import {
   ArrowRight,
   Info,
   Zap,
+  Palette,
 } from "lucide-react";
 import { validateDivSyntax, DivDiagnostic } from "../engine/divParser";
 import { DIV_AUTOCOMPLETE_ITEMS, DivSuggestion } from "../engine/divKeywords";
 import { CodeAutocompletePopup } from "./CodeAutocompletePopup";
 import { getCaretCoordinates } from "../utils/caretCoordinates";
+import { highlightDivCode } from "../utils/codeHighlighter";
 
 interface CodeEditorProps {
   code: string;
@@ -36,6 +38,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
+  const [syntaxHighlight, setSyntaxHighlight] = useState(true);
 
   // Autocomplete state
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
@@ -46,6 +49,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [autocompletePos, setAutocompletePos] = useState({ top: 40, left: 70 });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const preRef = useRef<HTMLPreElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
 
@@ -58,15 +62,27 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     return () => clearTimeout(timer);
   }, [code]);
 
-  // Keep gutter scroll in sync with textarea
+  // Keep gutter and syntax overlay scroll in sync with textarea
   const handleScroll = () => {
-    if (textareaRef.current && gutterRef.current) {
-      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+    if (textareaRef.current) {
+      if (gutterRef.current) {
+        gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+      }
+      if (preRef.current) {
+        preRef.current.scrollTop = textareaRef.current.scrollTop;
+        preRef.current.scrollLeft = textareaRef.current.scrollLeft;
+      }
     }
     if (showAutocomplete) {
       updateAutocompletePosition();
     }
   };
+
+  // Memoize syntax-highlighted HTML string
+  const highlightedHtml = useMemo(() => {
+    if (!syntaxHighlight) return "";
+    return highlightDivCode(code);
+  }, [code, syntaxHighlight]);
 
   // Track cursor position (Line & Column)
   const updateCursorPosition = () => {
@@ -338,20 +354,132 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const errorCount = diagnostics.filter((d) => d.severity === "error").length;
   const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
 
+  // Visual Basic 5.0 Object and Procedure/Event Navigation
+  const [selectedObject, setSelectedObject] = useState<string>("(General)");
+  const [selectedProcedure, setSelectedProcedure] = useState<string>("(Declaraciones)");
+
+  // Extract process names from code for the object dropdown
+  const detectedObjects = useMemo(() => {
+    const list = ["(General)", "Form", "Command1", "Text1", "Picture1", "Timer1"];
+    const regex = /PROCESS\s+([a-zA-Z0-9_]+)/gi;
+    let match;
+    while ((match = regex.exec(code)) !== null) {
+      const name = match[1];
+      if (!list.includes(name)) {
+        list.push(name);
+      }
+    }
+    return list;
+  }, [code]);
+
+  const availableProcedures = [
+    "(Declaraciones)",
+    "Click",
+    "Change",
+    "Load",
+    "Unload",
+    "KeyDown",
+    "MouseDown",
+    "Paint",
+    "Timer",
+    "Collision",
+  ];
+
+  const handleSelectObjectAndProc = (obj: string, proc: string) => {
+    setSelectedObject(obj);
+    setSelectedProcedure(proc);
+
+    if (obj === "(General)" && proc === "(Declaraciones)") {
+      jumpToLine(1);
+      return;
+    }
+
+    // Try to find matching PROCESS in code
+    const targetName = proc === "(Declaraciones)" ? obj : `${obj}_${proc}`;
+    const linesArr = code.split("\n");
+    let foundLine = -1;
+
+    for (let i = 0; i < linesArr.length; i++) {
+      const lineText = linesArr[i];
+      if (
+        lineText.toLowerCase().includes(`process ${targetName.toLowerCase()}`) ||
+        lineText.toLowerCase().includes(`process ${obj.toLowerCase()}`)
+      ) {
+        foundLine = i + 1;
+        break;
+      }
+    }
+
+    if (foundLine > 0) {
+      jumpToLine(foundLine);
+    } else if (proc !== "(Declaraciones)") {
+      // Insert new DIV procedure stub
+      const stub = `\n// --- Evento ${proc} de ${obj} (Léxico DIV) ---\nPROCESS ${obj}_${proc}()\nBEGIN\n  // Lógica de respuesta del evento\n  FRAME;\nEND\n`;
+      insertSnippet(stub);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#080d1a] border border-slate-800 rounded-lg overflow-hidden">
+      {/* Visual Basic 5.0 Object & Procedure Bar */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f172a] border-b border-slate-700/80 text-xs">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">Objeto:</span>
+          <select
+            value={selectedObject}
+            onChange={(e) => handleSelectObjectAndProc(e.target.value, selectedProcedure)}
+            className="flex-1 max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-400"
+          >
+            {detectedObjects.map((obj) => (
+              <option key={obj} value={obj}>
+                {obj}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">Procedimiento:</span>
+          <select
+            value={selectedProcedure}
+            onChange={(e) => handleSelectObjectAndProc(selectedObject, e.target.value)}
+            className="flex-1 max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
+          >
+            {availableProcedures.map((proc) => (
+              <option key={proc} value={proc}>
+                {proc}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Editor Top Bar */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-[#0d1527] border-b border-slate-800 text-xs text-slate-400 gap-2">
+      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#0d1527] border-b border-slate-800 text-xs text-slate-400 gap-2">
         <div className="flex items-center gap-2">
           <Code2 className="w-4 h-4 text-emerald-400" />
-          <span className="font-semibold text-slate-200">Editor DIV Games Studio</span>
+          <span className="font-semibold text-slate-200">Editor Integrado WXDIV</span>
           <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 text-[10px] font-mono">
-            Sintaxis 100% DIV
+            Visual Basic 5.0 • Sintaxis DIV
           </span>
         </div>
 
         {/* Quick Snippets Inserter & Autocomplete Toggle */}
         <div className="flex items-center gap-1.5 overflow-x-auto">
+          {/* Syntax Highlighting Toggle */}
+          <button
+            onClick={() => setSyntaxHighlight(!syntaxHighlight)}
+            className={`px-2 py-1 rounded flex items-center gap-1.5 transition-colors text-xs font-sans border ${
+              syntaxHighlight
+                ? "bg-sky-950/70 border-sky-600/50 text-sky-300 hover:bg-sky-900/60"
+                : "bg-slate-800/80 border-slate-700 text-slate-400 hover:bg-slate-700"
+            }`}
+            title="Colorear sintaxis DIV Games Studio & Visual Basic Precode"
+          >
+            <Palette className={`w-3 h-3 ${syntaxHighlight ? "text-sky-400" : "text-slate-500"}`} />
+            <span className="font-medium">Color {syntaxHighlight ? "ON" : "OFF"}</span>
+          </button>
+
           {/* Autocomplete Toggle */}
           <button
             onClick={() => setAutocompleteEnabled(!autocompleteEnabled)}
@@ -464,40 +592,55 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           })}
         </div>
 
-        {/* Textarea Code Input */}
-        <textarea
-          ref={textareaRef}
-          value={code}
-          onChange={(e) => {
-            const val = e.target.value;
-            const curPos = e.target.selectionStart;
-            onChange(val);
-            updateCursorPosition();
-            evaluateAutocomplete(val, curPos);
-          }}
-          onKeyDown={handleKeyDown}
-          onScroll={handleScroll}
-          onKeyUp={(e) => {
-            updateCursorPosition();
-            // If user used navigation arrow keys without modifiers, close or re-evaluate
-            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+        {/* Code Input Area with Layered Syntax Highlighting */}
+        <div className="relative flex-1 h-full overflow-hidden">
+          {/* Syntax Highlighted Backdrop */}
+          {syntaxHighlight && (
+            <pre
+              ref={preRef}
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: highlightedHtml + "\n" }}
+              className="absolute inset-0 py-3 px-3.5 m-0 bg-transparent pointer-events-none font-mono text-xs leading-6 overflow-hidden whitespace-pre select-none text-slate-300"
+            />
+          )}
+
+          {/* Textarea Code Input */}
+          <textarea
+            ref={textareaRef}
+            value={code}
+            onChange={(e) => {
+              const val = e.target.value;
+              const curPos = e.target.selectionStart;
+              onChange(val);
+              updateCursorPosition();
+              evaluateAutocomplete(val, curPos);
+            }}
+            onKeyDown={handleKeyDown}
+            onScroll={handleScroll}
+            onKeyUp={(e) => {
+              updateCursorPosition();
+              // If user used navigation arrow keys without modifiers, close or re-evaluate
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+                if (showAutocomplete) {
+                  setShowAutocomplete(false);
+                }
+              }
+            }}
+            onClick={() => {
+              updateCursorPosition();
               if (showAutocomplete) {
                 setShowAutocomplete(false);
               }
-            }
-          }}
-          onClick={() => {
-            updateCursorPosition();
-            if (showAutocomplete) {
-              setShowAutocomplete(false);
-            }
-          }}
-          onSelect={updateCursorPosition}
-          wrap="off"
-          spellCheck={false}
-          className="flex-1 py-3 px-3.5 bg-transparent text-slate-100 resize-none outline-none leading-6 h-full overflow-auto whitespace-pre font-mono text-xs selection:bg-emerald-600/30"
-          placeholder="PROGRAM mi_juego;\nBEGIN\n  set_mode(m640x480);\n  LOOP\n    FRAME;\n  END\nEND"
-        />
+            }}
+            onSelect={updateCursorPosition}
+            wrap="off"
+            spellCheck={false}
+            className={`w-full h-full py-3 px-3.5 bg-transparent resize-none outline-none leading-6 overflow-auto whitespace-pre font-mono text-xs selection:bg-emerald-600/30 ${
+              syntaxHighlight ? "text-transparent caret-white" : "text-slate-100"
+            }`}
+            placeholder="PROGRAM mi_juego;\nBEGIN\n  set_mode(m640x480);\n  LOOP\n    FRAME;\n  END\nEND"
+          />
+        </div>
 
         {/* Autocomplete Suggestions Popup Overlay */}
         {showAutocomplete && autocompleteSuggestions.length > 0 && (

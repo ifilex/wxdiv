@@ -3,6 +3,7 @@ import {
   LayoutGrid,
   Maximize2,
   FolderKanban,
+  FolderPlus,
   Columns2,
   Grid2X2,
   Minimize2,
@@ -27,6 +28,7 @@ interface DesktopTaskbarProps {
   onResetWindows?: () => void;
   isWxDivOpen?: boolean;
   onToggleWxDiv?: () => void;
+  onOpenNewProject?: () => void;
   onOpenThemeConfig?: () => void;
   windowIcons: Record<WindowId, React.ReactNode>;
   activeProcessCount: number;
@@ -45,6 +47,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   onResetWindows,
   isWxDivOpen = false,
   onToggleWxDiv,
+  onOpenNewProject,
   onOpenThemeConfig,
   windowIcons,
   activeProcessCount,
@@ -163,7 +166,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
             </div>
 
             {onToggleWxDiv && (
-              <div className="p-2 border-b border-slate-800 bg-slate-950/50">
+              <div className="p-2 border-b border-slate-800 bg-slate-950/50 space-y-1.5">
                 <button
                   onClick={() => {
                     onToggleWxDiv();
@@ -177,6 +180,22 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
                   </div>
                   <span className="text-[10px] text-cyan-400 font-bold">F5</span>
                 </button>
+
+                {onOpenNewProject && (
+                  <button
+                    onClick={() => {
+                      onOpenNewProject();
+                      setIsStartMenuOpen(false);
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded bg-gradient-to-r from-blue-950 to-indigo-950 hover:from-blue-900 hover:to-indigo-900 border border-blue-600/50 text-blue-200 text-xs font-semibold flex items-center justify-between transition-colors shadow-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FolderPlus className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Nuevo Proyecto (Asistente Visual)...</span>
+                    </div>
+                    <span className="text-[10px] text-blue-400 font-mono font-bold">Ctrl+N</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -339,6 +358,18 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
                   <div className="border-t border-slate-800 my-1" />
                 </>
               )}
+
+              <button
+                onClick={() => {
+                  onApplyLayoutPreset("designer-delphi");
+                  setIsLayoutMenuOpen(false);
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded hover:bg-slate-800 flex items-center gap-2 text-sky-300 font-semibold"
+                title="Diseñador Visual de Formularios estilo Delphi/Visual Basic + Pantalla de App"
+              >
+                <Columns2 className="w-3.5 h-3.5 text-sky-400" />
+                <span>Diseñador Delphi/VB + App</span>
+              </button>
 
               <button
                 onClick={() => {
