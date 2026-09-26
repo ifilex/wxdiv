@@ -65,6 +65,19 @@ export class AppStore {
     };
   }
 
+  public reset(): void {
+    this.initDefaultState();
+    this.watchers = [];
+    this.conditionWatchers = [];
+    this.eventListeners.clear();
+    this.elementClickHandlers.clear();
+    this.formSubmitHandlers.clear();
+    this.routeListeners = [];
+    this.currentRoute = "home";
+    this.routeParams = {};
+    this.onStateMutated?.();
+  }
+
   // --------------------------------------------------------------------------
   // STATE MANAGEMENT
   // --------------------------------------------------------------------------
@@ -92,7 +105,7 @@ export class AppStore {
     let curr = this.state;
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
-      if (!curr[part] || typeof curr[part] !== "object") {
+      if (typeof curr[part] !== "object" || curr[part] === null) {
         curr[part] = {};
       }
       curr = curr[part];

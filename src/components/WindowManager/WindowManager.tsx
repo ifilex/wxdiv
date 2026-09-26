@@ -14,6 +14,7 @@ import {
   FileImage,
   Palette as PaletteIcon,
   Box,
+  Layout,
   LayoutGrid,
   Play,
   Pause,
@@ -54,7 +55,6 @@ import { Mode8LevelEditor } from "../Mode8LevelEditor";
 import { SoundEditor } from "../SoundEditor";
 import { ExplosionCreator } from "../ExplosionCreator";
 import { VisualLogicBuilder } from "../VisualLogicBuilder";
-import { FormDesigner } from "../FormDesigner";
 import { ToolboxWindow } from "../VB3/ToolboxWindow";
 import { PropertiesWindow } from "../VB3/PropertiesWindow";
 import { ProjectWindow } from "../VB3/ProjectWindow";
@@ -63,6 +63,7 @@ import { VB3Form, VB3Control, VB3ToolType } from "../VB3/types";
 import { generateDivCodeFromVB3, executeVB3FormInRuntime } from "../../utils/vb3CodeGenerator";
 import { getPresetFormDefinition } from "../../engine/presetForms";
 import { AiCopilot } from "../AiCopilot";
+import { DivLexiconModal } from "../DivLexiconModal";
 import { ProcessInspector } from "../ProcessInspector";
 import { FontEditor } from "../FontEditor";
 import { FpgEditor } from "../FpgEditor";
@@ -150,6 +151,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
   // IDE Theme customization
   const [themeConfig, setThemeConfig] = useState<IdeThemeConfig>(loadIdeTheme);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [isLexiconOpen, setIsLexiconOpen] = useState(false);
 
   // Model passed from 3D MD2 viewer to 3D Sprite Generator
   const [generatorModel, setGeneratorModel] = useState<ParsedMD2Model | undefined>(undefined);
@@ -165,24 +167,50 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
     return p ? p.name : "Proyecto_WXDIV";
   }, [currentPresetId]);
 
-  // Visual Basic 3.0 MDI State (Multi-form Gestalt Architecture)
-  const initialFormDefinition = useMemo<VB3Form>(() => {
-    return (
-      getPresetFormDefinition(currentPresetId) ||
-      getPresetFormDefinition("app_todo") || {
-        id: "form1",
-        name: "Form1",
-        caption: "Form1",
-        backColor: "#c0c0c0",
-        width: 560,
-        height: 440,
-        controls: [],
-      }
+  // Check if current preset is a pure game (not a visual form application)
+  const isPureGamePreset = useMemo(() => {
+    if (!currentPresetId) return false;
+    return Boolean(
+      currentPresetId === "space_shooter" ||
+      currentPresetId === "platformer" ||
+      currentPresetId === "cyber_pong" ||
+      currentPresetId === "mode7_kart" ||
+      currentPresetId === "mode8_dungeon" ||
+      currentPresetId === "hexen_citadel_3d" ||
+      currentPresetId === "div2_modo8_raycast" ||
+      currentPresetId === "modo8_dark_md2_workers" ||
+      currentPresetId === "doom_modo8_classic" ||
+      currentPresetId.startsWith("custom_")
     );
   }, [currentPresetId]);
 
-  const [forms, setForms] = useState<VB3Form[]>([initialFormDefinition]);
-  const [activeFormId, setActiveFormId] = useState<string>(initialFormDefinition.id);
+  // Clean empty Form1 definition (no controls)
+  const defaultEmptyForm = useMemo<VB3Form>(() => ({
+    id: "form1",
+    name: "Form1",
+    caption: "Form1",
+    backColor: "#c0c0c0",
+    width: 560,
+    height: 440,
+    controls: [],
+  }), []);
+
+  // Visual Basic 3.0 MDI State (Multi-form Gestalt Architecture)
+  const initialFormDefinition = useMemo<VB3Form>(() => {
+    if (isPureGamePreset) {
+      return defaultEmptyForm;
+    }
+    return getPresetFormDefinition(currentPresetId) || defaultEmptyForm;
+  }, [currentPresetId, isPureGamePreset, defaultEmptyForm]);
+
+  const [forms, setForms] = useState<VB3Form[]>(() => {
+    if (isPureGamePreset) return [];
+    return [initialFormDefinition];
+  });
+  const [activeFormId, setActiveFormId] = useState<string>(() => {
+    if (isPureGamePreset) return "";
+    return initialFormDefinition.id;
+  });
 
   const vb3Form = useMemo(() => {
     return forms.find((f) => f.id === activeFormId) || forms[0] || initialFormDefinition;
@@ -811,10 +839,15 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
 
   // Execution Handlers (Visual Basic 3.0 F5 Play / Stop)
   const handlePlayRun = useCallback(() => {
-    executeVB3FormInRuntime(runtime, vb3Form);
+    if (!isPureGamePreset && forms.length > 0 && forms[0]?.controls !== undefined) {
+      executeVB3FormInRuntime(runtime, vb3Form);
+    } else {
+      runtime.appUiEngine.reset();
+      onRunGame();
+    }
     setIsRunning(true);
     handleOpenAndFocusWindow("game");
-  }, [runtime, vb3Form, handleOpenAndFocusWindow]);
+  }, [runtime, vb3Form, forms, isPureGamePreset, onRunGame, handleOpenAndFocusWindow]);
 
   const handleStopRun = useCallback(() => {
     runtime.stop();
@@ -1261,9 +1294,10 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
     prevPresetIdRef.current = currentPresetId;
     prevResetVersionRef.current = projectResetVersion;
 
-    const presetForm = getPresetFormDefinition(currentPresetId);
-    if (presetForm) {
-      // App / Visual Form Template (e.g. Landing Page, Todo List, Login, Dashboard, CRM)
+    const isGame = isPureGamePreset || !getPresetFormDefinition(currentPresetId);
+    if (!isGame) {
+      const presetForm = getPresetFormDefinition(currentPresetId) || defaultEmptyForm;
+      // App / Visual Form Template (e.g. Blank Form, Landing Page, Todo List, Login, Dashboard, CRM)
       setForms([presetForm]);
       setActiveFormId(presetForm.id);
       setSelectedControlId(null);
@@ -1336,6 +1370,8 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
       setForms([]);
       setActiveFormId("");
       setSelectedControlId(null);
+      runtime.appUiEngine.reset();
+      runtime.markDirty();
 
       setWindows((curr) => {
         const next = { ...curr };
@@ -1505,8 +1541,15 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
               {/* Plantillas y Landings Gestalt Switcher */}
               <div className="py-1">
                 <div className="px-3 py-1 text-[10px] font-bold text-sky-400 uppercase tracking-wider">
-                  Plantillas de Aplicación & Landings
+                  Formularios & Plantillas
                 </div>
+                <button
+                  onClick={() => { handleSwitchToPreset("blank_form"); setActiveMenu(null); }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-sky-600 hover:text-white flex items-center justify-between font-medium text-sky-200"
+                >
+                  <span className="flex items-center gap-2"><Layout className="w-3.5 h-3.5 text-sky-400" /> 📋 Formulario en Blanco (Form1)</span>
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-700">Limpio</span>
+                </button>
                 <button
                   onClick={() => { handleSwitchToPreset("app_landing"); setActiveMenu(null); }}
                   className="w-full text-left px-3 py-1.5 hover:bg-sky-600 hover:text-white flex items-center justify-between font-medium text-emerald-300"
@@ -1546,7 +1589,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
                   onClick={() => { handleSwitchToPreset("app_calculator_sci"); setActiveMenu(null); }}
                   className="w-full text-left px-3 py-1.5 hover:bg-sky-600 hover:text-white flex items-center justify-between font-medium text-amber-200"
                 >
-                  <span className="flex items-center gap-2"><Calculator className="w-3.5 h-3.5 text-amber-400" /> 🧮 Calculadora Visual Basic</span>
+                  <span className="flex items-center gap-2"><Calculator className="w-3.5 h-3.5 text-amber-400" /> 🧮 Calculadora Visual MIDI</span>
                   <span className="text-[9px] px-1 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700">Form</span>
                 </button>
               </div>
@@ -1557,7 +1600,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
                   Juegos Nativos DIV (Solo Código)
                 </div>
                 <button
-                  onClick={() => { handleSwitchToPreset("arcade_space"); setActiveMenu(null); }}
+                  onClick={() => { handleSwitchToPreset("space_shooter"); setActiveMenu(null); }}
                   className="w-full text-left px-3 py-1.5 hover:bg-sky-600 hover:text-white flex items-center justify-between text-slate-300"
                 >
                   <span className="flex items-center gap-2"><Gamepad2 className="w-3.5 h-3.5 text-purple-400" /> 🚀 Galaxia Arcade 2D</span>
@@ -2044,7 +2087,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           {activeMenu === "ayuda" && (
             <div className="absolute top-6 left-0 w-60 bg-[#0f172a] border border-slate-700 rounded shadow-2xl py-1 z-[10000] text-xs text-slate-200">
               <button
-                onClick={() => setActiveMenu(null)}
+                onClick={() => { setIsLexiconOpen(true); setActiveMenu(null); }}
                 className="w-full text-left px-3 py-1.5 hover:bg-sky-600 hover:text-white flex items-center gap-2"
               >
                 <HelpCircle className="w-3.5 h-3.5 text-sky-400" /> Manual de Léxico DIV Games Studio
@@ -2060,7 +2103,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
               </div>
               <div className="h-[1px] bg-slate-800 my-1" />
               <div className="px-3 py-1.5 text-[11px] text-slate-400">
-                WXDIV 3.0 • Visual Basic MDI Engine
+                WXDIV 3.0 • Visual MIDI Engine
               </div>
             </div>
           )}
@@ -2528,18 +2571,16 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
         >
           <AiCopilot
             currentCode={code}
+            fpg={fpg}
+            onApplyCode={(fc) => {
+              onApplyFullCode(fc);
+              handleOpenAndFocusWindow("code");
+            }}
             onInsertCode={(snip) => {
               onInsertCode(snip);
               handleOpenAndFocusWindow("code");
             }}
-            onReplaceCode={(fc) => {
-              onApplyFullCode(fc);
-              handleOpenAndFocusWindow("code");
-            }}
-            activeProcesses={activeProcesses}
-            fpgCount={fpg.length}
-            resolution={resolution}
-            onOpenSettings={onOpenAiSettings}
+            onOpenAiSettings={onOpenAiSettings}
           />
         </WindowFrame>
 
@@ -2617,7 +2658,12 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
         >
           <Mode8LevelEditor
             runtime={runtime}
-            onPlay={() => {
+            fpg={fpg}
+            onInsertCode={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+            onApplyToRuntime={() => {
               handlePlayRun();
             }}
           />
@@ -2703,7 +2749,14 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           onUpdateBounds={(b) => handleUpdateBounds("explosions", b)}
           desktopBounds={desktopBounds}
         >
-          <ExplosionCreator onAddFrames={onAddExplosionFrames} />
+          <ExplosionCreator
+            fpg={fpg}
+            onAddFramesToFpg={onAddExplosionFrames}
+            onInsertCode={(snip) => {
+              onInsertCode(snip);
+              handleOpenAndFocusWindow("code");
+            }}
+          />
         </WindowFrame>
 
         {/* Render Window: Visual Logic */}
@@ -2784,6 +2837,16 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           onChangeConfig={(newCfg) => {
             setThemeConfig(newCfg);
             saveIdeTheme(newCfg);
+          }}
+        />
+
+        {/* DIV Games Studio Lexicon & Reference Manual Modal */}
+        <DivLexiconModal
+          isOpen={isLexiconOpen}
+          onClose={() => setIsLexiconOpen(false)}
+          onInsertCode={(snip) => {
+            onInsertCode(snip);
+            handleOpenAndFocusWindow("code");
           }}
         />
 

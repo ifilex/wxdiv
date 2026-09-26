@@ -12,7 +12,72 @@ export interface GamePreset {
   setupRuntime: (runtime: DivRuntime) => void;
 }
 
+export const BLANK_FORM_PRESET: GamePreset = {
+  id: "blank_form",
+  name: "Proyecto1 - Form1",
+  genre: "Formulario Visual",
+  description: "Formulario Visual MIDI / WXDIV en blanco con diseño limpio y sin controles previos.",
+  resolution: "640x480",
+  code: `// ========================================================
+// PROYECTO VISUAL MIDI / WXDIV GAMES STUDIO
+// Formulario: Form1.frm
+// Generado automáticamente por el entorno MDI Visual MIDI
+// ========================================================
+
+GLOBAL
+    int form1_active = 1;
+    int form1_focus_id = 0;
+
+PROGRAM Form1_Program;
+BEGIN
+    set_mode(m640x480);
+    set_fps(60);
+    screen_color(rgb(192, 192, 192));
+
+    // Inicializar evento Load
+    form1_load();
+
+    // Iniciar controlador visual del formulario
+    form1_controller();
+
+    LOOP
+        FRAME;
+    END
+END
+
+PROCESS form1_load()
+BEGIN
+    // Precódigo inicial del formulario
+    write(0, 10, 460, 0, "Form1 inicializado correctamente.");
+END
+
+PROCESS form1_controller()
+BEGIN
+    graph = 0;
+    LOOP
+        FRAME;
+    END
+END
+`,
+  setupRuntime: (rt) => {
+    rt.reset();
+    rt.setResolution("640x480");
+    rt.clearScreen("#c0c0c0");
+    rt.registerProcess("form1_controller", function* (proc, _, r) {
+      proc.graph = 0;
+      while (true) {
+        r.drawBox(0, 0, 640, 480, "#c0c0c0");
+        r.drawBox(0, 455, 640, 480, "#d4d4d4");
+        r.drawText(0, 10, 462, 0, "Form1 • Formulario Vacío • WXDIV");
+        yield;
+      }
+    });
+    rt.spawn("form1_controller");
+  },
+};
+
 export const PRESETS: GamePreset[] = [
+  BLANK_FORM_PRESET,
   // 1: Galaxy Defender
   {
     id: "space_shooter",

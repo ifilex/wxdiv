@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { IDEHeader, IDETabType } from "./components/IDEHeader";
+import { IDETabType } from "./components/IDEHeader";
 import { WindowManager } from "./components/WindowManager/WindowManager";
 import { WindowId } from "./components/WindowManager/types";
 import { ExportModal } from "./components/ExportModal";
@@ -13,7 +13,7 @@ import { DivGraphic, DivProcess } from "./types";
 import { DivDiagnostic } from "./engine/divParser";
 
 export default function App() {
-  const defaultPreset = PRESETS.find((p) => p.id === "app_todo") || PRESETS[0];
+  const defaultPreset = PRESETS.find((p) => p.id === "blank_form") || PRESETS[0];
   const [currentPreset, setCurrentPreset] = useState<GamePreset>(defaultPreset);
   const [code, setCode] = useState<string>(defaultPreset.code);
   const [activeTab, setActiveTab] = useState<IDETabType>("designer");
@@ -27,7 +27,10 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [projectResetVersion, setProjectResetVersion] = useState<number>(1);
 
-  const runtimeRef = useRef<DivRuntime>(new DivRuntime());
+  const runtimeRef = useRef<DivRuntime | null>(null);
+  if (!runtimeRef.current) {
+    runtimeRef.current = new DivRuntime();
+  }
   const runtime = runtimeRef.current;
 
   // Show temporary toast message
@@ -73,6 +76,7 @@ export default function App() {
     runtime.start();
     setProjectResetVersion((v) => v + 1);
     const isFormApp = Boolean(
+      preset.id === "blank_form" ||
       preset.id.startsWith("app_") ||
       preset.id.startsWith("web_") ||
       preset.id === "game_arcade_canvas"
@@ -217,6 +221,7 @@ export default function App() {
 
     runtime.start();
     const isFormApp = Boolean(
+      data.presetId === "blank_form" ||
       data.presetId?.startsWith("app_") ||
       data.presetId?.startsWith("web_") ||
       data.presetId === "game_arcade_canvas"

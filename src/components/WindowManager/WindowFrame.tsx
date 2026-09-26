@@ -47,8 +47,8 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
 
   // Titlebar drag handlers with global listener fallback
   const handleTitlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Only left click
-    if (e.button !== 0) return;
+    // Only left click for mouse; allow touch and pen
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     onFocus();
 
     // If window is maximized and user drags titlebar, unmaximize and position under cursor
@@ -86,6 +86,69 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       initialX: win.x,
       initialY: win.y,
     };
+  };
+
+  // Dedicated touch drag handlers for mobile and tablet devices
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    onFocus();
+
+    if (win.isMaximized) {
+      onToggleMaximize();
+      const restoredW = win.prevBounds?.width ?? 640;
+      const restoredH = win.prevBounds?.height ?? 500;
+      const newX = Math.max(0, Math.min(touch.clientX - restoredW / 2, desktopBounds.width - 100));
+      const newY = Math.max(0, Math.min(touch.clientY - 18, desktopBounds.height - 40));
+      onUpdateBounds({
+        x: newX,
+        y: newY,
+        width: restoredW,
+        height: restoredH,
+      });
+      dragRef.current = {
+        isDragging: true,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        initialX: newX,
+        initialY: newY,
+      };
+      return;
+    }
+
+    dragRef.current = {
+      isDragging: true,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      initialX: win.x,
+      initialY: win.y,
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!dragRef.current.isDragging || win.isMaximized) return;
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+
+    const deltaX = touch.clientX - dragRef.current.startX;
+    const deltaY = touch.clientY - dragRef.current.startY;
+
+    const maxX = Math.max(0, desktopBounds.width - 80);
+    const maxY = Math.max(0, desktopBounds.height - 40);
+
+    const newX = Math.min(Math.max(0, dragRef.current.initialX + deltaX), maxX);
+    const newY = Math.min(Math.max(0, dragRef.current.initialY + deltaY), maxY);
+
+    onUpdateBounds({
+      x: newX,
+      y: newY,
+      width: win.width,
+      height: win.height,
+    });
+  };
+
+  const handleTouchEnd = () => {
+    dragRef.current.isDragging = false;
   };
 
   const handleTitlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -188,7 +251,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     e: React.PointerEvent<HTMLDivElement>,
     edge: "corner" | "right" | "bottom"
   ) => {
-    if (e.button !== 0 || win.isMaximized) return;
+    if ((e.pointerType === "mouse" && e.button !== 0) || win.isMaximized) return;
     e.stopPropagation();
     onFocus();
 
@@ -291,14 +354,19 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
             }`
       }`}
     >
-      {/* Window Title Bar - Pure Windows 3.1 / Visual Basic 3.0 */}
+      {/* Window Title Bar - Pure Windows 3.1 / Visual MIDI */}
       <div
         id={`titlebar-${win.id}`}
         onPointerDown={handleTitlePointerDown}
         onPointerMove={handleTitlePointerMove}
         onPointerUp={handleTitlePointerUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         onDoubleClick={onToggleMaximize}
-        className={`h-6 px-1 flex items-center justify-between cursor-move flex-shrink-0 select-none ${
+        style={{ touchAction: "none" }}
+        className={`h-7 sm:h-6 px-1 flex items-center justify-between cursor-move flex-shrink-0 select-none touch-none ${
           isActive
             ? "bg-[#000080] text-white"
             : "bg-[#808080] text-[#d4d4d4]"
@@ -309,6 +377,8 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -337,6 +407,8 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
           className="flex items-center gap-0.5 flex-shrink-0"
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
         >
           {/* Minimize [▼] */}
           <button
@@ -381,7 +453,8 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
             onPointerDown={(e) => handleResizePointerDown(e, "right")}
             onPointerMove={handleResizePointerMove}
             onPointerUp={handleResizePointerUp}
-            className="absolute top-9 right-0 w-1.5 h-[calc(100%-18px)] cursor-e-resize hover:bg-cyan-500/40 transition-colors z-20"
+            style={{ touchAction: "none" }}
+            className="absolute top-9 right-0 w-2.5 sm:w-1.5 h-[calc(100%-18px)] cursor-e-resize hover:bg-cyan-500/40 transition-colors z-20 touch-none"
           />
 
           {/* Bottom edge */}
@@ -389,7 +462,8 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
             onPointerDown={(e) => handleResizePointerDown(e, "bottom")}
             onPointerMove={handleResizePointerMove}
             onPointerUp={handleResizePointerUp}
-            className="absolute bottom-0 left-0 w-[calc(100%-18px)] h-1.5 cursor-s-resize hover:bg-cyan-500/40 transition-colors z-20"
+            style={{ touchAction: "none" }}
+            className="absolute bottom-0 left-0 w-[calc(100%-18px)] h-2.5 sm:h-1.5 cursor-s-resize hover:bg-cyan-500/40 transition-colors z-20 touch-none"
           />
 
           {/* Bottom-right diagonal corner */}
@@ -397,10 +471,11 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
             onPointerDown={(e) => handleResizePointerDown(e, "corner")}
             onPointerMove={handleResizePointerMove}
             onPointerUp={handleResizePointerUp}
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex items-end justify-end p-0.5 z-30 group"
+            style={{ touchAction: "none" }}
+            className="absolute bottom-0 right-0 w-6 h-6 sm:w-4 sm:h-4 cursor-se-resize flex items-end justify-end p-0.5 z-30 group touch-none"
             title="Arrastrar para redimensionar"
           >
-            <div className="w-2 h-2 border-r-2 border-b-2 border-slate-600 group-hover:border-cyan-400 transition-colors" />
+            <div className="w-2.5 h-2.5 border-r-2 border-b-2 border-slate-600 group-hover:border-cyan-400 transition-colors" />
           </div>
         </>
       )}

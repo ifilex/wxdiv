@@ -2,16 +2,16 @@ import { VB3Form, VB3Control } from "../components/VB3/types";
 import { DivRuntime } from "../engine/runtime";
 
 /**
- * Genera código DIV Games Studio auténtico a partir del formulario y controles de Visual Basic 3.0.
+ * Genera código DIV Games Studio auténtico a partir del formulario y controles de Visual MIDI.
  * Sintaxis estricta DIV: GLOBAL NO lleva END.
  */
 export function generateDivCodeFromVB3(form: VB3Form): string {
   const lines: string[] = [];
 
   lines.push(`// ========================================================`);
-  lines.push(`// PROYECTO VISUAL BASIC 3.0 / WXDIV GAMES STUDIO`);
+  lines.push(`// PROYECTO VISUAL MIDI / WXDIV GAMES STUDIO`);
   lines.push(`// Formulario: ${form.name}.frm`);
-  lines.push(`// Generado automáticamente por el entorno MDI VB3`);
+  lines.push(`// Generado automáticamente por el entorno MDI Visual MIDI`);
   lines.push(`// ========================================================\n`);
 
   // Sección GLOBAL (¡Sin END, norma DIV Games Studio!)
@@ -300,5 +300,6 @@ export function executeVB3FormInRuntime(runtime: DivRuntime, form: VB3Form): voi
     }
   });
 
+  runtime.spawn(`${form.name.toLowerCase()}_controller`);
   runtime.start();
 }

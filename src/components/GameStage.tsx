@@ -315,7 +315,10 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
               runtime.mouseState.x = mx;
               runtime.mouseState.y = my;
               runtime.appUiEngine?.handleMouseMove(mx, my);
-              const dynCursor = runtime.appUiEngine?.getCursorAt(mx, my) || (runtime.appUiEngine?.hasWidgets() ? "default" : "crosshair");
+              const hasWidgets = runtime.appUiEngine?.hasWidgets() ?? false;
+              const dynCursor = hasWidgets
+                ? (runtime.appUiEngine?.getCursorAt(mx, my) || "default")
+                : "crosshair";
               if (dynCursor !== canvasCursor) {
                 setCanvasCursor(dynCursor);
               }

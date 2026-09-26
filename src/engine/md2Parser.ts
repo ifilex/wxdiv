@@ -122,8 +122,11 @@ export function parseMD2Buffer(buffer: ArrayBuffer, modelName: string = "Modelo 
     }
     frameName = frameName.trim() || `frame_${f}`;
 
-    // Categorize animation by stripping trailing digits (e.g., "run1" -> "run")
-    const animBase = frameName.replace(/\d+$/, "").toLowerCase() || "default";
+    // Categorize animation by stripping trailing delimiters and digits (e.g., "run1" -> "run", "frame_10" -> "frame", "attack_01" -> "attack")
+    let animBase = frameName.replace(/[-_\s]*\d+$/, "").toLowerCase().trim();
+    if (!animBase) {
+      animBase = frameName.toLowerCase().trim() || "default";
+    }
     if (!animationMap.has(animBase)) {
       animationMap.set(animBase, { first: f, last: f });
     } else {

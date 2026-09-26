@@ -148,8 +148,8 @@ export class DivRuntime {
   };
 
   // Modern Multiplatform App Engines (State Store, Routing & App UI Primitives)
-  public appStore: AppStore = new AppStore();
-  public appUiEngine: AppUiEngine = new AppUiEngine();
+  public appStore: AppStore = appStore;
+  public appUiEngine: AppUiEngine = appUiEngine;
 
   // Callback hooks
   public onStatsUpdate?: (stats: EngineStats) => void;
@@ -463,7 +463,7 @@ export class DivRuntime {
     const newId = Math.max(0, ...Array.from(this.fpgPackages.keys())) + 1;
     const baseGraphics =
       this.fpgPackages.get(0)?.graphics ||
-      (Array.isArray(this.fpg) ? this.fpg : []) ||
+      (this._fpg.size > 0 ? Array.from(this._fpg.values()) : []) ||
       DEFAULT_SPRITES;
     this.fpgPackages.set(newId, {
       id: newId,
@@ -531,14 +531,10 @@ export class DivRuntime {
       }
     }
 
-    // 3. Check legacy _fpg or fpg array
+    // 3. Check legacy _fpg
     if (!g) {
       if (this._fpg && typeof this._fpg.get === "function") {
         g = this._fpg.get(id);
-      } else if (this.fpg && typeof this.fpg.get === "function") {
-        g = this.fpg.get(id);
-      } else if (Array.isArray(this.fpg)) {
-        g = (this.fpg as unknown as DivGraphic[]).find((item) => item.id === id);
       }
     }
 
@@ -1943,6 +1939,7 @@ export class DivRuntime {
   public reset() {
     this.stop();
     this.processes.clear();
+    this.processDefs.clear();
     this.texts.clear();
     this.frameTexts = [];
     this.loadedSounds.clear();
@@ -1950,11 +1947,19 @@ export class DivRuntime {
     this.currentSongId = 0;
     this.primitives = [];
     this.permanentPrimitives = [];
+    this.scrolls = [];
     this.nextProcessId = 1;
     this.needsRedraw = true;
+    this.backgroundColor = "#070b14";
+    this.appUiEngine.reset();
+    this.appStore.reset();
     this.initMode7();
     this.initMode8();
     this.setupDefaultGlobals();
+    if (this.ctx && this.canvas) {
+      this.ctx.fillStyle = this.backgroundColor;
+      this.ctx.fillRect(0, 0, this.width, this.height);
+    }
   }
 
   private tick = () => {

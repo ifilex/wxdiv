@@ -65,6 +65,56 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const ALL_TEMPLATES = [
     // --- 1. Empty / Base ---
     {
+      id: "blank_form",
+      category: "app" as const,
+      name: "Formulario Visual en Blanco (Visual MIDI / WXDIV)",
+      icon: Layout,
+      badge: "Form1 Limpio",
+      color: "text-sky-400",
+      description: "Formulario completamente vacío sin controles ni ejemplos previos. Listo para diseñar en la cuadrícula y agregar controles desde el Toolbox.",
+      code: `// ========================================================
+// PROYECTO VISUAL MIDI / WXDIV GAMES STUDIO
+// Formulario: Form1.frm
+// Generado automáticamente por el entorno MDI Visual MIDI
+// ========================================================
+
+GLOBAL
+    int form1_active = 1;
+    int form1_focus_id = 0;
+
+PROGRAM Form1_Program;
+BEGIN
+    set_mode(m640x480);
+    set_fps(60);
+    screen_color(rgb(192, 192, 192));
+
+    // Inicializar evento Load
+    form1_load();
+
+    // Iniciar controlador visual del formulario
+    form1_controller();
+
+    LOOP
+        FRAME;
+    END
+END
+
+PROCESS form1_load()
+BEGIN
+    // Precódigo inicial del formulario
+    write(0, 10, 460, 0, "Form1 inicializado correctamente.");
+END
+
+PROCESS form1_controller()
+BEGIN
+    graph = 0;
+    LOOP
+        FRAME;
+    END
+END
+`,
+    },
+    {
       id: "empty",
       category: "game" as const,
       name: "Proyecto Vacío (Plantilla Base DIV)",
@@ -331,11 +381,11 @@ END
     {
       id: "app_login",
       category: "app" as const,
-      name: "Formulario de Login & Registro (Visual Basic 3.0)",
+      name: "Formulario de Login & Registro (Visual MIDI)",
       icon: Lock,
-      badge: "VB 3.0 Auth",
+      badge: "Visual MIDI Auth",
       color: "text-amber-400",
-      description: "Formulario de autenticación clásico estilo VB 3.0 con cajas de texto, validación reactiva, recordar contraseña y diálogos modales.",
+      description: "Formulario de autenticación clásico estilo Visual MIDI con cajas de texto, validación reactiva, recordar contraseña y diálogos modales.",
       code: APP_TEMPLATES.find((t) => t.id === "app_login")?.code || "",
     },
     {
@@ -393,7 +443,7 @@ BEGIN
     draw_button(156, 110, 130, 32, "Completadas (2)", btn_filtro_completadas);
     draw_button(296, 110, 130, 32, "Pendientes (2)", btn_filtro_pendientes);
 
-    draw_table(36, 160, 568, 240, "ID,TAREA,CATEGORIA,ESTADO", "1,Diseño Visual Basic en Canvas,Core,Completada|2,Motor Touch Acelerado 60FPS,Android,Completada|3,Landing Page Generator,Web,Pendiente|4,Compilador DIV a APK Nativo,Móvil,Pendiente");
+    draw_table(36, 160, 568, 240, "ID,TAREA,CATEGORIA,ESTADO", "1,Diseño Visual MIDI en Canvas,Core,Completada|2,Motor Touch Acelerado 60FPS,Android,Completada|3,Landing Page Generator,Web,Pendiente|4,Compilador DIV a APK Nativo,Móvil,Pendiente");
 
     FRAME;
   END
@@ -469,7 +519,7 @@ BEGIN
     draw_box(20, 72, 620, 220, "#1e293b");
     write(0, 40, 92, 0, "CREA APLICACIONES & VIDEOJUEGOS AL INSTANTE");
     write(0, 40, 120, 0, "El primer IDE táctil y visual con aceleración gráfica GPU a 60 FPS.");
-    write(0, 40, 142, 0, "Basado en el lenguaje DIV Games Studio y estilo Visual Basic 3.0.");
+    write(0, 40, 142, 0, "Basado en el lenguaje DIV Games Studio y estilo Visual MIDI.");
 
     draw_button(40, 180, 180, 40, "🚀 Empezar Gratis Ahora", btn_cta_hero);
     draw_button(230, 180, 160, 40, "Ver Demostración", btn_demo);
@@ -610,7 +660,7 @@ END
               <div className="flex items-center gap-2">
                 <h2 className="font-bold text-slate-100 text-sm tracking-tight">Asistente de Nuevo Proyecto WXDIV 3.0</h2>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-700/50">
-                  VB 3.0 & DIV IDE
+                  Visual MIDI & DIV IDE
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">Selecciona el tipo de desarrollo: Videojuegos, Aplicaciones, Web o Bases de Datos</p>

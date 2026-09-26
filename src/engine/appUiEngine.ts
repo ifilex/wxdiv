@@ -180,6 +180,10 @@ export class AppUiEngine {
     }, 530);
   }
 
+  public hasWidgets(): boolean {
+    return this.widgets.length > 0 || this.stagedWidgets.length > 0;
+  }
+
   public setContext(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
     this.canvas = canvas;
     this.ctx = ctx;
@@ -206,18 +210,23 @@ export class AppUiEngine {
     } else {
       this.stagedWidgets.push(w);
     }
-    const curIdx = this.widgets.findIndex((item) => item.id === w.id);
-    if (curIdx >= 0) {
-      this.widgets[curIdx] = w;
-    } else {
-      this.widgets.push(w);
-    }
   }
 
   public commitWidgets() {
-    if (this.stagedWidgets.length > 0) {
-      this.widgets = [...this.stagedWidgets];
-    }
+    this.widgets = [...this.stagedWidgets];
+  }
+
+  public reset() {
+    this.widgets = [];
+    this.stagedWidgets = [];
+    this.openModals = [];
+    this.layoutStack = [];
+    this.activeFocusId = null;
+    this.openSelectId = null;
+    this.pointerDownWidgetId = null;
+    this.tableScrolls.clear();
+    this.isMouseDown = false;
+    this.wasMouseDown = false;
   }
 
   // --------------------------------------------------------------------------

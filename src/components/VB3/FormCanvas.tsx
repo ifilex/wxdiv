@@ -140,7 +140,9 @@ export const FormCanvas: React.FC<FormCanvasProps> = ({
     const handlePointerUp = () => {
       if (dragRef.current) {
         dragRef.current = null;
-        setIsInteracting(false);
+        setTimeout(() => {
+          setIsInteracting(false);
+        }, 50);
       }
     };
 
@@ -154,6 +156,8 @@ export const FormCanvas: React.FC<FormCanvasProps> = ({
 
   // Click on canvas surface to add control or deselect
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only deselect if clicked directly on the canvas background, not on controls
+    if (e.target !== containerRef.current) return;
     if (isInteracting) return;
     if (activeTool !== "pointer") {
       const rect = containerRef.current?.getBoundingClientRect();
@@ -639,6 +643,10 @@ export const FormCanvas: React.FC<FormCanvasProps> = ({
           height: `${ctrl.height}px`,
         }}
         onPointerDown={(e) => handleControlPointerDown(e, ctrl)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectControl(ctrl.id);
+        }}
         onDoubleClick={(e) => {
           e.stopPropagation();
           onDoubleClickControl(ctrl);

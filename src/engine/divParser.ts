@@ -569,8 +569,14 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
       const up = t.value.toUpperCase();
 
       // Block openers that terminate with END
-      if (["BEGIN", "LOOP", "WHILE", "FOR", "IF", "SWITCH", "STORE", "STRUCT", "TYPE", "LAYOUT"].includes(up)) {
+      if (["BEGIN", "LOOP", "WHILE", "FOR", "FROM", "IF", "SWITCH", "STORE", "STRUCT"].includes(up)) {
         blockStack.push({ keyword: up, line: t.line, column: t.column });
+      } else if (up === "CASE" || up === "DEFAULT") {
+        // In DIV Games Studio, CASE and DEFAULT blocks within SWITCH terminate with END
+        const inSwitch = blockStack.some((b) => b.keyword === "SWITCH" || b.keyword === "CASE" || b.keyword === "DEFAULT");
+        if (inSwitch) {
+          blockStack.push({ keyword: up, line: t.line, column: t.column });
+        }
       } else if (up === "REPEAT") {
         blockStack.push({ keyword: "REPEAT", line: t.line, column: t.column });
       } else if (up === "END") {
@@ -579,7 +585,7 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
             line: t.line,
             column: t.column,
             severity: "error",
-            message: `'END' inesperado en la línea ${t.line}: la sección 'GLOBAL' no requiere 'END' y no hay bloque abierto (BEGIN, LOOP, WHILE, FOR, IF, STORE) para cerrar.`,
+            message: `'END' inesperado en la línea ${t.line}: la sección 'GLOBAL' no requiere 'END' y no hay bloque abierto para cerrar.`,
             rule: "extra-end",
           });
         } else {

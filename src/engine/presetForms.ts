@@ -4,6 +4,20 @@ export function getPresetFormDefinition(presetId?: string): VB3Form | null {
   if (!presetId) return null;
 
   switch (presetId) {
+    case "blank_form":
+    case "form_blank":
+    case "new_form":
+    case "vb_form_blank":
+      return {
+        id: "form1",
+        name: "Form1",
+        caption: "Form1",
+        backColor: "#c0c0c0",
+        width: 560,
+        height: 440,
+        controls: [],
+      };
+
     case "app_landing":
     case "web_landing_generator":
       return {
@@ -343,7 +357,7 @@ export function getPresetFormDefinition(presetId?: string): VB3Form | null {
       return {
         id: "frmLogin",
         name: "frmLogin",
-        caption: "Inicio de Sesión & Registro (Visual Basic 3.0)",
+        caption: "Inicio de Sesión & Registro (Visual MIDI)",
         backColor: "#c0c0c0",
         width: 460,
         height: 350,
@@ -1032,7 +1046,7 @@ export function getPresetFormDefinition(presetId?: string): VB3Form | null {
       };
 
     default:
-      // Any other preset with "app_" or "web_" prefix gets an initial clean editable form
+      // Any other preset with "app_" or "web_" prefix gets an initial clean empty form
       if (presetId.startsWith("app_") || presetId.startsWith("web_")) {
         return {
           id: `frm_${presetId}`,
@@ -1041,45 +1055,7 @@ export function getPresetFormDefinition(presetId?: string): VB3Form | null {
           backColor: "#c0c0c0",
           width: 560,
           height: 440,
-          controls: [
-            {
-              id: "cmd1",
-              name: "Command1",
-              type: "commandbutton",
-              x: 24,
-              y: 24,
-              width: 120,
-              height: 32,
-              caption: "Aceptar",
-              enabled: true,
-              visible: true,
-            },
-            {
-              id: "txt1",
-              name: "Text1",
-              type: "textbox",
-              x: 24,
-              y: 72,
-              width: 240,
-              height: 26,
-              caption: "Texto",
-              text: "Datos del formulario",
-              enabled: true,
-              visible: true,
-            },
-            {
-              id: "lbl1",
-              name: "Label1",
-              type: "label",
-              x: 24,
-              y: 114,
-              width: 240,
-              height: 20,
-              caption: "Etiqueta descriptiva",
-              enabled: true,
-              visible: true,
-            },
-          ],
+          controls: [],
         };
       }
       return null;
