@@ -27,16 +27,16 @@ import { DivMapFile, DivFpgPackage, createNewDivGraphic, fileToDivGraphic } from
 import { DEFAULT_PALETTE, createGraphicCanvas } from "../engine/graphics";
 
 interface MapEditorProps {
-  runtime: DivRuntime;
+  runtime?: DivRuntime;
   onInsertCode?: (codeSnippet: string) => void;
 }
 
 export const MapEditor: React.FC<MapEditorProps> = ({ runtime, onInsertCode }) => {
   const [mapFiles, setMapFiles] = useState<DivMapFile[]>(() =>
-    Array.from(runtime.mapFiles.values())
+    runtime?.mapFiles ? Array.from(runtime.mapFiles.values()) : []
   );
   const [selectedMapId, setSelectedMapId] = useState<number>(() => {
-    return Array.from(runtime.mapFiles.keys())[0] ?? 100;
+    return runtime?.mapFiles ? (Array.from(runtime.mapFiles.keys())[0] ?? 100) : 100;
   });
 
   const activeMap = mapFiles.find((m) => m.id === selectedMapId) || mapFiles[0];
@@ -266,7 +266,7 @@ export const MapEditor: React.FC<MapEditorProps> = ({ runtime, onInsertCode }) =
   // Transfer Map into an FPG package
   const handleTransferToFpg = () => {
     if (!activeMap) return;
-    const targetPkg = runtime.fpgPackages.get(targetFpgId);
+    const targetPkg = runtime?.fpgPackages?.get(targetFpgId);
     if (!targetPkg) return;
 
     const clonedGraphic: DivGraphic = {
@@ -432,7 +432,7 @@ END`
           {/* Transfer to FPG */}
           <button
             onClick={() => {
-              const mainPkg = runtime.fpgPackages.get(0);
+              const mainPkg = runtime?.fpgPackages?.get(0);
               const nextId = mainPkg ? Math.max(0, ...mainPkg.graphics.map((g) => g.id)) + 1 : 100;
               setTargetSpriteId(nextId);
               setIsTransferModalOpen(true);
@@ -849,7 +849,7 @@ END`
                   onChange={(e) => setTargetFpgId(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
                 >
-                  {(Array.from(runtime.fpgPackages.values()) as DivFpgPackage[]).map((p) => (
+                  {(Array.from(runtime?.fpgPackages?.values() || []) as DivFpgPackage[]).map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.filename} ({p.name})
                     </option>

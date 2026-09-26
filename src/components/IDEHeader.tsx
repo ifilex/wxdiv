@@ -153,9 +153,9 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs (Diseñador Delphi/VB, Código, Pantalla en Vivo, Utilidades) */}
+      {/* Navigation Tabs (Formulario VB3, Código, Pantalla en Vivo, Utilidades) */}
       <div className="flex items-center bg-[#070b14] p-1 rounded-lg border border-slate-800 text-xs overflow-x-auto max-w-full">
-        {/* Core Delphi / Visual Basic Style App Designer Tab */}
+        {/* Core Visual Basic 3.0 Form Designer Tab */}
         <button
           onClick={() => onChangeTab("designer")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition-all flex-shrink-0 ${
@@ -163,10 +163,10 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
               ? "bg-sky-600 text-white shadow-md shadow-sky-950 font-bold ring-1 ring-sky-400/50"
               : "bg-sky-950/40 text-sky-300 border border-sky-800/40 hover:bg-sky-900/60"
           }`}
-          title="Diseñador Visual de Formularios y Aplicaciones estilo Borland Delphi & Visual Basic"
+          title="Diseñador de Formularios Visual Basic 3.0"
         >
           <LayoutGrid className="w-3.5 h-3.5 text-sky-200" />
-          <span>Diseñador Apps (Delphi/VB)</span>
+          <span>Formulario (VB3)</span>
         </button>
 
         <button

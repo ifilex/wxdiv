@@ -824,7 +824,6 @@ PROGRAM gestor_sqlite_clientes;
 GLOBAL
   int db_ok = 0;
   string query_sql = "SELECT * FROM clientes";
-END
 
 BEGIN
   set_mode(m640x480);
@@ -1255,7 +1254,6 @@ GLOBAL
   string fuente_familia = "Monospace";
   int ajuste_linea = 1;
   int menu_abierto = 0; // 0=ninguno, 1=Archivo, 2=Edición, 3=Formato, 4=Ayuda
-END
 
 BEGIN
   set_mode(m640x480);
@@ -1548,7 +1546,6 @@ GLOBAL
   int lienzo_y = 50;
   int lienzo_w = 530;
   int lienzo_h = 390;
-END
 
 BEGIN
   set_mode(m640x480);
@@ -1775,7 +1772,6 @@ GLOBAL
   float operando_1 = 0.0;
   string operador_actual = "";
   int limpiar_en_proximo_digito = 0;
-END
 
 BEGIN
   set_mode(m640x480);
@@ -2047,15 +2043,14 @@ PROGRAM arcade_canvas_div;
 GLOBAL
   int score = 0;
   int vidas = 3;
-  int nave_x = 320;
-  int nave_y = 420;
-  int laser_activo = 0;
-  int laser_x = 0;
-  int laser_y = 0;
-  int enemigo_x = 320;
-  int enemigo_y = 60;
-  int enemigo_dir = 4;
-END
+  nave_x = 320;
+  nave_y = 420;
+  laser_activo = 0;
+  laser_x = 0;
+  laser_y = 0;
+  enemigo_x = 320;
+  enemigo_y = 60;
+  enemigo_dir = 4;
 
 BEGIN
   set_mode(m640x480);

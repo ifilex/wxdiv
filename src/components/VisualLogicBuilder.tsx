@@ -3,11 +3,11 @@ import { Layers, Wand2, Plus, Sparkles, Check, Play } from "lucide-react";
 import { DivGraphic } from "../types";
 
 interface VisualLogicBuilderProps {
-  fpg: DivGraphic[];
+  fpg?: DivGraphic[];
   onInsertCode: (codeSnippet: string) => void;
 }
 
-export const VisualLogicBuilder: React.FC<VisualLogicBuilderProps> = ({ fpg, onInsertCode }) => {
+export const VisualLogicBuilder: React.FC<VisualLogicBuilderProps> = ({ fpg = [], onInsertCode }) => {
   const [processName, setProcessName] = useState("nuevo_enemigo");
   const [selectedGraph, setSelectedGraph] = useState(fpg[0]?.id || 1);
   const [movementType, setMovementType] = useState<"patrol" | "player_4way" | "platformer" | "bullet" | "chase">("patrol");

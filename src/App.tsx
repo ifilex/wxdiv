@@ -25,6 +25,7 @@ export default function App() {
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [projectResetVersion, setProjectResetVersion] = useState<number>(1);
 
   const runtimeRef = useRef<DivRuntime>(new DivRuntime());
   const runtime = runtimeRef.current;
@@ -66,15 +67,24 @@ export default function App() {
     setCode(preset.code);
     setResolution(preset.resolution);
     runtime.stop();
+    runtime.reset();
     runtime.loadFPG(fpg);
     preset.setupRuntime(runtime);
     runtime.start();
-    showToast(`Cargado preset: ${preset.name}`);
+    setProjectResetVersion((v) => v + 1);
+    const isFormApp = Boolean(
+      preset.id.startsWith("app_") ||
+      preset.id.startsWith("web_") ||
+      preset.id === "game_arcade_canvas"
+    );
+    setActiveTab(isFormApp ? ("designer" as IDETabType) : ("code" as IDETabType));
+    showToast(`Cargado: ${preset.name}`);
   };
 
   // Run or Restart game
   const handleRunGame = () => {
     runtime.stop();
+    runtime.reset();
     runtime.loadFPG(fpg);
     currentPreset.setupRuntime(runtime);
     runtime.start();
@@ -206,7 +216,13 @@ export default function App() {
     }
 
     runtime.start();
-    setActiveTab("code");
+    const isFormApp = Boolean(
+      data.presetId?.startsWith("app_") ||
+      data.presetId?.startsWith("web_") ||
+      data.presetId === "game_arcade_canvas"
+    );
+    setProjectResetVersion((v) => v + 1);
+    setActiveTab(isFormApp ? ("designer" as IDETabType) : ("code" as IDETabType));
     showToast(`Proyecto "${data.title}" creado con éxito`);
   };
 
@@ -235,7 +251,9 @@ export default function App() {
           onChangeResolution={handleChangeResolution}
           onOpenAiSettings={() => setIsAiSettingsOpen(true)}
           requestedActiveTool={activeTab as WindowId}
+          onResetRequestedActiveTool={() => setActiveTab(null as any)}
           currentPresetId={currentPreset.id}
+          projectResetVersion={projectResetVersion}
           onSelectPreset={handleSelectPreset}
           onOpenNewProject={() => setIsNewProjectOpen(true)}
           onOpenExport={() => setIsExportOpen(true)}

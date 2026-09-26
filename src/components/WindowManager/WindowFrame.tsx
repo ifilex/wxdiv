@@ -117,8 +117,54 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     }
   };
 
-  // Global safety listener to ensure dragging/resizing never gets stuck if cursor slips
+  // Global pointer tracking to guarantee smooth drag and resize even if cursor leaves frame
   useEffect(() => {
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (dragRef.current.isDragging && !win.isMaximized) {
+        const deltaX = e.clientX - dragRef.current.startX;
+        const deltaY = e.clientY - dragRef.current.startY;
+
+        const maxX = Math.max(0, desktopBounds.width - 80);
+        const maxY = Math.max(0, desktopBounds.height - 40);
+
+        const newX = Math.min(Math.max(0, dragRef.current.initialX + deltaX), maxX);
+        const newY = Math.min(Math.max(0, dragRef.current.initialY + deltaY), maxY);
+
+        onUpdateBounds({
+          x: newX,
+          y: newY,
+          width: win.width,
+          height: win.height,
+        });
+      }
+
+      if (resizeRef.current.isResizing && !win.isMaximized) {
+        const deltaX = e.clientX - resizeRef.current.startX;
+        const deltaY = e.clientY - resizeRef.current.startY;
+        const edge = resizeRef.current.edge;
+
+        let newW = win.width;
+        let newH = win.height;
+
+        const maxW = Math.max(win.minWidth, desktopBounds.width - win.x);
+        const maxH = Math.max(win.minHeight, desktopBounds.height - win.y);
+
+        if (edge === "corner" || edge === "right") {
+          newW = Math.min(Math.max(win.minWidth, resizeRef.current.initialW + deltaX), maxW);
+        }
+        if (edge === "corner" || edge === "bottom") {
+          newH = Math.min(Math.max(win.minHeight, resizeRef.current.initialH + deltaY), maxH);
+        }
+
+        onUpdateBounds({
+          x: win.x,
+          y: win.y,
+          width: newW,
+          height: newH,
+        });
+      }
+    };
+
     const handleGlobalPointerUp = () => {
       if (dragRef.current.isDragging) {
         dragRef.current.isDragging = false;
@@ -128,9 +174,14 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
         resizeRef.current.edge = null;
       }
     };
+
+    window.addEventListener("pointermove", handleGlobalPointerMove);
     window.addEventListener("pointerup", handleGlobalPointerUp);
-    return () => window.removeEventListener("pointerup", handleGlobalPointerUp);
-  }, []);
+    return () => {
+      window.removeEventListener("pointermove", handleGlobalPointerMove);
+      window.removeEventListener("pointerup", handleGlobalPointerUp);
+    };
+  }, [win.x, win.y, win.width, win.height, win.minWidth, win.minHeight, win.isMaximized, desktopBounds, onUpdateBounds]);
 
   // Resize handlers
   const handleResizePointerDown = (
@@ -228,117 +279,97 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       ref={frameRef}
       id={`window-${win.id}`}
       style={style}
+      onPointerDownCapture={onFocus}
       onMouseDown={onFocus}
-      className={`flex flex-col bg-[#070b14] overflow-hidden select-none transition-shadow ${
+      className={`flex flex-col bg-[#c0c0c0] overflow-hidden select-none ${
         win.isMaximized
           ? "rounded-none border-0"
-          : `rounded-lg border ${
+          : `rounded-none border-2 ${
               isActive
-                ? "border-cyan-500/80 shadow-2xl shadow-cyan-950/50 ring-1 ring-cyan-500/30"
-                : "border-slate-800 shadow-xl opacity-95 hover:opacity-100"
+                ? "border-t-[#ffffff] border-l-[#ffffff] border-b-[#000000] border-r-[#000000] shadow-xl"
+                : "border-t-[#e0e0e0] border-l-[#e0e0e0] border-b-[#404040] border-r-[#404040] shadow-md"
             }`
       }`}
     >
-      {/* Window Title Bar */}
+      {/* Window Title Bar - Pure Windows 3.1 / Visual Basic 3.0 */}
       <div
         id={`titlebar-${win.id}`}
         onPointerDown={handleTitlePointerDown}
         onPointerMove={handleTitlePointerMove}
         onPointerUp={handleTitlePointerUp}
         onDoubleClick={onToggleMaximize}
-        className={`h-9 px-2.5 flex items-center justify-between cursor-move flex-shrink-0 border-b transition-colors ${
+        className={`h-6 px-1 flex items-center justify-between cursor-move flex-shrink-0 select-none ${
           isActive
-            ? "bg-gradient-to-r from-slate-900 via-[#0c162d] to-slate-900 border-cyan-500/40 text-slate-100"
-            : "bg-[#090e1c] border-slate-800 text-slate-400 hover:text-slate-200"
+            ? "bg-[#000080] text-white"
+            : "bg-[#808080] text-[#d4d4d4]"
         }`}
       >
-        {/* Title and Icon */}
-        <div className="flex items-center gap-2 min-w-0 pr-2 pointer-events-none">
-          <div
-            className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
-              isActive ? "text-cyan-400 bg-cyan-950/70 border border-cyan-800/40" : "text-slate-500 bg-slate-900"
-            }`}
-          >
-            {icon}
-          </div>
-          <span className="text-xs font-semibold font-mono tracking-tight truncate">
+        {/* Left: Windows 3.1 System Menu Box [-] */}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onClose();
+          }}
+          title="Cerrar / Menú del Sistema"
+          className="w-4 h-4 bg-[#c0c0c0] border-t border-l border-white border-b border-r border-black active:border-t-black active:border-l-black active:border-b-white active:border-r-white flex items-center justify-center cursor-pointer flex-shrink-0"
+        >
+          <div className="w-2.5 h-0.5 bg-black" />
+        </button>
+
+        {/* Center: Title */}
+        <div className="flex-1 flex items-center justify-center gap-1.5 px-2 min-w-0 pointer-events-none">
+          {icon && (
+            <div className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+              {icon}
+            </div>
+          )}
+          <span className="text-xs font-bold font-sans tracking-normal truncate text-center">
             {win.title}
           </span>
-          {win.subtitle && (
-            <span className="hidden sm:inline-block text-[10px] text-slate-500 font-mono truncate">
-              • {win.subtitle}
-            </span>
-          )}
         </div>
 
-        {/* Window Control Buttons */}
+        {/* Right: Windows 3.1 Minimize [▼] & Maximize [▲] buttons */}
         <div
-          className="flex items-center gap-1 flex-shrink-0"
+          className="flex items-center gap-0.5 flex-shrink-0"
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {/* Minimize */}
+          {/* Minimize [▼] */}
           <button
             id={`btn-min-${win.id}`}
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              e.preventDefault();
               onMinimize();
             }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Minimizar a la barra de tareas"
-            aria-label="Minimizar"
+            title="Minimizar"
+            className="w-4 h-4 bg-[#c0c0c0] border-t border-l border-white border-b border-r border-black active:border-t-black active:border-l-black active:border-b-white active:border-r-white flex items-center justify-center cursor-pointer text-black font-bold text-[8px]"
           >
-            <Minus className="w-3.5 h-3.5 pointer-events-none" />
+            ▼
           </button>
 
-          {/* Maximize / Restore */}
+          {/* Maximize / Restore [▲] */}
           <button
             id={`btn-max-${win.id}`}
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              e.preventDefault();
               onToggleMaximize();
             }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            title={win.isMaximized ? "Restaurar tamaño normal" : "Maximizar ventana"}
-            aria-label={win.isMaximized ? "Restaurar" : "Maximizar"}
+            title={win.isMaximized ? "Restaurar" : "Maximizar"}
+            className="w-4 h-4 bg-[#c0c0c0] border-t border-l border-white border-b border-r border-black active:border-t-black active:border-l-black active:border-b-white active:border-r-white flex items-center justify-center cursor-pointer text-black font-bold text-[8px]"
           >
-            {win.isMaximized ? (
-              <Copy className="w-3 h-3 pointer-events-none" />
-            ) : (
-              <Square className="w-3 h-3 pointer-events-none" />
-            )}
-          </button>
-
-          {/* Close */}
-          <button
-            id={`btn-close-${win.id}`}
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onClose();
-            }}
-            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-600/90 transition-colors cursor-pointer"
-            title="Cerrar ventana"
-            aria-label="Cerrar"
-          >
-            <X className="w-3.5 h-3.5 pointer-events-none" />
+            {win.isMaximized ? "▲▼" : "▲"}
           </button>
         </div>
       </div>
 
       {/* Window Body / Content */}
-      <div className="flex-1 w-full h-[calc(100%-36px)] overflow-hidden bg-[#050811] relative select-text">
+      <div className="flex-1 w-full h-[calc(100%-24px)] overflow-hidden bg-[#c0c0c0] relative select-text">
         {children}
       </div>
 

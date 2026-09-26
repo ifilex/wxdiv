@@ -579,7 +579,7 @@ export function validateDivSyntax(code: string): DivDiagnostic[] {
             line: t.line,
             column: t.column,
             severity: "error",
-            message: `'END' inesperado en la línea ${t.line}: no hay bloque abierto (BEGIN, LOOP, WHILE, FOR, IF, STORE) para cerrar.`,
+            message: `'END' inesperado en la línea ${t.line}: la sección 'GLOBAL' no requiere 'END' y no hay bloque abierto (BEGIN, LOOP, WHILE, FOR, IF, STORE) para cerrar.`,
             rule: "extra-end",
           });
         } else {

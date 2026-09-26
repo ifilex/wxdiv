@@ -103,7 +103,9 @@ export const FontEditor: React.FC<FontEditorProps> = ({
 
   // Sync with runtime
   const applyFontToRuntime = (updatedFont: DivFont) => {
-    runtime.loadFNT(updatedFont);
+    if (runtime && typeof runtime.loadFNT === "function") {
+      runtime.loadFNT(updatedFont);
+    }
     setAppliedToast(true);
     setTimeout(() => setAppliedToast(false), 2000);
   };
@@ -235,7 +237,9 @@ export const FontEditor: React.FC<FontEditorProps> = ({
     if (currentFont.id <= 3) return; // built-in protected
     const remaining = fonts.filter((f) => f.id !== currentFont.id);
     setFonts(remaining);
-    runtime.unload_fnt(currentFont.id);
+    if (runtime && typeof runtime.unload_fnt === "function") {
+      runtime.unload_fnt(currentFont.id);
+    }
     setSelectedFontId(remaining[0]?.id || 1);
   };
 
@@ -278,10 +282,9 @@ export const FontEditor: React.FC<FontEditorProps> = ({
 
   // Generate DIV Code Snippet
   const getDivCodeSnippet = () => {
-    return `// Cargar y utilizar fuente FNT en WXDIV 3.0
+    return `// Cargar y utilizar fuente FNT en WXDIV
 GLOBAL
     fnt_juego = 0;
-END
 
 PROCESS main()
 BEGIN
@@ -310,8 +313,11 @@ END`;
   };
 
   const handleInsertCode = () => {
-    if (onCodeInsert) {
-      onCodeInsert(getDivCodeSnippet());
+    const snippet = getDivCodeSnippet();
+    if (onInsertCode) {
+      onInsertCode(snippet);
+    } else if (onCodeInsert) {
+      onCodeInsert(snippet);
     }
   };
 

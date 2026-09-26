@@ -1300,7 +1300,7 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
             <span className="text-sm">💎</span>
             <div className="flex flex-col">
               <span className="font-bold text-slate-100 font-sans text-[11px] tracking-wide">
-                DELPHI &amp; VB FORM DESIGNER
+                VISUAL BASIC 3.0
               </span>
               <span className="text-[9px] text-sky-400 font-mono">
                 {formTitle}.frm • WYSIWYG
@@ -1871,7 +1871,7 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
           </div>
         </div>
 
-        {/* Right: Borland Delphi / Visual Basic Properties & Pre-Code Inspector */}
+        {/* Right: Visual Basic 3.0 Properties & Pre-Code Inspector */}
         <div className="w-80 bg-[#0c1322] border-l border-slate-800 p-3 flex flex-col gap-2 overflow-y-auto">
           {/* Inspector Header with Tab Switcher */}
           <div className="flex items-center bg-slate-900/90 p-0.5 rounded border border-slate-800 text-[11px]">

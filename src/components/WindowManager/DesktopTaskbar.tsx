@@ -361,14 +361,14 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
 
               <button
                 onClick={() => {
-                  onApplyLayoutPreset("designer-delphi");
+                  onApplyLayoutPreset("vb5-classic");
                   setIsLayoutMenuOpen(false);
                 }}
                 className="w-full text-left px-2.5 py-1.5 rounded hover:bg-slate-800 flex items-center gap-2 text-sky-300 font-semibold"
-                title="Diseñador Visual de Formularios estilo Delphi/Visual Basic + Pantalla de App"
+                title="Visual MDI Engine: Barra de Herramientas, Formulario y Propiedades"
               >
                 <Columns2 className="w-3.5 h-3.5 text-sky-400" />
-                <span>Diseñador Delphi/VB + App</span>
+                <span>Visual MDI Engine</span>
               </button>
 
               <button

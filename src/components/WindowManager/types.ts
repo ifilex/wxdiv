@@ -3,6 +3,9 @@ import React from "react";
 export type WindowId =
   | "game"
   | "code"
+  | "toolbox"
+  | "project"
+  | "properties"
   | "mode8"
   | "md2viewer"
   | "spritegenerator"

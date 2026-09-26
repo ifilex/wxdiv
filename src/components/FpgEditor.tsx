@@ -42,9 +42,10 @@ export const FpgEditor: React.FC<FpgEditorProps> = ({
 }) => {
   // Packages in runtime
   const [packages, setPackages] = useState<DivFpgPackage[]>(() =>
-    Array.from(runtime.fpgPackages.values())
+    runtime?.fpgPackages ? Array.from(runtime.fpgPackages.values()) : []
   );
   const [selectedPkgId, setSelectedPkgId] = useState<number>(() => {
+    if (!runtime?.fpgPackages) return 0;
     return runtime.fpgPackages.has(0) ? 0 : Array.from(runtime.fpgPackages.keys())[0] ?? 0;
   });
 
@@ -90,6 +91,7 @@ export const FpgEditor: React.FC<FpgEditorProps> = ({
   // Sync state to runtime
   const syncToRuntime = (updatedPackages: DivFpgPackage[]) => {
     setPackages(updatedPackages);
+    if (!runtime?.fpgPackages) return;
     updatedPackages.forEach((p) => {
       runtime.fpgPackages.set(p.id, p);
       if (p.id === 0) {

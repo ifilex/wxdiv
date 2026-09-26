@@ -458,10 +458,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#0d1527] border-b border-slate-800 text-xs text-slate-400 gap-2">
         <div className="flex items-center gap-2">
           <Code2 className="w-4 h-4 text-emerald-400" />
-          <span className="font-semibold text-slate-200">Editor Integrado WXDIV</span>
-          <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 text-[10px] font-mono">
-            Visual Basic 5.0 • Sintaxis DIV
-          </span>
+          <span className="font-bold text-slate-200 font-mono text-[11px]">Form1.frm [Código]</span>
         </div>
 
         {/* Quick Snippets Inserter & Autocomplete Toggle */}

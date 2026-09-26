@@ -234,9 +234,9 @@ END
       category: "app" as const,
       name: "Calculadora Estándar & Científica (Calc WXDIV)",
       icon: Calculator,
-      badge: "Calc VB5",
+      badge: "Calc MDI",
       color: "text-amber-400",
-      description: "Calculadora estilo Visual Basic con pantalla LCD, historial de operaciones, teclado numérico, operadores matemáticos (+, -, *, /, =) y memoria.",
+      description: "Calculadora estilo Visual MDI Engine con pantalla LCD, historial de operaciones, teclado numérico, operadores matemáticos (+, -, *, /, =) y memoria.",
       code: APP_TEMPLATES.find((t) => t.id === "app_calculator_sci")?.code || "",
     },
     {
@@ -244,21 +244,21 @@ END
       category: "game" as const,
       name: "Juego Arcade 2D con Canvas & Código DIV Integrado",
       icon: Gamepad2,
-      badge: "ActiveX Canvas",
+      badge: "Canvas MDI",
       color: "text-emerald-400",
-      description: "Juego arcade 2D en lienzo Canvas PictureBox con código DIV editable simultáneamente en el editor integrado (estilo ActiveX en VB5).",
+      description: "Juego arcade 2D en lienzo Canvas PictureBox con código DIV editable simultáneamente en el editor integrado (estilo ActiveX en Visual MDI Engine).",
       code: APP_TEMPLATES.find((t) => t.id === "game_arcade_canvas")?.code || "",
     },
     {
       id: "app_vb_forms",
       category: "app" as const,
-      name: "Visual Basic 3.0 / .NET Form Suite (Multi-Form)",
+      name: "Visual MDI Engine Form Suite (Multi-Form)",
       icon: Layout,
-      badge: "VB 3.0 Forms",
+      badge: "Visual MDI",
       color: "text-sky-400",
-      description: "Entorno Multi-Form estilo VB 3.0: FormPrincipal con barra de herramientas, ventana de clientes, diálogo modal y persistencia reactiva.",
+      description: "Entorno Multi-Form estilo Visual MDI Engine: FormPrincipal con barra de herramientas, ventana de clientes, diálogo modal y persistencia reactiva.",
       code: `// =================================================================
-// WXDIV 3.0 - APLICACIÓN MULTI-FORMULARIO ESTILO VISUAL BASIC 3.0
+// WXDIV 3.0 - APLICACIÓN MULTI-FORMULARIO VISUAL MDI ENGINE
 // Arquitectura MDI / Forms Independientes y Reactivos con DIV Precode
 // =================================================================
 PROGRAM vb_multi_form_app;
@@ -266,16 +266,16 @@ PROGRAM vb_multi_form_app;
 STORE app_global
   form_activo: string = "Form1"
   total_registros: int = 4
-  usuario_actual: string = "Desarrollador VB"
+  usuario_actual: string = "Desarrollador MDI"
   version: string = "3.0.0-PRO"
 END
 
 BEGIN
   set_mode(m640x480);
   set_fps(60);
-  screen_color(rgb(192, 192, 192)); // Gris clásico Visual Basic 3.0
+  screen_color(rgb(192, 192, 192)); // Gris clásico Visual MDI
 
-  write(0, 16, 12, 0, "PROYECTO VISUAL BASIC 3.0 / .NET - SUITE MULTI-FORM");
+  write(0, 16, 12, 0, "PROYECTO VISUAL MDI ENGINE - SUITE MULTI-FORM");
 
   // Iniciar el controlador del Form Principal (MDI Host)
   form1_mdi_controller();
