@@ -39,16 +39,17 @@ Y encima, tiene un **Copiloto IA** que permite crear juegos describiéndolos en 
 - **Sintetizador de sonidos** con osciladores y envolvente ADSR
 - **Constructor Visual de Lógica** (No-Code → DIV)
 - **Inspector de Procesos** en vivo (debugging real)
-- **Copiloto IA** integrado (Gemini)
+- **Copiloto IA** integrado (Local / WebLLM)
 - **Precódigo reutilizable** — bloques que la IA ensambla sin generar todo desde cero
 
 ### IA
 - **Modelos IA locales** (guardados en localStorage)
-- **Modelos seleccionables** (Flash, Pro, Lite, según necesidad)
+- **Modelos seleccionables** (SmalLm2, qwen coder, Llama 3.2, Gemma 2, etc.)
 - **Generación de código DIV** desde lenguaje natural
 - **Corrección de errores de sintaxis** automática
 - **Creación de procesos, enemigos, físicas, armas** por prompt
 - **Precódigo + IA = pocos tokens** (la IA ensambla bloques existentes)
+- **Ejecución acelerada por WebGPU en el navegador (sin instalar software extra)
 
 ### Exportación
 - **HTML5 standalone** — un solo `.html`, sin servidor, offline
@@ -224,7 +225,7 @@ El código estará disponible públicamente cuando la documentación esté lista
 
 - **WineBOX Cognitive:** [winebox.cloud](https://winebox.cloud)
 - **Documentación:** [https://wxdiv.online]
-- **Repositorio:** [https://wxdiv.online]
+- **Repositorio:** [https://github.com/ifilex/wxdiv]
 - **Comunidad:** [https://winebox.clinic]
 
 ---
