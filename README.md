@@ -12,7 +12,7 @@ wxdiv es un motor de juegos y editor visual inspirado en **DIV Games Studio** (1
 
 A diferencia de otros proyectos que mantienen un runtime (BennuGD, DivGO, Gemix), wxdiv **transpila directamente a HTML5 + JavaScript**. No hay intérprete, no hay VM, no hay servidor. El resultado es un `.html` autocontenido que se ejecuta en cualquier navegador, offline, sin dependencias.
 
-Y encima, tiene un **Copiloto IA** (Gemini) que permite crear juegos describiéndolos en lenguaje natural. Sin programar. En segundos.
+Y encima, tiene un **Copiloto IA** que permite crear juegos describiéndolos en lenguaje natural. Sin programar. En segundos, sin usar tokens de modelos llm en la nube, porque funciona de forma local en tu ordenador o celular.
 
 ---
 
@@ -43,7 +43,7 @@ Y encima, tiene un **Copiloto IA** (Gemini) que permite crear juegos describién
 - **Precódigo reutilizable** — bloques que la IA ensambla sin generar todo desde cero
 
 ### IA
-- **Gemini integrado** (API key propia del dev, guardada en localStorage)
+- **Modelos IA locales** (guardados en localStorage)
 - **Modelos seleccionables** (Flash, Pro, Lite, según necesidad)
 - **Generación de código DIV** desde lenguaje natural
 - **Corrección de errores de sintaxis** automática
@@ -105,12 +105,16 @@ WineBOX incluye:
 - Motor de raycasting (columna y píxel)
 - Editor de niveles con render en tiempo real
 - Editor de sprites, sonidos, lógica visual
-- Copiloto IA con Gemini
+- Copiloto IA de uso LOCAL sin uso de tokens de terceros
 - Exportación HTML5 standalone y ZIP
 - 210+ juegos en producción (WineBOX)
 - Compatibilidad con Switch 1
 - Reflejos, sombras, luces, bruma
 - MD2 animado en runtime
+- Implementacion de bloky como lenguaje visual de bloques
+- Uso de IA para trabajo, se puede crear juegos, apps, webs de todo tipo solo hablando con la IA
+- 9 Modelos de IA locales sin necesidad de instalar nada solo funciona en la nube
+- Compilacion cruzada en APK y exportacion de proyectos a Android Studio
 
 ### 🚧 En desarrollo
 - MD2 animado en editor de niveles
@@ -129,15 +133,15 @@ WineBOX incluye:
 
 ## Cómo empezar
 
-### Opción 1: Usar wxdiv en WineBOX
-1. Abrí [winebox.cloud](https://winebox.cloud)
+### Opción 1: Usar wxdiv online
+1. Abrí [wxdiv.online](https://wxdiv.online)
 2. Probá los juegos existentes
 3. Usá el editor y el Copiloto IA para crear tu propio juego
 4. Exportá a HTML5 y compartilo
 
 ### Opción 2: Crear juegos desde el editor
 1. Abrí el editor de wxdiv
-2. Configurá tu API key de Gemini (Ajustes IA)
+2. Configurá tu IA local sin gasto de token en la nube
 3. Describile al Copiloto lo que querés hacer
 4. Ajustá el código generado
 5. Exportá a HTML5
@@ -171,6 +175,8 @@ Un dev de DIV puede abrir wxdiv y **empezar a programar al instante**, sin curva
 
 - **HTML5** → gratis, ilimitado
 - **ZIP** → gratis, ilimitado
+- **APK** → gratis, ilimitado
+- **IOS** → gratis, ilimitado
 - **EXE / NDS / PS / Xbox** → $1 por binario generado
 - **Sin suscripción. Sin regalías. Sin compartir ingresos.**
 
@@ -197,7 +203,7 @@ El código estará disponible públicamente cuando la documentación esté lista
 
 ## Licencia
 
-**Motor:** Open source (licencia por definir)
+**Motor:** Open source MIT
 **Servicio de compilación cruzada:** Comercial
 **Juegos de WineBOX:** Gratuitos, sin registro
 
@@ -217,9 +223,9 @@ El código estará disponible públicamente cuando la documentación esté lista
 ## Links
 
 - **WineBOX Cognitive:** [winebox.cloud](https://winebox.cloud)
-- **Documentación:** (próximamente)
-- **Repositorio:** (próximamente)
-- **Comunidad:** (próximamente)
+- **Documentación:** [https://wxdiv.online]
+- **Repositorio:** [https://wxdiv.online]
+- **Comunidad:** [https://winebox.clinic]
 
 ---
 

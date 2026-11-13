@@ -1,0 +1,908 @@
+import type { DivDiagnostic } from "../types";
+export type { DivDiagnostic };
+
+export interface Token {
+  type: TokenType;
+  value: string;
+  line: number;
+  column: number;
+  unclosed?: boolean;
+  quoteChar?: string;
+}
+
+export enum TokenType {
+  KEYWORD = "KEYWORD",
+  IDENTIFIER = "IDENTIFIER",
+  NUMBER = "NUMBER",
+  STRING = "STRING",
+  OPERATOR = "OPERATOR",
+  PUNCTUATION = "PUNCTUATION",
+  COMMENT = "COMMENT",
+  WHITESPACE = "WHITESPACE",
+  UNKNOWN = "UNKNOWN",
+}
+
+export const DIV_KEYWORDS = new Set([
+  "PROGRAM",
+  "GLOBAL",
+  "LOCAL",
+  "PRIVATE",
+  "CONST",
+  "BEGIN",
+  "END",
+  "PROCESS",
+  "FUNCTION",
+  "FRAME",
+  "LOOP",
+  "WHILE",
+  "REPEAT",
+  "UNTIL",
+  "FOR",
+  "IF",
+  "ELSE",
+  "ELSIF",
+  "SWITCH",
+  "CASE",
+  "DEFAULT",
+  "BREAK",
+  "CONTINUE",
+  "RETURN",
+  "CLONE",
+  "FROM",
+  "TO",
+  "STEP",
+  "TYPE",
+  "STRUCT",
+  "ONEXIT",
+  "INT",
+  "BYTE",
+  "WORD",
+  "STRING",
+  "FLOAT",
+  "DOUBLE",
+  "CHAR",
+  // WXDIV 3.0 App & Multiplatform Declarations
+  "STORE",
+  "LAYOUT",
+  "FIELD",
+  "BUTTON",
+  "ON",
+  "NAVIGATE",
+  "BIND",
+  "COMPONENT",
+  "EVENT",
+  // WXDIV 3.0 Web & HTML5 Native Landing Page Declarations
+  "LANDING_PAGE",
+  "WEB_PAGE",
+  "PAGE",
+  "HERO",
+  "FEATURES",
+  "NAVBAR",
+  "FORM",
+  "INPUT",
+  "TEXTAREA",
+  "SELECT",
+  "CARD",
+  "FOOTER",
+  "SECTION",
+  "MODAL",
+  "ALERT",
+  "HEADER",
+]);
+
+export const DIV_BUILTINS = new Set([
+  // Web & HTML5 Native Primitives
+  "set_html5_mode",
+  "m_html5",
+  "draw_html_form",
+  "draw_landing_page",
+  "set_title",
+  "navbar",
+  "hero",
+  "add_feature",
+  "add_form_input",
+  "add_form_textarea",
+  "add_form_select",
+  "add_form_checkbox",
+  "add_card",
+  "add_footer",
+  "show_toast",
+  "show_alert",
+  "navigate_html5",
+  "export_html5_page",
+  "hero",
+  "features",
+  "form",
+  "end_form",
+  "footer",
+  "card",
+  "html_render",
+  "html_form_submit",
+  "html_input_value",
+  // Graphics & Display
+  "set_mode",
+  "set_fps",
+  "screen_color",
+  "load_fpg",
+  "unload_fpg",
+  "load_map",
+  "unload_map",
+  "fade_on",
+  "fade_off",
+  "clear_screen",
+  "start_scroll",
+  "stop_scroll",
+  "refresh_scroll",
+  "load_pal",
+  "load_wld",
+  "save_wld",
+  "load_fmp",
+  "unload_wld",
+  "start_raycast",
+  "stop_raycast",
+  // Text
+  "write",
+  "write_int",
+  "write_string",
+  "delete_text",
+  "move_text",
+  "load_fnt",
+  "draw_text",
+  // Drawing primitives
+  "draw_box",
+  "draw_outline_box",
+  "draw_line",
+  "draw_circle",
+  "draw_fcircle",
+  // Math & Geometry
+  "get_dist",
+  "get_angle",
+  "advance",
+  "xadvance",
+  "near_angle",
+  "rand",
+  "abs",
+  "sqrt",
+  "cos",
+  "sin",
+  "fget_dist",
+  "fget_angle",
+  // Process Management & Signals
+  "collision",
+  "signal",
+  "let_me_alone",
+  "exists",
+  "exit",
+  "out_region",
+  // Sound
+  "sound",
+  "sound_play",
+  "stop_sound",
+  "sound_stop",
+  "change_sound",
+  "is_playing_sound",
+  "fade_sound",
+  "set_volume",
+  "set_sound_volume",
+  "set_music_volume",
+  "load_wav",
+  "unload_wav",
+  "load_snd",
+  "unload_snd",
+  "load_pcm",
+  "unload_pcm",
+  "load_song",
+  "unload_song",
+  "song",
+  "stop_song",
+  // Palette & Color
+  "roll_palette",
+  "set_color",
+  "get_color",
+  "rgb",
+  "rgba",
+  // Inputs
+  "key",
+  // 3D Engine (Modo 7 y Modo 8 Hexen / GZDoom Hybrid & DIV2 Raycaster)
+  "load_pal",
+  "load_fmp",
+  "load_wld",
+  "save_wld",
+  "start_raycast",
+  "stop_raycast",
+  "start_mode7",
+  "stop_mode7",
+  "start_mode8",
+  "stop_mode8",
+  "start_mode8_hybrid",
+  "start_mode8_doom2",
+  "m8_set_doom_map",
+  "m8_add_doom_staircase",
+  "m8_shoot",
+  "m8_toggle_automap",
+  "m8_open_doom_door",
+  "m8_activate_doom_lift",
+  "m8_teleport",
+  "m8_play_doom_sound",
+  "m8_mode",
+  "m8_set_height",
+  "m8_set_sector",
+  "m8_add_light",
+  "m8_add_model",
+  "m8_add_voxel",
+  "m8_set_fluid",
+  "m8_raytracing",
+  "load_md2",
+  "load_md3",
+  "open_mode8_door",
+  "close_mode8_door",
+  "toggle_mode8_door",
+  "interact_mode8",
+  // WXDIV 3.0 App UI Primitives
+  "draw_button",
+  "draw_input",
+  "draw_select",
+  "draw_table",
+  "draw_modal",
+  "draw_tabs",
+  "draw_checkbox",
+  "set_ui_theme",
+  // WXDIV 3.0 Layout System
+  "layout_begin",
+  "layout_next",
+  "layout_end",
+  // WXDIV 3.0 State, Router & Data Persistence
+  "store_create",
+  "store_get",
+  "store_set",
+  "store_watch",
+  "on_data_change",
+  "onDataChange",
+  "save_json",
+  "load_json",
+  "load_sqlite",
+  "sqlite_query",
+  "sqlite_create_table",
+  "fetch_api",
+  "http_get",
+  "http_post",
+  "navigate",
+  "on_route_change",
+  "on_click",
+  "on_submit",
+  "auth_login",
+  "auth_logout",
+  "auth_is_logged",
+  // Google AdMob Mobile & Reward Functions
+  "admob_init",
+  "admob_show_banner",
+  "admob_hide_banner",
+  "admob_show_interstitial",
+  "admob_show_rewarded",
+  "admob_grant_reward",
+]);
+
+export const DIV_CONSTANTS = new Set([
+  // Google AdMob Constants
+  "admob_top",
+  "admob_bottom",
+  "admob_banner",
+  "admob_interstitial",
+  "admob_rewarded",
+  // Screen modes
+  "m320x200",
+  "m640x480",
+  "m800x600",
+  "m1024x768",
+  "m_html5",
+  "html5",
+  // Mode 8 Engine modes & fluids
+  "m8_classic",
+  "m8_hybrid",
+  "fluid_water",
+  "fluid_lava",
+  "fluid_acid",
+  "fluid_blood",
+  "fluid_none",
+  // 3D Process types
+  "c_m7",
+  "c_m8",
+  "c_screen",
+  "c_scroll",
+  // Signals
+  "s_kill",
+  "s_freeze",
+  "s_wakeup",
+  "s_sleep",
+  "s_kill_tree",
+  "all_text",
+  // Key constants
+  "_up",
+  "_down",
+  "_left",
+  "_right",
+  "_space",
+  "_enter",
+  "_esc",
+  "_control",
+  "_alt",
+  "_shift",
+  "_a",
+  "_b",
+  "_c",
+  "_d",
+  "_e",
+  "_f",
+  "_g",
+  "_h",
+  "_i",
+  "_j",
+  "_k",
+  "_l",
+  "_m",
+  "_n",
+  "_o",
+  "_p",
+  "_q",
+  "_r",
+  "_s",
+  "_t",
+  "_u",
+  "_v",
+  "_w",
+  "_x",
+  "_y",
+  "_z",
+  "_0",
+  "_1",
+  "_2",
+  "_3",
+  "_4",
+  "_5",
+  "_6",
+  "_7",
+  "_8",
+  "_9",
+]);
+
+export const DIV_RESERVED_VARS = new Set([
+  // Process local vars
+  "id",
+  "father",
+  "son",
+  "bigbro",
+  "smallbro",
+  "x",
+  "y",
+  "z",
+  "graph",
+  "file",
+  "flags",
+  "size",
+  "angle",
+  "alpha",
+  "priority",
+  "region",
+  "resolution",
+  "ctype",
+  "cnumber",
+  // Global vars
+  "mouse",
+  "timer",
+  "fps",
+  "m7",
+  "m8",
+  "camara_id",
+  "cam_id",
+]);
+
+/**
+ * Tokenizes DIV code into stream of tokens
+ */
+export function tokenizeDiv(code: string): Token[] {
+  const tokens: Token[] = [];
+  let line = 1;
+  let col = 1;
+  let i = 0;
+
+  while (i < code.length) {
+    const char = code[i];
+
+    // Newlines
+    if (char === "\n") {
+      line++;
+      col = 1;
+      i++;
+      continue;
+    }
+
+    // Whitespace
+    if (/\s/.test(char)) {
+      col++;
+      i++;
+      continue;
+    }
+
+    // Comments // or /* */
+    if (char === "/" && code[i + 1] === "/") {
+      const startCol = col;
+      let val = "";
+      while (i < code.length && code[i] !== "\n") {
+        val += code[i];
+        i++;
+        col++;
+      }
+      tokens.push({ type: TokenType.COMMENT, value: val, line, column: startCol });
+      continue;
+    }
+
+    if (char === "/" && code[i + 1] === "*") {
+      const startCol = col;
+      const startLine = line;
+      let val = "/*";
+      i += 2;
+      col += 2;
+      while (i < code.length && !(code[i] === "*" && code[i + 1] === "/")) {
+        if (code[i] === "\n") {
+          line++;
+          col = 1;
+        } else {
+          col++;
+        }
+        val += code[i];
+        i++;
+      }
+      if (i < code.length) {
+        val += "*/";
+        i += 2;
+        col += 2;
+      }
+      tokens.push({ type: TokenType.COMMENT, value: val, line: startLine, column: startCol });
+      continue;
+    }
+
+    // Strings "..."
+    if (char === '"' || char === "'") {
+      const quote = char;
+      const startCol = col;
+      const startLine = line;
+      let val = "";
+      i++;
+      col++;
+      while (i < code.length && code[i] !== quote && code[i] !== "\n") {
+        if (code[i] === "\\" && i + 1 < code.length) {
+          val += code[i] + code[i + 1];
+          i += 2;
+          col += 2;
+          continue;
+        }
+        val += code[i];
+        i++;
+        col++;
+      }
+      let closed = false;
+      if (i < code.length && code[i] === quote) {
+        closed = true;
+        i++;
+        col++;
+      }
+      tokens.push({
+        type: TokenType.STRING,
+        value: val,
+        line: startLine,
+        column: startCol,
+        unclosed: !closed,
+        quoteChar: quote,
+      });
+      continue;
+    }
+
+    // Numbers (decimal and floats)
+    if (/[0-9]/.test(char)) {
+      const startCol = col;
+      let val = "";
+      while (i < code.length && /[0-9.]/.test(code[i])) {
+        val += code[i];
+        i++;
+        col++;
+      }
+      tokens.push({ type: TokenType.NUMBER, value: val, line, column: startCol });
+      continue;
+    }
+
+    // Identifiers & Keywords
+    if (/[a-zA-Z_]/.test(char)) {
+      const startCol = col;
+      let val = "";
+      while (i < code.length && /[a-zA-Z0-9_]/.test(code[i])) {
+        val += code[i];
+        i++;
+        col++;
+      }
+      const upper = val.toUpperCase();
+      if (DIV_KEYWORDS.has(upper)) {
+        tokens.push({ type: TokenType.KEYWORD, value: val, line, column: startCol });
+      } else {
+        tokens.push({ type: TokenType.IDENTIFIER, value: val, line, column: startCol });
+      }
+      continue;
+    }
+
+    // Operators & Punctuation
+    const twoChar = code.slice(i, i + 2);
+    if (["==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "++", "--", "&&", "||"].includes(twoChar)) {
+      tokens.push({ type: TokenType.OPERATOR, value: twoChar, line, column: col });
+      i += 2;
+      col += 2;
+      continue;
+    }
+
+    if (["+", "-", "*", "/", "%", "=", "<", ">", "!", "&", "|", "^"].includes(char)) {
+      tokens.push({ type: TokenType.OPERATOR, value: char, line, column: col });
+      i++;
+      col++;
+      continue;
+    }
+
+    if ([";", ",", "(", ")", "[", "]", "{", "}", ":", "."].includes(char)) {
+      tokens.push({ type: TokenType.PUNCTUATION, value: char, line, column: col });
+      i++;
+      col++;
+      continue;
+    }
+
+    // Unknown
+    tokens.push({ type: TokenType.UNKNOWN, value: char, line, column: col });
+    i++;
+    col++;
+  }
+
+  return tokens;
+}
+
+/**
+ * Validates DIV Games Studio syntax and returns diagnostics with exact line precision
+ */
+export function validateDivSyntax(code: string): DivDiagnostic[] {
+  const diagnostics: DivDiagnostic[] = [];
+  const lines = code.split("\n");
+
+  if (!code.trim()) {
+    return diagnostics;
+  }
+
+  // Basic structure check
+  const upperCode = code.toUpperCase();
+  if (!upperCode.includes("PROGRAM")) {
+    diagnostics.push({
+      line: 1,
+      column: 1,
+      severity: "warning",
+      message: "Se recomienda declarar 'PROGRAM nombre_juego;' al inicio del archivo.",
+      rule: "header-missing",
+    });
+  }
+
+  const tokens = tokenizeDiv(code);
+
+  // Check for unclosed strings accurately from tokenizer
+  for (const t of tokens) {
+    if (t.type === TokenType.STRING && t.unclosed) {
+      diagnostics.push({
+        line: t.line,
+        column: t.column,
+        severity: "error",
+        message: `Cadena de texto sin cerrar iniciada con ${t.quoteChar || '"'} en la línea ${t.line}.`,
+        rule: "unclosed-string",
+      });
+    }
+  }
+
+  // Parentheses tracker per line
+  let parenDepth = 0;
+  const openParenStack: { line: number; column: number }[] = [];
+
+  // Block opener stack: tracks exact line where each block begins
+  interface OpenBlock {
+    keyword: string;
+    line: number;
+    column: number;
+  }
+  const blockStack: OpenBlock[] = [];
+
+    // Track if we are inside a PROCESS, FUNCTION or declaration section
+    let inProcessOrFunction = false;
+    let inDeclarationSection = false;
+
+    for (let idx = 0; idx < tokens.length; idx++) {
+      const t = tokens[idx];
+
+      // Parentheses matching
+      if (t.type === TokenType.PUNCTUATION) {
+        if (t.value === "(") {
+          parenDepth++;
+          openParenStack.push({ line: t.line, column: t.column });
+        } else if (t.value === ")") {
+          if (parenDepth > 0) {
+            parenDepth--;
+            openParenStack.pop();
+          } else {
+            diagnostics.push({
+              line: t.line,
+              column: t.column,
+              severity: "error",
+              message: `Paréntesis de cierre ')' inesperado sin apertura previa en línea ${t.line}.`,
+              rule: "unmatched-paren",
+            });
+          }
+        }
+      }
+
+      if (t.type === TokenType.KEYWORD) {
+        const up = t.value.toUpperCase();
+
+        if (up === "PROCESS" || up === "FUNCTION") {
+          inProcessOrFunction = true;
+          inDeclarationSection = false;
+        } else if (up === "GLOBAL" || up === "LOCAL" || up === "PRIVATE" || up === "CONST") {
+          inDeclarationSection = true;
+        } else if (up === "BEGIN") {
+          inDeclarationSection = false;
+        }
+
+        // Check if keyword is used as a variable identifier / assignment rather than a block opener
+        // (e.g. private form = 0; or page = 1; or layout.x = 10)
+        const isAssignmentOrVar = (): boolean => {
+          if (inDeclarationSection) return true;
+          for (let j = idx + 1; j < tokens.length; j++) {
+            if (tokens[j].type === TokenType.COMMENT) continue;
+            const nextV = tokens[j].value;
+            if (["=", "+=", "-=", "*=", "/=", "++", "--", ".", ")", ",", ";", "==", "!=", "<", ">", ":"].includes(nextV)) {
+              return true;
+            }
+            break;
+          }
+          return false;
+        };
+
+        // Determine if an IF / WHILE / FOR statement is a block with its own END or a single-line statement
+        const isControlBlockWithEnd = (): boolean => {
+          let pDepth = 0;
+          let bodyStart = -1;
+          for (let j = idx + 1; j < tokens.length; j++) {
+            if (tokens[j].value === "(") pDepth++;
+            else if (tokens[j].value === ")") {
+              pDepth--;
+              if (pDepth === 0) {
+                bodyStart = j + 1;
+                break;
+              }
+            }
+          }
+          if (bodyStart === -1) return false;
+
+          let nextNonComm: Token | null = null;
+          for (let j = bodyStart; j < tokens.length; j++) {
+            if (tokens[j].type !== TokenType.COMMENT) {
+              nextNonComm = tokens[j];
+              break;
+            }
+          }
+          // If followed immediately by BEGIN, the BEGIN itself manages the block opener
+          if (nextNonComm && nextNonComm.type === TokenType.KEYWORD && nextNonComm.value.toUpperCase() === "BEGIN") {
+            return false;
+          }
+
+          // Count scope openers vs END keywords up to next PROCESS/FUNCTION/PROGRAM boundary
+          const currentScopeOpeners = blockStack.filter((b) =>
+            ["BEGIN", "LOOP", "SWITCH", "STRUCT", "ONEXIT"].includes(b.keyword)
+          ).length;
+          let futureExplicit = 0;
+          let endCount = 0;
+          for (let j = bodyStart; j < tokens.length; j++) {
+            const tj = tokens[j];
+            if (tj.type === TokenType.KEYWORD) {
+              const upj = tj.value.toUpperCase();
+              if (upj === "PROCESS" || upj === "FUNCTION" || upj === "PROGRAM") break;
+              if (["BEGIN", "LOOP", "SWITCH", "STRUCT", "ONEXIT"].includes(upj)) {
+                futureExplicit++;
+              } else if (upj === "END") {
+                endCount++;
+              }
+            }
+          }
+          return endCount > (currentScopeOpeners + futureExplicit);
+        };
+
+        if (
+          ["BEGIN", "LOOP", "SWITCH", "STRUCT", "ONEXIT", "LANDING_PAGE", "WEB_PAGE"].includes(up)
+        ) {
+          blockStack.push({ keyword: up, line: t.line, column: t.column });
+        } else if (["PAGE", "FORM", "SECTION", "LAYOUT", "STORE"].includes(up)) {
+          if (!isAssignmentOrVar()) {
+            blockStack.push({ keyword: up, line: t.line, column: t.column });
+          }
+        } else if (["IF", "WHILE", "FOR"].includes(up)) {
+          if (isControlBlockWithEnd()) {
+            blockStack.push({ keyword: up, line: t.line, column: t.column });
+          }
+        } else if (up === "REPEAT") {
+          blockStack.push({ keyword: "REPEAT", line: t.line, column: t.column });
+        } else if (up === "CASE" || up === "DEFAULT") {
+          const top = blockStack[blockStack.length - 1];
+          if (top && (top.keyword === "CASE" || top.keyword === "DEFAULT")) {
+            blockStack.pop();
+          }
+          const hasSwitch = blockStack.some((b) => b.keyword === "SWITCH");
+          if (hasSwitch) {
+            blockStack.push({ keyword: up, line: t.line, column: t.column });
+          }
+        } else if (up === "END") {
+          if (blockStack.length === 0) {
+            // Gracefully accept extra END closing PROCESS, FUNCTION, or declaration sections
+            if (inProcessOrFunction || inDeclarationSection) {
+              inProcessOrFunction = false;
+              inDeclarationSection = false;
+            } else {
+              diagnostics.push({
+                line: t.line,
+                column: t.column,
+                severity: "error",
+                message: `'END' inesperado en la línea ${t.line}: la sección 'GLOBAL' o 'PRIVATE' no requiere 'END' adicional y no hay bloque abierto para cerrar.`,
+                rule: "extra-end",
+              });
+            }
+          } else {
+            const top = blockStack[blockStack.length - 1];
+            if (top.keyword === "REPEAT") {
+              diagnostics.push({
+                line: t.line,
+                column: t.column,
+                severity: "error",
+                message: `Se esperaba 'UNTIL' para cerrar el bloque 'REPEAT' de la línea ${top.line}, no 'END'.`,
+                rule: "repeat-needs-until",
+              });
+              blockStack.pop();
+            } else {
+              blockStack.pop();
+              if (top.keyword === "BEGIN" && blockStack.length === 0) {
+                // Main BEGIN of process or program closed
+                inProcessOrFunction = false;
+                inDeclarationSection = false;
+              }
+              // If popped was a CASE or DEFAULT inside SWITCH, check if the next token also ends the SWITCH
+              if ((top.keyword === "CASE" || top.keyword === "DEFAULT") && blockStack.length > 0) {
+                const parent = blockStack[blockStack.length - 1];
+                if (parent.keyword === "SWITCH") {
+                  let nextNonWs: Token | null = null;
+                  for (let n = idx + 1; n < tokens.length; n++) {
+                    if (tokens[n].type !== TokenType.COMMENT && tokens[n].type !== TokenType.WHITESPACE) {
+                      nextNonWs = tokens[n];
+                      break;
+                    }
+                  }
+                  const nextVal = nextNonWs ? nextNonWs.value.toUpperCase() : "";
+                  if (nextVal !== "CASE" && nextVal !== "DEFAULT" && nextVal !== "END") {
+                    blockStack.pop(); // Pop the SWITCH as well
+                  }
+                }
+              }
+            }
+          }
+        } else if (up === "UNTIL") {
+        // Find nearest REPEAT in stack
+        let repeatIdx = -1;
+        for (let s = blockStack.length - 1; s >= 0; s--) {
+          if (blockStack[s].keyword === "REPEAT") {
+            repeatIdx = s;
+            break;
+          }
+        }
+        if (repeatIdx === -1) {
+          diagnostics.push({
+            line: t.line,
+            column: t.column,
+            severity: "error",
+            message: `'UNTIL' inesperado en la línea ${t.line}: no hay bloque 'REPEAT' correspondiente.`,
+            rule: "unmatched-until",
+          });
+        } else {
+          // Remove from stack
+          blockStack.splice(repeatIdx, 1);
+        }
+      }
+
+      // Check FRAME; semicolon
+      if (up === "FRAME") {
+        const next = tokens[idx + 1];
+        if (!next || (next.value !== ";" && next.value !== "(")) {
+          diagnostics.push({
+            line: t.line,
+            column: t.column,
+            severity: "error",
+            message: `La instrucción 'FRAME' en la línea ${t.line} debe terminar con punto y coma ';' o '(porcentaje);'.`,
+            rule: "frame-semicolon",
+          });
+        }
+      }
+
+      // Check PROCESS declaration
+      if (up === "PROCESS") {
+        const procNameToken = tokens[idx + 1];
+        if (!procNameToken || procNameToken.type !== TokenType.IDENTIFIER) {
+          diagnostics.push({
+            line: t.line,
+            column: t.column,
+            severity: "error",
+            message: `Se esperaba el nombre del proceso tras la palabra clave 'PROCESS' en la línea ${t.line}.`,
+            rule: "process-name",
+          });
+        }
+      }
+    }
+  }
+
+  // Check unclosed parentheses
+  for (const unclosedParen of openParenStack) {
+    diagnostics.push({
+      line: unclosedParen.line,
+      column: unclosedParen.column,
+      severity: "error",
+      message: `Paréntesis '(' sin cerrar iniciado en la línea ${unclosedParen.line}.`,
+      rule: "unclosed-paren",
+    });
+  }
+
+  // Report all unclosed blocks on their EXACT opening lines (CASE/DEFAULT are closed implicitly by SWITCH)
+  const realUnclosed = blockStack.filter(
+    (b) => b.keyword !== "CASE" && b.keyword !== "DEFAULT"
+  );
+  for (const unclosed of realUnclosed) {
+    diagnostics.push({
+      line: unclosed.line,
+      column: unclosed.column,
+      severity: "error",
+      message: `Bloque '${unclosed.keyword}' iniciado en la línea ${unclosed.line} no ha sido cerrado con '${unclosed.keyword === "REPEAT" ? "UNTIL" : "END"}'.`,
+      rule: "unclosed-block",
+    });
+  }
+
+  // Sort diagnostics by line number ascending
+  diagnostics.sort((a, b) => a.line - b.line || a.column - b.column);
+
+  return diagnostics;
+}
+
+/**
+ * Extracts declared processes from DIV code
+ */
+export function extractProcesses(code: string): Array<{ name: string; params: string[]; line: number }> {
+  const processes: Array<{ name: string; params: string[]; line: number }> = [];
+  const tokens = tokenizeDiv(code);
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type === TokenType.KEYWORD && tokens[i].value.toUpperCase() === "PROCESS") {
+      const nameTok = tokens[i + 1];
+      if (nameTok && nameTok.type === TokenType.IDENTIFIER) {
+        const params: string[] = [];
+        let j = i + 2;
+        if (tokens[j] && tokens[j].value === "(") {
+          j++;
+          while (j < tokens.length && tokens[j].value !== ")") {
+            if (tokens[j].type === TokenType.IDENTIFIER) {
+              params.push(tokens[j].value);
+            }
+            j++;
+          }
+        }
+        processes.push({
+          name: nameTok.value,
+          params,
+          line: nameTok.line,
+        });
+      }
+    }
+  }
+
+  return processes;
+}
