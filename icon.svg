@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="wineboxGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8E3554" />
+      <stop offset="100%" stop-color="#5B1E33" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="160" y1="120" x2="360" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#47A777" />
+      <stop offset="100%" stop-color="#2F6F4E" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#wineboxGrad)" />
+  <rect x="24" y="24" width="464" height="464" rx="92" stroke="rgba(255,255,255,0.16)" stroke-width="6" />
+  <!-- Isometric 3D Prism / Studio Cube -->
+  <polygon points="256,112 384,186 256,260 128,186" fill="#FFFFFF" />
+  <polygon points="128,186 256,260 256,400 128,326" fill="#F3D0DC" />
+  <polygon points="384,186 256,260 256,400 384,326" fill="url(#emeraldGrad)" />
+  <polyline points="256,112 384,186 384,326 256,400 128,326 128,186 256,112" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round" fill="none" />
+  <line x1="256" y1="260" x2="256" y2="400" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" />
+  <line x1="128" y1="186" x2="256" y2="260" stroke="#7C2D48" stroke-width="6" stroke-linecap="round" />
+  <line x1="384" y1="186" x2="256" y2="260" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" />
+</svg>

@@ -23,6 +23,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // server.ts
 var import_express = __toESM(require("express"), 1);
+var import_http = __toESM(require("http"), 1);
+var import_node_fs2 = __toESM(require("node:fs"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
@@ -1143,11 +1145,516 @@ END
   };
 }
 
+// src/server/androidCloudCompiler.ts
+var import_node_forge = __toESM(require("node-forge"), 1);
+var import_node_crypto = __toESM(require("node:crypto"), 1);
+var import_node_child_process = require("node:child_process");
+var import_node_util = require("node:util");
+var import_jszip = __toESM(require("jszip"), 1);
+var execFileAsync = (0, import_node_util.promisify)(import_node_child_process.execFile);
+function formatColonHex(hex) {
+  return hex.toUpperCase().match(/.{1,2}/g)?.join(":") || hex.toUpperCase();
+}
+function computeCertFingerprints(cert) {
+  const derBytes = import_node_forge.default.asn1.toDer(import_node_forge.default.pki.certificateToAsn1(cert)).getBytes();
+  const buf = Buffer.from(derBytes, "binary");
+  return {
+    sha256: formatColonHex(import_node_crypto.default.createHash("sha256").update(buf).digest("hex")),
+    sha1: formatColonHex(import_node_crypto.default.createHash("sha1").update(buf).digest("hex")),
+    md5: formatColonHex(import_node_crypto.default.createHash("md5").update(buf).digest("hex"))
+  };
+}
+async function checkCommandExists(cmd, args = ["--version"]) {
+  try {
+    await execFileAsync(cmd, args, { timeout: 2500 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function getCloudCompilerCapabilities() {
+  const [hasJava, hasGradle] = await Promise.all([
+    checkCommandExists("java", ["-version"]),
+    checkCommandExists("gradle", ["-version"])
+  ]);
+  const hasAndroidSdk = Boolean(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT);
+  return {
+    cryptoSigning: true,
+    pkcs12Supported: true,
+    pkcs7JarSigning: true,
+    hasJava,
+    hasGradle,
+    hasAndroidSdk,
+    hasLocalAndroidSdk: hasJava && hasAndroidSdk,
+    hasRemoteRunner: false,
+    remoteRunnerUrlConfigured: false,
+    githubActionsSupported: false
+  };
+}
+function generateReleaseKeystore(input) {
+  const alias = (input.alias || "wxdiv-release").replace(/[^a-zA-Z0-9._-]/g, "") || "wxdiv-release";
+  const storePassword = input.storePassword && input.storePassword.length >= 6 ? input.storePassword : "wxdiv2026release";
+  const keyPassword = input.keyPassword && input.keyPassword.length >= 6 ? input.keyPassword : storePassword;
+  const keySize = input.keySize === 4096 ? 4096 : 2048;
+  const validityYears = Math.min(50, Math.max(10, Number(input.validityYears) || 25));
+  const commonName = (input.commonName || "WXDIV Publisher").trim().slice(0, 64);
+  const organizationUnit = (input.organizationUnit || "Mobile Studio").trim().slice(0, 64);
+  const organization = (input.organization || "Winebox Digital").trim().slice(0, 64);
+  const locality = (input.locality || "Madrid").trim().slice(0, 64);
+  const state = (input.state || "Madrid").trim().slice(0, 64);
+  const country = ((input.country || "ES").trim().toUpperCase().replace(/[^A-Z]/g, "") || "ES").slice(0, 2);
+  const keys = import_node_forge.default.pki.rsa.generateKeyPair(keySize);
+  const cert = import_node_forge.default.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = import_node_crypto.default.randomBytes(8).toString("hex");
+  const now = /* @__PURE__ */ new Date();
+  const validUntil = new Date(now);
+  validUntil.setFullYear(now.getFullYear() + validityYears);
+  cert.validity.notBefore = now;
+  cert.validity.notAfter = validUntil;
+  const attrs = [
+    { name: "commonName", value: commonName },
+    { shortName: "OU", value: organizationUnit },
+    { name: "organizationName", value: organization },
+    { name: "localityName", value: locality },
+    { shortName: "ST", value: state },
+    { name: "countryName", value: country }
+  ];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    { name: "basicConstraints", cA: false },
+    {
+      name: "keyUsage",
+      digitalSignature: true,
+      nonRepudiation: true,
+      keyEncipherment: true
+    },
+    {
+      name: "extKeyUsage",
+      codeSigning: true
+    },
+    { name: "subjectKeyIdentifier" }
+  ]);
+  cert.sign(keys.privateKey, import_node_forge.default.md.sha256.create());
+  const p12Asn1 = import_node_forge.default.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], storePassword, {
+    friendlyName: alias,
+    algorithm: "3des",
+    generateLocalKeyId: true
+  });
+  const p12Der = import_node_forge.default.asn1.toDer(p12Asn1).getBytes();
+  const keystoreP12Base64 = Buffer.from(p12Der, "binary").toString("base64");
+  const uploadCertificatePem = import_node_forge.default.pki.certificateToPem(cert);
+  const fingerprints = computeCertFingerprints(cert);
+  const subjectString = `CN=${commonName}, OU=${organizationUnit}, O=${organization}, L=${locality}, ST=${state}, C=${country}`;
+  const keystoreProperties = `# WXDIV 3.0 Release Signing Configuration
+storeFile=signing/release-keystore.p12
+storeType=PKCS12
+storePassword=${storePassword}
+keyAlias=${alias}
+keyPassword=${keyPassword}
+`;
+  const gradleSigningSnippet = `signingConfigs {
+    release {
+        storeFile file("signing/release-keystore.p12")
+        storeType "PKCS12"
+        storePassword props["storePassword"]
+        keyAlias props["keyAlias"]
+        keyPassword props["keyPassword"]
+    }
+}`;
+  return {
+    alias,
+    keySize,
+    validityYears,
+    validFrom: now.toISOString(),
+    validUntil: validUntil.toISOString(),
+    subject: subjectString,
+    serialNumber: cert.serialNumber,
+    keystoreP12Base64,
+    uploadCertificatePem,
+    keystoreProperties,
+    gradleSigningSnippet,
+    fingerprints
+  };
+}
+function inspectKeystoreP12(p12Base64, password) {
+  const der = Buffer.from(p12Base64, "base64").toString("binary");
+  const asn1 = import_node_forge.default.asn1.fromDer(der);
+  const p12 = import_node_forge.default.pkcs12.pkcs12FromAsn1(asn1, password);
+  const certBags = p12.getBags({ bagType: import_node_forge.default.pki.oids.certBag })[import_node_forge.default.pki.oids.certBag] || [];
+  const keyBags = p12.getBags({ bagType: import_node_forge.default.pki.oids.pkcs8ShroudedKeyBag })[import_node_forge.default.pki.oids.pkcs8ShroudedKeyBag] || p12.getBags({ bagType: import_node_forge.default.pki.oids.keyBag })[import_node_forge.default.pki.oids.keyBag] || [];
+  if (certBags.length === 0 || !certBags[0].cert) {
+    throw new Error("El archivo PKCS#12 no contiene ning\xFAn certificado X.509 v\xE1lido.");
+  }
+  if (keyBags.length === 0 || !keyBags[0].key) {
+    throw new Error("El archivo PKCS#12 no contiene ninguna clave privada para firmar.");
+  }
+  const certBag = certBags[0];
+  const cert = certBag.cert;
+  const friendlyName = certBag.attributes?.friendlyName && certBag.attributes.friendlyName[0] || keyBags[0].attributes?.friendlyName && keyBags[0].attributes.friendlyName[0] || "wxdiv-release";
+  const subjectParts = cert.subject.attributes.map(
+    (a) => `${a.shortName || a.name}=${a.value}`
+  );
+  const fingerprints = computeCertFingerprints(cert);
+  const uploadCertificatePem = import_node_forge.default.pki.certificateToPem(cert);
+  return {
+    alias: friendlyName,
+    subject: subjectParts.join(", "),
+    serialNumber: cert.serialNumber,
+    validFrom: cert.validity.notBefore.toISOString(),
+    validUntil: cert.validity.notAfter.toISOString(),
+    fingerprints,
+    uploadCertificatePem,
+    hasPrivateKey: true
+  };
+}
+async function signPackageManifestArchive(params) {
+  const { entries, keystoreP12Base64, password } = params;
+  const der = Buffer.from(keystoreP12Base64, "base64").toString("binary");
+  const asn1 = import_node_forge.default.asn1.fromDer(der);
+  const p12 = import_node_forge.default.pkcs12.pkcs12FromAsn1(asn1, password);
+  const certBags = p12.getBags({ bagType: import_node_forge.default.pki.oids.certBag })[import_node_forge.default.pki.oids.certBag] || [];
+  const keyBags = p12.getBags({ bagType: import_node_forge.default.pki.oids.pkcs8ShroudedKeyBag })[import_node_forge.default.pki.oids.pkcs8ShroudedKeyBag] || p12.getBags({ bagType: import_node_forge.default.pki.oids.keyBag })[import_node_forge.default.pki.oids.keyBag] || [];
+  if (!certBags[0]?.cert || !keyBags[0]?.key) {
+    throw new Error("No se pudo extraer la clave privada y certificado del keystore.");
+  }
+  const cert = certBags[0].cert;
+  const privateKey = keyBags[0].key;
+  const fingerprints = computeCertFingerprints(cert);
+  const zip = new import_jszip.default();
+  let manifestText = "Manifest-Version: 1.0\r\nCreated-By: WXDIV 3.0 Cloud Signer (node-forge)\r\n\r\n";
+  let sfSections = "";
+  for (const entry of entries) {
+    const cleanPath = entry.path.replace(/^\/+/, "");
+    if (!cleanPath || cleanPath.startsWith("META-INF/")) continue;
+    const rawBuf = Buffer.from(entry.contentBase64, "base64");
+    zip.file(cleanPath, rawBuf);
+    const sha256B64 = import_node_crypto.default.createHash("sha256").update(rawBuf).digest("base64");
+    const section = `Name: ${cleanPath}\r
+SHA-256-Digest: ${sha256B64}\r
+\r
+`;
+    manifestText += section;
+    const sectionDigestB64 = import_node_crypto.default.createHash("sha256").update(Buffer.from(section, "utf8")).digest("base64");
+    sfSections += `Name: ${cleanPath}\r
+SHA-256-Digest: ${sectionDigestB64}\r
+\r
+`;
+  }
+  const manifestDigestB64 = import_node_crypto.default.createHash("sha256").update(Buffer.from(manifestText, "utf8")).digest("base64");
+  const sfText = `Signature-Version: 1.0\r
+Created-By: WXDIV 3.0 Cloud Signer\r
+SHA-256-Digest-Manifest: ${manifestDigestB64}\r
+\r
+` + sfSections;
+  const p7 = import_node_forge.default.pkcs7.createSignedData();
+  p7.content = import_node_forge.default.util.createBuffer(sfText, "utf8");
+  p7.addCertificate(cert);
+  p7.addSigner({
+    key: privateKey,
+    certificate: cert,
+    digestAlgorithm: import_node_forge.default.pki.oids.sha256,
+    authenticatedAttributes: [
+      { type: import_node_forge.default.pki.oids.contentType, value: import_node_forge.default.pki.oids.data },
+      { type: import_node_forge.default.pki.oids.messageDigest },
+      { type: import_node_forge.default.pki.oids.signingTime, value: /* @__PURE__ */ new Date() }
+    ]
+  });
+  p7.sign({ detached: true });
+  const p7DerBytes = import_node_forge.default.asn1.toDer(p7.toAsn1()).getBytes();
+  const p7DerBuf = Buffer.from(p7DerBytes, "binary");
+  zip.file("META-INF/MANIFEST.MF", manifestText);
+  zip.file("META-INF/WXDIV.SF", sfText);
+  zip.file("META-INF/WXDIV.RSA", p7DerBuf);
+  const signedZipBase64 = await zip.generateAsync({
+    type: "base64",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 }
+  });
+  const subject = cert.subject.attributes.map((a) => `${a.shortName || a.name}=${a.value}`).join(", ");
+  return {
+    verified: true,
+    algorithm: "SHA256withRSA (PKCS#7 / JAR v1 + PKCS#12)",
+    signedFilesCount: entries.length,
+    signerSubject: subject,
+    sha256Fingerprint: fingerprints.sha256,
+    sha1Fingerprint: fingerprints.sha1,
+    manifestPreview: manifestText.slice(0, 1200),
+    signatureFilePreview: sfText.slice(0, 1200),
+    pkcs7SizeBytes: p7DerBuf.length,
+    signedZipBase64
+  };
+}
+
+// src/server/expressCloudCompiler.ts
+var import_node_fs = __toESM(require("node:fs"), 1);
+var import_node_path = __toESM(require("node:path"), 1);
+var import_node_crypto2 = __toESM(require("node:crypto"), 1);
+var import_jszip2 = __toESM(require("jszip"), 1);
+var BUILDS_ROOT = import_node_path.default.resolve(process.cwd(), ".wxdiv-cloud-builds");
+var FALLBACK_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+function ensureBuildsRoot() {
+  if (!import_node_fs.default.existsSync(BUILDS_ROOT)) {
+    import_node_fs.default.mkdirSync(BUILDS_ROOT, { recursive: true });
+  }
+}
+function slugifyTitle(raw) {
+  const cleaned = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28);
+  return cleaned || "mi-idea";
+}
+function escapeHtmlAttr(text) {
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function injectPwaIntoHtml(html, title) {
+  const safeTitle = escapeHtmlAttr(title);
+  const pwaHeadSnippet = `
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="${safeTitle}" />
+  <meta name="theme-color" content="#7C2D48" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="./icon-192.png" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />`;
+  const swSnippet = `
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js').catch(function() {});
+      });
+    }
+  </script>`;
+  let out = html;
+  if (/<\/head>/i.test(out)) {
+    out = out.replace(/<\/head>/i, `${pwaHeadSnippet}
+</head>`);
+  } else {
+    out = `${pwaHeadSnippet}
+${out}`;
+  }
+  if (/<\/body>/i.test(out)) {
+    out = out.replace(/<\/body>/i, `${swSnippet}
+</body>`);
+  } else {
+    out = `${out}
+${swSnippet}`;
+  }
+  return out;
+}
+function isValidBuildId(buildId) {
+  return /^[a-z0-9][a-z0-9-]{2,60}$/.test(buildId);
+}
+function getExpressBuildDir(buildId) {
+  if (!isValidBuildId(buildId)) return null;
+  const dir = import_node_path.default.resolve(BUILDS_ROOT, buildId);
+  if (!dir.startsWith(BUILDS_ROOT + import_node_path.default.sep)) return null;
+  if (!import_node_fs.default.existsSync(dir)) return null;
+  return dir;
+}
+function readExpressBuildMeta(buildId) {
+  const dir = getExpressBuildDir(buildId);
+  if (!dir) return null;
+  const metaPath = import_node_path.default.join(dir, "meta.json");
+  if (!import_node_fs.default.existsSync(metaPath)) return null;
+  try {
+    return JSON.parse(import_node_fs.default.readFileSync(metaPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+async function buildExpressPwaZipBuffer(buildId) {
+  const dir = getExpressBuildDir(buildId);
+  if (!dir) return null;
+  const meta = readExpressBuildMeta(buildId);
+  const title = meta?.title || "Mi App WXDIV";
+  const zip = new import_jszip2.default();
+  const files = [
+    "index.html",
+    "manifest.webmanifest",
+    "sw.js",
+    "icon-192.png",
+    "icon-512.png",
+    "icon-maskable-512.png"
+  ];
+  for (const name of files) {
+    const filePath = import_node_path.default.join(dir, name);
+    if (import_node_fs.default.existsSync(filePath)) {
+      zip.file(name, import_node_fs.default.readFileSync(filePath));
+    }
+  }
+  if (!import_node_fs.default.existsSync(import_node_path.default.join(dir, "icon-maskable-512.png")) && import_node_fs.default.existsSync(import_node_path.default.join(dir, "icon-512.png"))) {
+    zip.file("icon-maskable-512.png", import_node_fs.default.readFileSync(import_node_path.default.join(dir, "icon-512.png")));
+  }
+  zip.file(
+    "LEEME_PUBLICAR_Y_APK.txt",
+    `${title} - Paquete Web & App Movil (Sin secretos ni cuentas requeridas)
+==========================================================================
+
+OPCION A: PUBLICAR GRATIS ARRASTRANDO ESTA CARPETA (30 SEGUNDOS)
+1. Descomprime este archivo ZIP en una carpeta.
+2. Abre https://app.netlify.com/drop (o Cloudflare Pages / cualquier hosting web).
+3. Arrastra la carpeta descomprimida dentro de la pagina.
+4. Obtendras un enlace HTTPS publico al instante para abrirlo e instalarlo en Android/iPhone.
+
+OPCION B: CREAR UN APK / AAB PARA ANDROID SIN SECRETOS NI GITHUB
+1. Publica tu carpeta siguiendo la Opcion A para obtener tu enlace HTTPS.
+2. Entra en https://www.pwabuilder.com e introduce ese enlace HTTPS.
+3. Haz clic en "Package for Stores" > Android para descargar tu paquete APK/AAB listo para Android.
+`
+  );
+  return zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 }
+  });
+}
+async function compileExpressCloudApp(input) {
+  if (!input?.htmlContent || typeof input.htmlContent !== "string") {
+    throw new Error("Falta el contenido del proyecto para compilar.");
+  }
+  ensureBuildsRoot();
+  const cleanTitle = (input.title || "Mi Idea WXDIV").trim().slice(0, 60) || "Mi Idea WXDIV";
+  const shortCode = import_node_crypto2.default.randomBytes(2).toString("hex");
+  const buildId = `${slugifyTitle(cleanTitle)}-${shortCode}`;
+  const buildDir = import_node_path.default.join(BUILDS_ROOT, buildId);
+  import_node_fs.default.mkdirSync(buildDir, { recursive: true });
+  const orientation = input.orientation === "landscape" || input.orientation === "portrait" ? input.orientation : "sensor";
+  const projectType = input.projectType === "web" ? "web" : "game";
+  const hostedHtml = injectPwaIntoHtml(input.htmlContent, cleanTitle);
+  const offlineHtml = input.htmlContent;
+  const manifestOrientation = orientation === "landscape" ? "landscape" : orientation === "portrait" ? "portrait" : "any";
+  const shortName = cleanTitle.slice(0, 12).trim() || "MiApp";
+  const manifest = {
+    id: "./",
+    name: cleanTitle,
+    short_name: shortName,
+    description: `${cleanTitle} \u2014 Creado en WXDIV Studio`,
+    start_url: "./",
+    scope: "./",
+    display: "standalone",
+    orientation: manifestOrientation,
+    background_color: "#0b1222",
+    theme_color: "#7C2D48",
+    icons: [
+      {
+        src: "./icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any"
+      },
+      {
+        src: "./icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any"
+      },
+      {
+        src: "./icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable"
+      }
+    ]
+  };
+  const swJs = `const CACHE_NAME = "wxdiv-cloud-${buildId}-v1";
+const ASSETS = [
+  "./",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png"
+];
+
+self.addEventListener("install", function(event) {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function(cache) {
+      return cache.addAll(ASSETS);
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", function(event) {
+  event.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys.filter(function(k) { return k !== CACHE_NAME; }).map(function(k) { return caches.delete(k); })
+      );
+    })
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", function(event) {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then(function(cached) {
+      if (cached) return cached;
+      return fetch(event.request).then(function(networkRes) {
+        return networkRes;
+      }).catch(function() {
+        if (event.request.mode === "navigate") {
+          return caches.match("./");
+        }
+        return cached;
+      });
+    })
+  );
+});
+`;
+  const icon192Buf = Buffer.from(input.icon192Base64 || FALLBACK_PNG_BASE64, "base64");
+  const icon512Buf = Buffer.from(
+    input.icon512Base64 || input.icon192Base64 || FALLBACK_PNG_BASE64,
+    "base64"
+  );
+  const iconMask512Buf = Buffer.from(
+    input.iconMaskable512Base64 || input.icon512Base64 || input.icon192Base64 || FALLBACK_PNG_BASE64,
+    "base64"
+  );
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "index.html"), hostedHtml, "utf8");
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "offline.html"), offlineHtml, "utf8");
+  import_node_fs.default.writeFileSync(
+    import_node_path.default.join(buildDir, "manifest.webmanifest"),
+    JSON.stringify(manifest, null, 2),
+    "utf8"
+  );
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "sw.js"), swJs, "utf8");
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "icon-192.png"), icon192Buf);
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "icon-512.png"), icon512Buf);
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "icon-maskable-512.png"), iconMask512Buf);
+  const sha256 = import_node_crypto2.default.createHash("sha256").update(hostedHtml, "utf8").digest("hex");
+  const sizeBytes = Buffer.byteLength(hostedHtml, "utf8");
+  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+  const meta = {
+    buildId,
+    title: cleanTitle,
+    projectType,
+    orientation,
+    createdAt,
+    sizeBytes,
+    sha256
+  };
+  import_node_fs.default.writeFileSync(import_node_path.default.join(buildDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+  return {
+    buildId,
+    title: cleanTitle,
+    relativeUrl: `/p/${buildId}/`,
+    downloadHtmlUrl: `/p/${buildId}/download-html`,
+    pwaBundleUrl: `/p/${buildId}/pwa-bundle.zip`,
+    apkDownloadUrl: null,
+    apkAvailable: false,
+    sizeKb: Math.max(1, Math.round(sizeBytes / 1024)),
+    sha256Short: sha256.slice(0, 12),
+    createdAt
+  };
+}
+
 // server.ts
 import_dotenv.default.config();
 var app = (0, import_express.default)();
 var PORT = 3e3;
-app.use(import_express.default.json({ limit: "15mb" }));
+app.use(import_express.default.json({ limit: "35mb" }));
 var defaultAiClient = null;
 function resolveAI(userKey) {
   const key = userKey && userKey.trim() || process.env.GEMINI_API_KEY;
@@ -1467,10 +1974,230 @@ Do not include markdown ticks or any extra text, only the raw JSON.`;
     res.json(generateProceduralSpriteFallback(prompt, size, name));
   }
 });
+app.get("/api/cloud-build/capabilities", async (_req, res) => {
+  try {
+    const caps = await getCloudCompilerCapabilities();
+    res.json({ success: true, capabilities: caps });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err?.message || "Error consultando capacidades" });
+  }
+});
+app.post("/api/android/keystore/generate", (req, res) => {
+  try {
+    const result = generateReleaseKeystore(req.body || {});
+    res.json({ success: true, keystore: result });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "No se pudo generar el keystore PKCS#12"
+    });
+  }
+});
+app.post("/api/android/keystore/inspect", (req, res) => {
+  try {
+    const { keystoreP12Base64, password } = req.body || {};
+    if (!keystoreP12Base64) {
+      return res.status(400).json({ success: false, message: "Falta el archivo .p12/.pfx codificado." });
+    }
+    const info = inspectKeystoreP12(keystoreP12Base64, password || "");
+    res.json({ success: true, info });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "Contrase\xF1a incorrecta o archivo PKCS#12 inv\xE1lido."
+    });
+  }
+});
+app.post("/api/android/sign-package", async (req, res) => {
+  try {
+    const { entries, keystoreP12Base64, password, alias } = req.body || {};
+    if (!Array.isArray(entries) || entries.length === 0 || !keystoreP12Base64) {
+      return res.status(400).json({
+        success: false,
+        message: "Se requieren archivos del proyecto y un keystore .p12 v\xE1lido para firmar."
+      });
+    }
+    const signed = await signPackageManifestArchive({
+      entries,
+      keystoreP12Base64,
+      password: password || "",
+      alias
+    });
+    res.json({ success: true, ...signed });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "Error firmando el paquete con PKCS#7."
+    });
+  }
+});
+app.post("/api/cloud-build/express", async (req, res) => {
+  try {
+    const result = await compileExpressCloudApp(req.body || {});
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "No se pudo compilar tu idea en la nube."
+    });
+  }
+});
+app.get("/api/cloud-build/express/:buildId", (req, res) => {
+  const meta = readExpressBuildMeta(req.params.buildId);
+  if (!meta) {
+    return res.status(404).json({ success: false, message: "Publicaci\xF3n no encontrada." });
+  }
+  res.json({ success: true, meta });
+});
+app.get("/p/:buildId", (req, res, next) => {
+  if (req.originalUrl.endsWith("/")) return next();
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) {
+    return res.status(404).send("<h1>Publicaci\xF3n no encontrada</h1>");
+  }
+  res.redirect(302, `/p/${req.params.buildId}/`);
+});
+app.get("/p/:buildId/", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) {
+    return res.status(404).send("<h1>Esta app no existe o expir\xF3.</h1>");
+  }
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.sendFile(import_path.default.join(dir, "index.html"));
+});
+app.get("/p/:buildId/manifest.webmanifest", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  res.sendFile(import_path.default.join(dir, "manifest.webmanifest"));
+});
+app.get("/p/:buildId/sw.js", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Service-Worker-Allowed", `/p/${req.params.buildId}/`);
+  res.sendFile(import_path.default.join(dir, "sw.js"));
+});
+app.get("/p/:buildId/icon-192.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(import_path.default.join(dir, "icon-192.png"));
+});
+app.get("/p/:buildId/icon-512.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(import_path.default.join(dir, "icon-512.png"));
+});
+app.get("/p/:buildId/icon-maskable-512.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  const maskPath = import_path.default.join(dir, "icon-maskable-512.png");
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(import_node_fs2.default.existsSync(maskPath) ? maskPath : import_path.default.join(dir, "icon-512.png"));
+});
+app.get("/p/:buildId/pwa-bundle.zip", async (req, res) => {
+  try {
+    const zipBuf = await buildExpressPwaZipBuffer(req.params.buildId);
+    if (!zipBuf) return res.status(404).send("No encontrado");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}-pwa.zip"`);
+    res.send(zipBuf);
+  } catch (err) {
+    res.status(500).send(err?.message || "Error empaquetando PWA");
+  }
+});
+app.get("/p/:buildId/download-html", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).send("No encontrado");
+  const filePath = import_path.default.join(dir, "offline.html");
+  if (!import_node_fs2.default.existsSync(filePath)) return res.status(404).send("No encontrado");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}.html"`);
+  res.sendFile(filePath);
+});
+app.get("/p/:buildId/app.apk", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).send("No encontrado");
+  const apkPath = import_path.default.join(dir, "app.apk");
+  if (!import_node_fs2.default.existsSync(apkPath)) {
+    return res.status(404).send("APK no disponible en este servidor.");
+  }
+  res.setHeader("Content-Type", "application/vnd.android.package-archive");
+  res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}.apk"`);
+  res.sendFile(apkPath);
+});
 async function startServer() {
+  const httpServer = import_http.default.createServer(app);
   if (process.env.NODE_ENV !== "production") {
+    if (process.env.DISABLE_HMR === "true") {
+      app.get("/@vite/client", (_req, res) => {
+        res.type("application/javascript");
+        res.setHeader("Cache-Control", "no-store");
+        res.send(`
+const sheetsMap = new Map();
+if ("document" in globalThis) {
+  document.querySelectorAll("style[data-vite-dev-id]").forEach((el) => {
+    sheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+}
+let lastInsertedStyle;
+export function updateStyle(id, content) {
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("type", "text/css");
+    style.setAttribute("data-vite-dev-id", id);
+    style.textContent = content;
+    if (!lastInsertedStyle) {
+      document.head.appendChild(style);
+      setTimeout(() => { lastInsertedStyle = undefined; }, 0);
+    } else {
+      lastInsertedStyle.insertAdjacentElement("afterend", style);
+    }
+    lastInsertedStyle = style;
+  } else {
+    style.textContent = content;
+  }
+  sheetsMap.set(id, style);
+}
+export function removeStyle(id) {
+  const style = sheetsMap.get(id);
+  if (style) {
+    document.head.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+export function createHotContext() {
+  return {
+    data: {},
+    accept() {},
+    acceptExports() {},
+    dispose() {},
+    prune() {},
+    decline() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+  };
+}
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== "." && url[0] !== "/") return url;
+  const pathname = url.replace(/[?#].*$/, "");
+  const { search, hash } = new URL(url, "http://vite.dev");
+  return pathname + "?" + queryToInject + (search ? "&" + search.slice(1) : "") + (hash || "");
+}
+export class ErrorOverlay extends HTMLElement {}
+`);
+      });
+    }
     const vite = await (0, import_vite.createServer)({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer }
+      },
       appType: "spa"
     });
     app.use(vite.middlewares);
@@ -1481,7 +2208,7 @@ async function startServer() {
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`WXDIV 3.0 Server running on http://localhost:${PORT}`);
   });
 }
