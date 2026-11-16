@@ -114,6 +114,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
   const [isManualPaused, setIsManualPaused] = useState(false);
   const [viewMode, setViewMode] = useState<DebuggerViewMode>("split");
   const [chartMetric, setChartMetric] = useState<ChartMetricMode>("both");
+  const [mobileTab, setMobileTab] = useState<"charts" | "processes" | "vars">("processes");
 
   // Recharts streaming telemetry buffer
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryPoint[]>([]);
@@ -440,65 +441,65 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#070b14] border border-slate-800 text-slate-300 font-sans select-none overflow-hidden text-xs">
+    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] font-sans select-none overflow-hidden text-xs">
       {/* 1. Top Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#0b1222] border-b border-slate-800 flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-white border-b border-[#E2E8F0] flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-1 rounded bg-cyan-950/80 border border-cyan-700/60 text-cyan-400">
+          <div className="p-1.5 rounded-lg bg-[#FDF2F4] border border-[#FBCFE8] text-[#7C2D48]">
             <Cpu className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-100 text-xs">Debugger de Procesos DIV</span>
-              <span className="flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 font-mono text-[10px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold text-[#111827] text-xs">Debugger de Procesos DIV</span>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ECFDF5] text-[#2F6F4E] border border-[#A7F3D0] font-mono text-[10px] font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#2F6F4E]" />
                 <span>{counts.alive} Vivos</span>
               </span>
               {counts.dead > 0 && (
-                <span className="px-1.5 py-0.2 rounded bg-rose-950/80 text-rose-400 border border-rose-800/60 font-mono text-[10px]">
+                <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-mono text-[10px] font-bold">
                   {counts.dead} Muertos
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-slate-400 hidden sm:block">
-              Telemetría Recharts en tiempo real de FPS, memoria consumida, X, Y y estado
+            <p className="text-[11px] text-[#6B7280] hidden sm:block">
+              Telemetría en tiempo real de FPS, memoria, coordenadas y variables
             </p>
           </div>
         </div>
 
         {/* View Mode & Live Controls */}
-        <div className="flex items-center gap-1.5">
-          {/* View Mode Switcher */}
-          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded p-0.5 text-[10px] font-mono">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Desktop View Mode Switcher */}
+          <div className="hidden lg:flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-0.5 text-xs font-medium">
             <button
               onClick={() => setViewMode("split")}
-              className={`px-2 py-0.5 rounded transition-colors ${
+              className={`px-2.5 min-h-[32px] rounded-md transition-colors ${
                 viewMode === "split"
-                  ? "bg-cyan-600 text-white font-bold"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-[#7C2D48] text-white font-bold"
+                  : "text-[#4B5563] hover:text-[#111827]"
               }`}
-              title="Vista Dividida: Gráficos de Telemetría arriba y Tabla abajo"
+              title="Vista Dividida: Gráficos arriba y Tabla abajo"
             >
               Dividida
             </button>
             <button
               onClick={() => setViewMode("charts")}
-              className={`px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+              className={`px-2.5 min-h-[32px] rounded-md transition-colors flex items-center gap-1 ${
                 viewMode === "charts"
-                  ? "bg-cyan-600 text-white font-bold"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-[#7C2D48] text-white font-bold"
+                  : "text-[#4B5563] hover:text-[#111827]"
               }`}
-              title="Panel Completo de Gráficos Recharts (FPS & Memoria)"
+              title="Panel Completo de Gráficos (FPS & Memoria)"
             >
-              <BarChart3 className="w-3 h-3" />
+              <BarChart3 className="w-3.5 h-3.5" />
               <span>Gráficos</span>
             </button>
             <button
               onClick={() => setViewMode("table")}
-              className={`px-2 py-0.5 rounded transition-colors ${
+              className={`px-2.5 min-h-[32px] rounded-md transition-colors ${
                 viewMode === "table"
-                  ? "bg-cyan-600 text-white font-bold"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-[#7C2D48] text-white font-bold"
+                  : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Solo Tabla de Procesos y Variables"
             >
@@ -506,15 +507,14 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
             </button>
           </div>
 
-          {/* Sample Rate Selector */}
-          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded px-1.5 py-0.5 text-[10px] font-mono gap-1 text-slate-300">
-            <Clock className="w-3 h-3 text-cyan-400" />
+          <div className="flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2 min-h-[36px] text-xs font-mono gap-1 text-[#374151]">
+            <Clock className="w-3.5 h-3.5 text-[#7C2D48]" />
             <select
               value={refreshRate}
               onChange={(e) => setRefreshRate(e.target.value as RefreshRate)}
-              className="bg-transparent text-cyan-300 focus:outline-none cursor-pointer"
+              className="bg-transparent text-[#111827] font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="live">60 FPS (En vivo)</option>
+              <option value="live">60 FPS</option>
               <option value="fast">10 FPS</option>
               <option value="normal">3 FPS</option>
               <option value="slow">1 FPS</option>
@@ -527,10 +527,10 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
               setIsManualPaused(!isManualPaused);
               if (isManualPaused) updateSnapshot();
             }}
-            className={`p-1.5 rounded border transition-colors ${
+            className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg border transition-colors ${
               isManualPaused
-                ? "bg-amber-950 text-amber-300 border-amber-600"
-                : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                ? "bg-[#7C2D48] text-white border-[#7C2D48]"
+                : "bg-white text-[#374151] border-[#E2E8F0] hover:bg-[#F8FAFC]"
             }`}
             title={isManualPaused ? "Reanudar muestreo en vivo" : "Pausar muestreo"}
           >
@@ -539,7 +539,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
 
           <button
             onClick={updateSnapshot}
-            className="p-1.5 rounded bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors"
+            className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg bg-white text-[#374151] border border-[#E2E8F0] hover:bg-[#F8FAFC] transition-colors"
             title="Refrescar memoria ahora"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -547,62 +547,97 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
 
           <button
             onClick={handleLetMeAlone}
-            className="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 font-mono text-[10px] flex items-center gap-1 transition-colors"
+            className="px-2.5 min-h-[36px] rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-mono text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap"
             title="let_me_alone(): mata todos los procesos excepto el seleccionado"
           >
-            <Skull className="w-3 h-3" />
-            <span>let_me_alone()</span>
+            <Skull className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">let_me_alone()</span>
+            <span className="sm:hidden">Aislar</span>
           </button>
 
           {isEmbeddedOverlay && onCloseOverlay && (
             <button
               onClick={onCloseOverlay}
-              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white"
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#374151]"
               title="Cerrar overlay de depuración"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
       </div>
 
+      {/* Mobile Sub-tabs (< lg) */}
+      <div className="flex lg:hidden items-center bg-white border-b border-[#E2E8F0] px-3 py-1.5 gap-1.5 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab("processes")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "processes"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Procesos ({filteredProcesses.length})
+        </button>
+        <button
+          onClick={() => setMobileTab("vars")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "vars"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          {selectedProcess ? `Vars #${selectedProcess.id}` : "Variables"}
+        </button>
+        <button
+          onClick={() => setMobileTab("charts")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "charts"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Gráficos
+        </button>
+      </div>
+
       {/* 1.5 ACTIVE BREAKPOINT STATUS CALLOUT */}
       {breakpointInfo && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-b border-amber-500/60 shadow-lg flex-shrink-0 animate-in fade-in">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3 py-2.5 bg-amber-50 border-b border-amber-300 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse">
+            <div className="p-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-300">
               <CircleDot className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-200 text-xs font-mono tracking-wide">
-                  ⏸ MOTOR DIV PAUSADO EN BREAKPOINT
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-amber-950 text-xs font-mono">
+                  MOTOR PAUSADO EN BREAKPOINT
                 </span>
-                <span className="px-2 py-0.5 rounded bg-amber-500/25 border border-amber-500/50 text-amber-200 font-mono text-[11px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-950 font-mono text-[11px] font-bold">
                   Línea {breakpointInfo.line}
                 </span>
-                <span className="px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 font-mono text-[11px] font-bold">
-                  {breakpointInfo.processName || "Principal"} {breakpointInfo.processId ? `[PID: ${breakpointInfo.processId}]` : ""}
+                <span className="px-2 py-0.5 rounded bg-white border border-amber-300 text-[#7C2D48] font-mono text-[11px] font-bold">
+                  {breakpointInfo.processName || "Principal"} {breakpointInfo.processId ? `[#${breakpointInfo.processId}]` : ""}
                 </span>
               </div>
-              <p className="text-[10px] text-amber-300/80 mt-0.5">
-                Estado capturado en Frame #{breakpointInfo.frame}. Variables internas X, Y, gráficos y memoria congeladas para inspección y edición en vivo.
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                Frame #{breakpointInfo.frame} • Variables congeladas para inspección en vivo.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => {
                 runtime.resumeFromBreakpoint();
                 setBreakpointInfo(null);
                 updateSnapshot();
               }}
-              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(16,185,129,0.3)] transition-all cursor-pointer"
+              className="px-3 min-h-[36px] rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-bold flex items-center gap-1.5 text-xs transition-colors"
               title="Continuar ejecución del motor DIV (F5)"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
-              <span>Continuar (F5)</span>
+              <span>Continuar</span>
             </button>
             <button
               onClick={() => {
@@ -610,11 +645,11 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                 setBreakpointInfo(runtime.currentBreakpoint);
                 updateSnapshot();
               }}
-              className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center gap-1.5 text-xs shadow-[0_0_10px_rgba(14,165,233,0.3)] transition-all cursor-pointer"
+              className="px-3 min-h-[36px] rounded-lg bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold flex items-center gap-1.5 text-xs transition-colors"
               title="Avanzar 1 frame paso a paso (F10)"
             >
               <StepForward className="w-3.5 h-3.5" />
-              <span>Paso Frame (F10)</span>
+              <span>+1 Frame</span>
             </button>
             <button
               onClick={() => {
@@ -622,7 +657,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                 setBreakpointInfo(null);
                 updateSnapshot();
               }}
-              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/40 flex items-center gap-1 text-xs transition-all cursor-pointer"
+              className="px-2.5 min-h-[36px] rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1 text-xs font-semibold"
               title="Eliminar este breakpoint de la línea"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -632,181 +667,174 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
         </div>
       )}
 
-      {/* 2. RECHARTS TELEMETRY DASHBOARD PANEL (FPS & MEMORIA EN TIEMPO REAL) */}
+      {/* 2. RECHARTS TELEMETRY DASHBOARD PANEL */}
       {(viewMode === "split" || viewMode === "charts") && (
-        <div className="bg-[#050811] border-b border-slate-800 p-3 flex flex-col gap-3 flex-shrink-0">
+        <div
+          className={`${
+            mobileTab === "charts" ? "flex flex-1 overflow-y-auto" : "hidden"
+          } lg:flex lg:flex-none bg-[#F7F8FA] border-b border-[#E2E8F0] p-3 flex-col gap-3 flex-shrink-0`}
+        >
           {/* KPI Cards Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Card 1: FPS Telemetry */}
-            <div className="p-2 rounded-lg bg-slate-900/70 border border-emerald-900/50 flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+              <div className="flex items-center justify-between text-[10px] text-[#6B7280]">
+                <span className="flex items-center gap-1 text-[#2F6F4E] font-bold">
                   <Gauge className="w-3 h-3" />
-                  <span>TASA DE REFRESCO</span>
+                  <span>REFRESCO</span>
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">Obj: 60 FPS</span>
+                <span className="font-mono">Obj: 60</span>
               </div>
               <div className="flex items-baseline gap-1.5 mt-1">
                 <span
                   className={`text-xl font-black font-mono tracking-tight ${
                     statsSummary.currentFps >= 55
-                      ? "text-emerald-400"
+                      ? "text-[#2F6F4E]"
                       : statsSummary.currentFps >= 30
-                      ? "text-amber-400"
-                      : "text-rose-400"
+                      ? "text-amber-600"
+                      : "text-rose-600"
                   }`}
                 >
                   {statsSummary.currentFps}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">FPS</span>
+                <span className="text-[10px] text-[#6B7280] font-mono">FPS</span>
               </div>
-              <div className="text-[9px] text-slate-400 font-mono flex items-center justify-between mt-1 pt-1 border-t border-slate-800/60">
-                <span>Min: {statsSummary.minFps}</span>
-                <span>Prom: {statsSummary.avgFps}</span>
-                <span>Max: {statsSummary.maxFps}</span>
+              <div className="text-[10px] text-[#6B7280] font-mono flex items-center justify-between mt-1 pt-1 border-t border-[#F1F5F9]">
+                <span>Min:{statsSummary.minFps}</span>
+                <span>Prom:{statsSummary.avgFps}</span>
+                <span>Max:{statsSummary.maxFps}</span>
               </div>
             </div>
 
-            {/* Card 2: Memory Consumed by DIV Processes */}
-            <div className="p-2 rounded-lg bg-slate-900/70 border border-cyan-900/50 flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+            <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+              <div className="flex items-center justify-between text-[10px] text-[#6B7280]">
+                <span className="flex items-center gap-1 text-[#7C2D48] font-bold">
                   <Database className="w-3 h-3" />
-                  <span>MEMORIA PROCESOS</span>
+                  <span>MEMORIA DIV</span>
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">DIV Mem</span>
+                <span className="font-mono">KB</span>
               </div>
               <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-xl font-black font-mono text-cyan-300 tracking-tight">
+                <span className="text-xl font-black font-mono text-[#7C2D48] tracking-tight">
                   {statsSummary.currentMemKB}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">KB</span>
+                <span className="text-[10px] text-[#6B7280] font-mono">KB</span>
               </div>
-              <div className="text-[9px] text-slate-400 font-mono flex items-center justify-between mt-1 pt-1 border-t border-slate-800/60">
-                <span>Pico: {statsSummary.peakMemKB} KB</span>
-                <span>~{statsSummary.avgMemPerProcKB} KB/proc</span>
+              <div className="text-[10px] text-[#6B7280] font-mono flex items-center justify-between mt-1 pt-1 border-t border-[#F1F5F9]">
+                <span>Pico: {statsSummary.peakMemKB}KB</span>
+                <span>~{statsSummary.avgMemPerProcKB}/p</span>
               </div>
             </div>
 
-            {/* Card 3: Active vs Dead Processes */}
-            <div className="p-2 rounded-lg bg-slate-900/70 border border-slate-800 flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className="flex items-center gap-1 text-amber-400 font-semibold">
-                  <Activity className="w-3 h-3" />
-                  <span>ESTADO DE PROCESOS</span>
+            <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+              <div className="flex items-center justify-between text-[10px] text-[#6B7280]">
+                <span className="flex items-center gap-1 text-[#374151] font-bold">
+                  <Activity className="w-3 h-3 text-[#7C2D48]" />
+                  <span>PROCESOS</span>
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">Hilos</span>
+                <span className="font-mono">Total:{counts.total}</span>
               </div>
               <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-xl font-black font-mono text-emerald-400 tracking-tight">
+                <span className="text-xl font-black font-mono text-[#2F6F4E] tracking-tight">
                   {counts.alive}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">
+                <span className="text-[10px] text-[#6B7280] font-mono">
                   vivos / {counts.dead} muertos
                 </span>
               </div>
-              <div className="text-[9px] text-slate-400 font-mono flex items-center justify-between mt-1 pt-1 border-t border-slate-800/60">
+              <div className="text-[10px] text-[#6B7280] font-mono flex items-center justify-between mt-1 pt-1 border-t border-[#F1F5F9]">
                 <span>Cong: {counts.frozen}</span>
                 <span>Dorm: {counts.sleeping}</span>
-                <span>Total: {counts.total}</span>
               </div>
             </div>
 
-            {/* Card 4: Frame Render Time & V8 Heap */}
-            <div className="p-2 rounded-lg bg-slate-900/70 border border-slate-800 flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className="flex items-center gap-1 text-purple-400 font-semibold">
-                  <Zap className="w-3 h-3" />
-                  <span>TIEMPO RENDER / HEAP</span>
+            <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+              <div className="flex items-center justify-between text-[10px] text-[#6B7280]">
+                <span className="flex items-center gap-1 text-[#374151] font-bold">
+                  <Zap className="w-3 h-3 text-amber-600" />
+                  <span>RENDER CPU</span>
                 </span>
-                <span className="text-[9px] font-mono text-slate-500">CPU</span>
+                <span className="font-mono">#{runtime.frameCount}</span>
               </div>
               <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-xl font-black font-mono text-purple-300 tracking-tight">
+                <span className="text-xl font-black font-mono text-[#111827] tracking-tight">
                   {Math.round((runtime.renderDuration || 0) * 10) / 10}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">ms</span>
+                <span className="text-[10px] text-[#6B7280] font-mono">ms</span>
               </div>
-              <div className="text-[9px] text-slate-400 font-mono flex items-center justify-between mt-1 pt-1 border-t border-slate-800/60">
-                <span>V8 Heap: {statsSummary.heapMB ? `${statsSummary.heapMB} MB` : "N/D"}</span>
-                <span>Frame: #{runtime.frameCount}</span>
+              <div className="text-[10px] text-[#6B7280] font-mono flex items-center justify-between mt-1 pt-1 border-t border-[#F1F5F9]">
+                <span>Heap: {statsSummary.heapMB ? `${statsSummary.heapMB}MB` : "N/D"}</span>
               </div>
             </div>
           </div>
 
           {/* Chart Controls Bar */}
-          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-300">Visualización Recharts:</span>
-              <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 font-mono">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#4B5563]">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold text-[#111827]">Métricas:</span>
+              <div className="flex items-center bg-white border border-[#E2E8F0] rounded-lg p-0.5 font-mono text-[11px]">
                 <button
                   onClick={() => setChartMetric("both")}
-                  className={`px-2 py-0.5 rounded transition-colors ${
+                  className={`px-2.5 min-h-[30px] rounded-md transition-colors ${
                     chartMetric === "both"
-                      ? "bg-slate-800 text-cyan-300 font-bold"
-                      : "text-slate-400 hover:text-white"
+                      ? "bg-[#7C2D48] text-white font-bold"
+                      : "text-[#4B5563] hover:text-[#111827]"
                   }`}
                 >
-                  Ambos (FPS + Memoria)
+                  Ambos
                 </button>
                 <button
                   onClick={() => setChartMetric("fps")}
-                  className={`px-2 py-0.5 rounded transition-colors ${
+                  className={`px-2.5 min-h-[30px] rounded-md transition-colors ${
                     chartMetric === "fps"
-                      ? "bg-slate-800 text-emerald-400 font-bold"
-                      : "text-slate-400 hover:text-white"
+                      ? "bg-[#2F6F4E] text-white font-bold"
+                      : "text-[#4B5563] hover:text-[#111827]"
                   }`}
                 >
                   Solo FPS
                 </button>
                 <button
                   onClick={() => setChartMetric("memory")}
-                  className={`px-2 py-0.5 rounded transition-colors ${
+                  className={`px-2.5 min-h-[30px] rounded-md transition-colors ${
                     chartMetric === "memory"
-                      ? "bg-slate-800 text-cyan-300 font-bold"
-                      : "text-slate-400 hover:text-white"
+                      ? "bg-[#7C2D48] text-white font-bold"
+                      : "text-[#4B5563] hover:text-[#111827]"
                   }`}
                 >
-                  Solo Memoria
+                  Memoria
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setTelemetryHistory([])}
-                className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 font-mono text-[10px]"
-                title="Reiniciar buffer de muestras de gráficos"
-              >
-                Limpiar Historial
-              </button>
-            </div>
+            <button
+              onClick={() => setTelemetryHistory([])}
+              className="px-2.5 min-h-[32px] rounded-lg bg-white hover:bg-[#F1F5F9] text-[#4B5563] border border-[#E2E8F0] font-mono text-[11px] font-semibold"
+              title="Reiniciar buffer de muestras de gráficos"
+            >
+              Limpiar Historial
+            </button>
           </div>
 
           {/* Recharts Streaming Canvas */}
           <div
             className={`grid gap-3 ${
-              chartMetric === "both" && viewMode === "charts"
-                ? "grid-cols-1 lg:grid-cols-2"
-                : chartMetric === "both"
+              chartMetric === "both"
                 ? "grid-cols-1 md:grid-cols-2"
                 : "grid-cols-1"
             }`}
           >
-            {/* 1. FPS Tasa de Refresco Chart */}
             {(chartMetric === "both" || chartMetric === "fps") && (
-              <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80 flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 px-1">
-                  <div className="flex items-center gap-1.5 font-bold text-[11px] text-emerald-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Tasa de Refresco (FPS en Tiempo Real)</span>
+              <div className="p-3 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-[#111827]">
+                    <span className="w-2 h-2 rounded-full bg-[#2F6F4E]" />
+                    <span>Tasa de Refresco (FPS)</span>
                   </div>
-                  <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                  <span className="text-xs font-mono text-[#2F6F4E] font-bold">
                     {statsSummary.currentFps} FPS
                   </span>
                 </div>
 
-                <div className="w-full" style={{ height: viewMode === "charts" ? 220 : 130 }}>
+                <div className="w-full" style={{ height: viewMode === "charts" || mobileTab === "charts" ? 180 : 120 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={telemetryHistory}
@@ -814,33 +842,33 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                     >
                       <defs>
                         <linearGradient id="fpsGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                          <stop offset="5%" stopColor="#2F6F4E" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#2F6F4E" stopOpacity={0.0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke="#1e293b" opacity={0.6} />
+                      <CartesianGrid strokeDasharray="2 2" stroke="#E2E8F0" />
                       <XAxis
                         dataKey="time"
-                        tick={{ fill: "#64748b", fontSize: 9, fontFamily: "monospace" }}
+                        tick={{ fill: "#6B7280", fontSize: 9, fontFamily: "monospace" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#334155" }}
+                        axisLine={{ stroke: "#CBD5E1" }}
                       />
                       <YAxis
                         domain={[0, 75]}
                         ticks={[0, 20, 40, 60]}
-                        tick={{ fill: "#64748b", fontSize: 9, fontFamily: "monospace" }}
+                        tick={{ fill: "#6B7280", fontSize: 9, fontFamily: "monospace" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#334155" }}
+                        axisLine={{ stroke: "#CBD5E1" }}
                       />
                       <Tooltip content={<CustomChartTooltip />} />
                       <ReferenceLine
                         y={60}
-                        stroke="#34d399"
+                        stroke="#2F6F4E"
                         strokeDasharray="3 3"
                         strokeWidth={1}
                         label={{
                           value: "60 FPS",
-                          fill: "#34d399",
+                          fill: "#2F6F4E",
                           fontSize: 8,
                           position: "insideTopRight",
                         }}
@@ -848,7 +876,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                       <Area
                         type="monotone"
                         dataKey="fps"
-                        stroke="#10b981"
+                        stroke="#2F6F4E"
                         strokeWidth={2}
                         fillOpacity={1}
                         fill="url(#fpsGradient)"
@@ -860,20 +888,19 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
               </div>
             )}
 
-            {/* 2. Memory Consumed by DIV Processes Chart */}
             {(chartMetric === "both" || chartMetric === "memory") && (
-              <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800/80 flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 px-1">
-                  <div className="flex items-center gap-1.5 font-bold text-[11px] text-cyan-300">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                    <span>Memoria Consumida por Procesos DIV (KB)</span>
+              <div className="p-3 rounded-xl bg-white border border-[#E2E8F0] flex flex-col">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-[#111827]">
+                    <span className="w-2 h-2 rounded-full bg-[#7C2D48]" />
+                    <span>Memoria Procesos (KB)</span>
                   </div>
-                  <span className="text-[10px] font-mono text-cyan-400 font-bold">
+                  <span className="text-xs font-mono text-[#7C2D48] font-bold">
                     {statsSummary.currentMemKB} KB
                   </span>
                 </div>
 
-                <div className="w-full" style={{ height: viewMode === "charts" ? 220 : 130 }}>
+                <div className="w-full" style={{ height: viewMode === "charts" || mobileTab === "charts" ? 180 : 120 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={telemetryHistory}
@@ -881,27 +908,27 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                     >
                       <defs>
                         <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                          <stop offset="5%" stopColor="#7C2D48" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#7C2D48" stopOpacity={0.0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke="#1e293b" opacity={0.6} />
+                      <CartesianGrid strokeDasharray="2 2" stroke="#E2E8F0" />
                       <XAxis
                         dataKey="time"
-                        tick={{ fill: "#64748b", fontSize: 9, fontFamily: "monospace" }}
+                        tick={{ fill: "#6B7280", fontSize: 9, fontFamily: "monospace" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#334155" }}
+                        axisLine={{ stroke: "#CBD5E1" }}
                       />
                       <YAxis
-                        tick={{ fill: "#64748b", fontSize: 9, fontFamily: "monospace" }}
+                        tick={{ fill: "#6B7280", fontSize: 9, fontFamily: "monospace" }}
                         tickLine={false}
-                        axisLine={{ stroke: "#334155" }}
+                        axisLine={{ stroke: "#CBD5E1" }}
                       />
                       <Tooltip content={<CustomChartTooltip />} />
                       <Area
                         type="monotone"
                         dataKey="memoryKB"
-                        stroke="#06b6d4"
+                        stroke="#7C2D48"
                         strokeWidth={2}
                         fillOpacity={1}
                         fill="url(#memGradient)"
@@ -916,94 +943,95 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
         </div>
       )}
 
-      {/* 3. Filter & Search Bar (Only shown when Table or Split view is active) */}
+      {/* 3. Filter & Search Bar */}
       {viewMode !== "charts" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-[#090f1d] border-b border-slate-800 text-[11px] flex-shrink-0">
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto">
+        <div
+          className={`${
+            mobileTab === "processes" ? "flex" : "hidden lg:flex"
+          } flex-wrap items-center justify-between gap-2 px-3 py-2 bg-white border-b border-[#E2E8F0] text-xs flex-shrink-0`}
+        >
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full no-scrollbar">
             <button
               onClick={() => setFilter("all")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
                 filter === "all"
-                  ? "bg-cyan-600 text-white font-bold"
-                  : "bg-slate-800/80 text-slate-300 hover:bg-slate-800"
+                  ? "bg-[#7C2D48] text-white"
+                  : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
               }`}
             >
               Todos ({counts.total})
             </button>
             <button
               onClick={() => setFilter("alive")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+              className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap ${
                 filter === "alive"
-                  ? "bg-emerald-600 text-white font-bold"
-                  : "bg-slate-800/80 text-emerald-400 hover:bg-slate-800"
+                  ? "bg-[#2F6F4E] text-white"
+                  : "bg-[#F8FAFC] text-[#2F6F4E] border border-[#E2E8F0]"
               }`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span>Vivos ({counts.alive})</span>
             </button>
             <button
               onClick={() => setFilter("frozen")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+              className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap ${
                 filter === "frozen"
-                  ? "bg-sky-600 text-white font-bold"
-                  : "bg-slate-800/80 text-sky-400 hover:bg-slate-800"
+                  ? "bg-sky-600 text-white"
+                  : "bg-[#F8FAFC] text-sky-700 border border-[#E2E8F0]"
               }`}
             >
-              <Snowflake className="w-2.5 h-2.5" />
-              <span>Congelados ({counts.frozen})</span>
+              <Snowflake className="w-3 h-3" />
+              <span>Cong ({counts.frozen})</span>
             </button>
             <button
               onClick={() => setFilter("sleeping")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+              className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap ${
                 filter === "sleeping"
-                  ? "bg-amber-600 text-white font-bold"
-                  : "bg-slate-800/80 text-amber-400 hover:bg-slate-800"
+                  ? "bg-amber-600 text-white"
+                  : "bg-[#F8FAFC] text-amber-700 border border-[#E2E8F0]"
               }`}
             >
-              <Moon className="w-2.5 h-2.5" />
-              <span>Dormidos ({counts.sleeping})</span>
+              <Moon className="w-3 h-3" />
+              <span>Dorm ({counts.sleeping})</span>
             </button>
             <button
               onClick={() => setFilter("dead")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
+              className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap ${
                 filter === "dead"
-                  ? "bg-rose-600 text-white font-bold"
-                  : "bg-slate-800/80 text-rose-400 hover:bg-slate-800"
+                  ? "bg-rose-600 text-white"
+                  : "bg-[#F8FAFC] text-rose-700 border border-[#E2E8F0]"
               }`}
             >
-              <Skull className="w-2.5 h-2.5" />
+              <Skull className="w-3 h-3" />
               <span>Muertos ({counts.dead})</span>
             </button>
           </div>
 
-          {/* Search Input & Quick Signal Actions */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-1.5" />
+          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <Search className="w-3.5 h-3.5 text-[#6B7280] absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nombre, ID o variable..."
-                className="pl-7 pr-2 py-0.5 rounded bg-black/50 border border-slate-700 text-slate-200 placeholder-slate-500 font-mono text-[10px] focus:outline-none focus:border-cyan-500 w-44 sm:w-60"
+                placeholder="Buscar ID, nombre o var..."
+                className="pl-8 pr-2.5 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-[#111827] placeholder-[#9CA3AF] font-mono text-xs focus:outline-none focus:border-[#7C2D48] w-full sm:w-52"
               />
             </div>
 
             <div className="flex items-center gap-1">
               <button
                 onClick={handleFreezeAll}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 font-mono text-[10px]"
+                className="px-2.5 min-h-[34px] rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-sky-700 font-semibold text-[11px] whitespace-nowrap"
                 title="Congelar todos los procesos activos"
               >
-                Congelar Todos
+                Congelar
               </button>
               <button
                 onClick={handleWakeupAll}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 font-mono text-[10px]"
+                className="px-2.5 min-h-[34px] rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-[#2F6F4E] font-semibold text-[11px] whitespace-nowrap"
                 title="Despertar todos los procesos congelados/dormidos"
               >
-                Despertar Todos
+                Despertar
               </button>
               {counts.dead > 0 && (
                 <button
@@ -1011,10 +1039,10 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                     runtime.clearDeadProcesses();
                     setDeadList([]);
                   }}
-                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-rose-950 text-rose-300 font-mono text-[10px]"
+                  className="px-2.5 min-h-[34px] rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-semibold text-[11px] whitespace-nowrap"
                   title="Limpiar historial de procesos muertos"
                 >
-                  Limpiar Muertos
+                  Limpiar
                 </button>
               )}
             </div>
@@ -1022,35 +1050,41 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
         </div>
       )}
 
-      {/* 4. Main Process Table & Deep Variable Inspector Pane */}
+      {/* 4. Main Process List/Table & Deep Variable Inspector Pane */}
       {viewMode !== "charts" && (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* Left Side: Process Table */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-auto border-r border-slate-800/80">
-            <table className="w-full text-left font-mono text-[11px] border-collapse">
-              <thead className="bg-[#0b1222] text-slate-400 border-b border-slate-800 sticky top-0 z-10 select-none">
+        <div
+          className={`${
+            mobileTab === "charts" ? "hidden lg:flex" : "flex"
+          } flex-1 min-h-0 overflow-hidden`}
+        >
+          {/* Left Side: Process Table / Mobile Cards */}
+          <div
+            className={`${
+              mobileTab === "processes" ? "flex" : "hidden lg:flex"
+            } flex-1 flex-col min-w-0 min-h-0 overflow-auto lg:border-r border-[#E2E8F0] bg-white`}
+          >
+            <table className="w-full text-left font-mono text-xs border-collapse">
+              <thead className="bg-[#F8FAFC] text-[#4B5563] border-b border-[#E2E8F0] sticky top-0 z-10 select-none">
                 <tr>
-                  <th className="p-2 w-12 text-center">ID</th>
-                  <th className="p-2">Proceso</th>
-                  <th className="p-2">Estado</th>
-                  <th className="p-2">X, Y</th>
-                  <th className="p-2 hidden md:table-cell">Graph</th>
-                  <th className="p-2 hidden lg:table-cell">Ángulo</th>
-                  <th className="p-2 hidden xl:table-cell">Z / Pri</th>
-                  <th className="p-2">Variables Locales</th>
-                  <th className="p-2 text-right">Señales</th>
+                  <th className="p-2.5 w-12 text-center">ID</th>
+                  <th className="p-2.5">Proceso</th>
+                  <th className="p-2.5">Estado</th>
+                  <th className="p-2.5 hidden sm:table-cell">X, Y</th>
+                  <th className="p-2.5 hidden md:table-cell">Graph</th>
+                  <th className="p-2.5 hidden xl:table-cell">Variables Locales</th>
+                  <th className="p-2.5 text-right">Señales</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-[#F1F5F9]">
                 {filteredProcesses.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-500 font-sans">
-                      <Cpu className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-60" />
-                      <p className="font-semibold text-slate-400 text-xs">
+                    <td colSpan={7} className="p-8 text-center text-[#6B7280] font-sans">
+                      <Cpu className="w-8 h-8 text-[#CBD5E1] mx-auto mb-2" />
+                      <p className="font-semibold text-[#374151] text-xs">
                         No se encontraron procesos {filter !== "all" ? `con estado "${filter}"` : "activos"}
                       </p>
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Inicia o reanuda la ejecución del juego con [F5] para inspeccionar la memoria.
+                      <p className="text-[11px] text-[#6B7280] mt-1">
+                        Inicia la ejecución del juego para inspeccionar procesos en tiempo real.
                       </p>
                     </td>
                   </tr>
@@ -1071,97 +1105,81 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                         onClick={() => setSelectedProcessId(proc.id)}
                         className={`cursor-pointer transition-colors ${
                           isPausedHere
-                            ? "bg-amber-950/45 border-l-4 border-amber-400 font-bold shadow-inner"
+                            ? "bg-amber-50 font-bold"
                             : isSelected
-                            ? "bg-cyan-950/50 border-l-2 border-cyan-400"
+                            ? "bg-[#FDF2F4]"
                             : proc.isDead
-                            ? "bg-rose-950/15 hover:bg-rose-950/25 opacity-70"
-                            : "hover:bg-slate-800/40"
+                            ? "bg-rose-50/40 opacity-75"
+                            : "hover:bg-[#F8FAFC]"
                         }`}
                       >
-                        {/* ID */}
-                        <td className="p-2 text-center text-cyan-400 font-bold">
+                        <td className="p-2.5 text-center text-[#7C2D48] font-bold">
                           #{proc.id}
                         </td>
 
-                        {/* Process Name */}
-                        <td className="p-2 font-bold text-slate-100 flex items-center gap-1.5">
-                          <span className="truncate max-w-[130px]">{proc.name}</span>
-                          {isPausedHere && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 border border-amber-500/50 text-[9px] font-mono animate-pulse flex items-center gap-0.5">
-                              <CircleDot className="w-2.5 h-2.5" />
-                              <span>BP L{breakpointInfo.line}</span>
-                            </span>
-                          )}
-                          {proc.father > 0 && (
-                            <span className="text-[9px] text-slate-500 font-normal">
-                              (de #{proc.father})
-                            </span>
-                          )}
+                        <td className="p-2.5 font-bold text-[#111827]">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="truncate max-w-[120px]">{proc.name}</span>
+                            {isPausedHere && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-mono flex items-center gap-0.5">
+                                <CircleDot className="w-2.5 h-2.5" />
+                                <span>L{breakpointInfo.line}</span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="sm:hidden text-[10px] text-[#6B7280] font-normal mt-0.5">
+                            ({Math.round(proc.x)}, {Math.round(proc.y)}) • G:{proc.graph || 0}
+                          </div>
                         </td>
 
-                        {/* Status */}
-                        <td className="p-2">
+                        <td className="p-2.5">
                           {proc.isDead ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-400 border border-rose-800/60 text-[10px]">
-                              <Skull className="w-2.5 h-2.5" />
-                              <span>Muerto</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-bold">
+                              <Skull className="w-3 h-3" />
+                              <span className="hidden sm:inline">Muerto</span>
                             </span>
                           ) : proc.isFrozen ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-400 border border-sky-800/60 text-[10px]">
-                              <Snowflake className="w-2.5 h-2.5" />
-                              <span>Congelado</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 text-[10px] font-bold">
+                              <Snowflake className="w-3 h-3" />
+                              <span className="hidden sm:inline">Congelado</span>
                             </span>
                           ) : proc.isSleeping ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60 text-[10px]">
-                              <Moon className="w-2.5 h-2.5" />
-                              <span>Dormido</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                              <Moon className="w-3 h-3" />
+                              <span className="hidden sm:inline">Dormido</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 text-[10px]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ECFDF5] text-[#2F6F4E] text-[10px] font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2F6F4E]" />
                               <span>Vivo</span>
                             </span>
                           )}
                         </td>
 
-                        {/* X, Y coordinates */}
-                        <td className="p-2 font-mono text-cyan-300">
+                        <td className="p-2.5 font-mono text-[#374151] hidden sm:table-cell">
                           ({Math.round(proc.x)}, {Math.round(proc.y)})
                         </td>
 
-                        {/* Graph */}
-                        <td className="p-2 text-amber-300 hidden md:table-cell">
-                          {proc.graph > 0 ? `ID ${proc.graph}` : <span className="text-slate-600">-</span>}
+                        <td className="p-2.5 text-[#7C2D48] font-semibold hidden md:table-cell">
+                          {proc.graph > 0 ? `ID ${proc.graph}` : <span className="text-[#9CA3AF]">-</span>}
                         </td>
 
-                        {/* Angle */}
-                        <td className="p-2 text-slate-400 hidden lg:table-cell">
-                          {proc.angle}°
-                        </td>
-
-                        {/* Z / Priority */}
-                        <td className="p-2 text-slate-400 hidden xl:table-cell">
-                          Z:{proc.z} | P:{proc.priority}
-                        </td>
-
-                        {/* Local Variables Snippet */}
-                        <td className="p-2 max-w-[200px]">
+                        <td className="p-2.5 max-w-[180px] hidden xl:table-cell">
                           {localKeys.length === 0 ? (
-                            <span className="text-slate-600 italic text-[10px]">ninguna</span>
+                            <span className="text-[#9CA3AF] italic text-[10px]">ninguna</span>
                           ) : (
                             <div className="flex flex-wrap gap-1">
                               {localKeys.slice(0, 3).map((k) => (
                                 <span
                                   key={k}
-                                  className="px-1 py-0.2 rounded bg-black/40 text-slate-300 border border-slate-800 text-[10px] truncate max-w-[80px]"
+                                  className="px-1.5 py-0.5 rounded bg-[#F8FAFC] text-[#374151] border border-[#E2E8F0] text-[10px] truncate max-w-[80px]"
                                   title={`${k} = ${JSON.stringify(proc.localVars[k])}`}
                                 >
                                   {k}={String(proc.localVars[k])}
                                 </span>
                               ))}
                               {localKeys.length > 3 && (
-                                <span className="text-[10px] text-cyan-400 font-bold">
+                                <span className="text-[10px] text-[#7C2D48] font-bold">
                                   +{localKeys.length - 3}
                                 </span>
                               )}
@@ -1169,8 +1187,7 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                           )}
                         </td>
 
-                        {/* Process Signals & Actions */}
-                        <td className="p-2 text-right">
+                        <td className="p-2.5 text-right">
                           <div
                             className="flex items-center justify-end gap-1"
                             onClick={(e) => e.stopPropagation()}
@@ -1181,17 +1198,17 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                                   onClick={() =>
                                     handleSignal(proc.id, proc.isFrozen ? "s_wakeup" : "s_freeze")
                                   }
-                                  className={`p-1 rounded border transition-colors ${
+                                  className={`min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border transition-colors ${
                                     proc.isFrozen
-                                      ? "bg-sky-950 text-sky-300 border-sky-600 hover:bg-sky-900"
-                                      : "bg-slate-800 text-slate-400 border-slate-700 hover:text-sky-400 hover:bg-slate-700"
+                                      ? "bg-sky-100 text-sky-700 border-sky-300"
+                                      : "bg-[#F8FAFC] text-[#4B5563] border-[#E2E8F0] hover:text-sky-700"
                                   }`}
                                   title={proc.isFrozen ? "s_wakeup: despertar" : "s_freeze: congelar"}
                                 >
                                   {proc.isFrozen ? (
-                                    <Sun className="w-3 h-3 text-amber-300" />
+                                    <Sun className="w-3.5 h-3.5 text-amber-500" />
                                   ) : (
-                                    <Snowflake className="w-3 h-3" />
+                                    <Snowflake className="w-3.5 h-3.5" />
                                   )}
                                 </button>
 
@@ -1199,32 +1216,35 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                                   onClick={() =>
                                     handleSignal(proc.id, proc.isSleeping ? "s_wakeup" : "s_sleep")
                                   }
-                                  className={`p-1 rounded border transition-colors ${
+                                  className={`min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border transition-colors hidden sm:flex ${
                                     proc.isSleeping
-                                      ? "bg-amber-950 text-amber-300 border-amber-600 hover:bg-amber-900"
-                                      : "bg-slate-800 text-slate-400 border-slate-700 hover:text-amber-400 hover:bg-slate-700"
+                                      ? "bg-amber-100 text-amber-800 border-amber-300"
+                                      : "bg-[#F8FAFC] text-[#4B5563] border-[#E2E8F0] hover:text-amber-700"
                                   }`}
                                   title={proc.isSleeping ? "s_wakeup: despertar" : "s_sleep: dormir"}
                                 >
-                                  <Moon className="w-3 h-3" />
+                                  <Moon className="w-3.5 h-3.5" />
                                 </button>
 
                                 <button
                                   onClick={() => handleSignal(proc.id, "s_kill")}
-                                  className="p-1 rounded bg-slate-800 text-rose-400 border border-slate-700 hover:bg-rose-950 hover:border-rose-700 transition-colors"
+                                  className="min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg bg-[#F8FAFC] text-rose-600 border border-[#E2E8F0] hover:bg-rose-50 hover:border-rose-300 transition-colors"
                                   title="s_kill: matar proceso"
                                 >
-                                  <Power className="w-3 h-3" />
+                                  <Power className="w-3.5 h-3.5" />
                                 </button>
                               </>
                             )}
 
                             <button
-                              onClick={() => setSelectedProcessId(proc.id)}
-                              className="p-1 rounded bg-slate-800 text-cyan-400 border border-slate-700 hover:bg-cyan-950 hover:border-cyan-700 transition-colors"
+                              onClick={() => {
+                                setSelectedProcessId(proc.id);
+                                setMobileTab("vars");
+                              }}
+                              className="min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg bg-[#FDF2F4] text-[#7C2D48] border border-[#FBCFE8] hover:bg-[#FCE7EB] transition-colors"
                               title="Inspeccionar todas las variables"
                             >
-                              <Sliders className="w-3 h-3" />
+                              <Sliders className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
@@ -1237,40 +1257,44 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
           </div>
 
           {/* Right Side: Process Deep Variable Inspector */}
-          <div className="w-80 md:w-96 flex flex-col min-h-0 bg-[#060a12] border-l border-slate-800 overflow-y-auto">
+          <div
+            className={`${
+              mobileTab === "vars" ? "flex" : "hidden lg:flex"
+            } w-full lg:w-96 flex-col min-h-0 bg-[#F7F8FA] overflow-y-auto`}
+          >
             {selectedProcess ? (
-              <div className="p-3 space-y-3">
+              <div className="p-3.5 space-y-3">
                 {/* Header Info */}
-                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-start justify-between">
+                <div className="p-3 rounded-xl bg-white border border-[#E2E8F0] flex items-start justify-between gap-2">
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-cyan-400 font-mono">
+                      <span className="font-bold text-[#7C2D48] font-mono">
                         #{selectedProcess.id}
                       </span>
-                      <span className="font-bold text-slate-100 text-xs">
+                      <span className="font-bold text-[#111827] text-xs">
                         {selectedProcess.name}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
+                    <div className="text-[11px] text-[#6B7280] mt-0.5">
                       Padre: {selectedProcess.father > 0 ? `#${selectedProcess.father}` : "0 (Raíz)"}
                     </div>
                   </div>
 
                   <div>
                     {selectedProcess.isDead ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono text-[10px]">
+                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-mono text-[10px] font-bold">
                         Muerto ({selectedProcess.deathReason || "fin"})
                       </span>
                     ) : selectedProcess.isFrozen ? (
-                      <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[10px]">
+                      <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-700 font-mono text-[10px] font-bold">
                         Congelado
                       </span>
                     ) : selectedProcess.isSleeping ? (
-                      <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono text-[10px]">
+                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-mono text-[10px] font-bold">
                         Dormido
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono text-[10px]">
+                      <span className="px-2 py-0.5 rounded bg-[#ECFDF5] text-[#2F6F4E] font-mono text-[10px] font-bold">
                         Activo / Vivo
                       </span>
                     )}
@@ -1278,39 +1302,39 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                 </div>
 
                 {/* DIV Reserved Internal Variables (Live Editable) */}
-                <div className="rounded-lg bg-[#0a0f1d] border border-slate-800 overflow-hidden">
-                  <div className="px-3 py-1.5 bg-[#0e162a] border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-200">
+                <div className="rounded-xl bg-white border border-[#E2E8F0] overflow-hidden">
+                  <div className="px-3 py-2 bg-[#F8FAFC] border-b border-[#E2E8F0] flex items-center justify-between text-xs font-bold text-[#111827]">
                     <div className="flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                      <Layers className="w-3.5 h-3.5 text-[#7C2D48]" />
                       <span>Variables Internas DIV</span>
                     </div>
-                    <span className="text-[10px] font-normal text-slate-400">
-                      Clic para modificar en vivo
+                    <span className="text-[10px] font-normal text-[#6B7280]">
+                      Toca para editar
                     </span>
                   </div>
 
-                  <div className="p-2 divide-y divide-slate-800/40 font-mono text-[11px]">
+                  <div className="p-2 divide-y divide-[#F1F5F9] font-mono text-xs">
                     {[
-                      { label: "X (Coordenada horizontal)", key: "x", val: selectedProcess.x },
-                      { label: "Y (Coordenada vertical)", key: "y", val: selectedProcess.y },
-                      { label: "Z (Profundidad)", key: "z", val: selectedProcess.z },
-                      { label: "GRAPH (ID Sprite FPG)", key: "graph", val: selectedProcess.graph },
-                      { label: "FILE (Librería FPG)", key: "file", val: selectedProcess.file },
-                      { label: "ANGLE (Ángulo 0-360°)", key: "angle", val: selectedProcess.angle },
-                      { label: "SIZE (Escala %)", key: "size", val: selectedProcess.size },
-                      { label: "FLAGS (Espejo X/Y/Alfa)", key: "flags", val: selectedProcess.flags },
-                      { label: "ALPHA (Opacidad 0-255)", key: "alpha", val: selectedProcess.alpha },
-                      { label: "PRIORITY (Prioridad)", key: "priority", val: selectedProcess.priority },
-                      { label: "CTYPE (Tipo colisión)", key: "ctype", val: selectedProcess.ctype },
+                      { label: "X", key: "x", val: selectedProcess.x },
+                      { label: "Y", key: "y", val: selectedProcess.y },
+                      { label: "Z", key: "z", val: selectedProcess.z },
+                      { label: "GRAPH", key: "graph", val: selectedProcess.graph },
+                      { label: "FILE", key: "file", val: selectedProcess.file },
+                      { label: "ANGLE", key: "angle", val: selectedProcess.angle },
+                      { label: "SIZE", key: "size", val: selectedProcess.size },
+                      { label: "FLAGS", key: "flags", val: selectedProcess.flags },
+                      { label: "ALPHA", key: "alpha", val: selectedProcess.alpha },
+                      { label: "PRIORITY", key: "priority", val: selectedProcess.priority },
+                      { label: "CTYPE", key: "ctype", val: selectedProcess.ctype },
                     ].map((item) => {
                       const isEditing = editingVar?.key === item.key;
                       return (
                         <div
                           key={item.key}
-                          className="py-1 flex items-center justify-between group hover:bg-slate-900/60 px-1 rounded"
+                          className="py-1.5 flex items-center justify-between hover:bg-[#F8FAFC] px-1.5 rounded-lg"
                         >
-                          <span className="text-slate-400 text-[10px] truncate max-w-[150px]">
-                            {item.key.toUpperCase()}
+                          <span className="text-[#4B5563] text-[11px] font-semibold">
+                            {item.label}
                           </span>
 
                           {isEditing ? (
@@ -1325,39 +1349,41 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                                   if (e.key === "Enter") handleSaveVariable(item.key, editingVar.value);
                                   if (e.key === "Escape") setEditingVar(null);
                                 }}
-                                className="w-16 px-1 py-0.5 bg-black border border-cyan-500 rounded text-cyan-300 text-[10px] font-mono focus:outline-none"
+                                className="w-20 h-8 px-2 bg-white border border-[#7C2D48] rounded-md text-[#111827] text-xs font-mono focus:outline-none"
                                 autoFocus
                               />
                               <button
                                 onClick={() => handleSaveVariable(item.key, editingVar.value)}
-                                className="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                                className="min-w-[32px] min-h-[32px] flex items-center justify-center text-white bg-[#2F6F4E] rounded-md"
                               >
-                                <Check className="w-3 h-3" />
+                                <Check className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => setEditingVar(null)}
-                                className="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                                className="min-w-[32px] min-h-[32px] flex items-center justify-center text-[#4B5563] bg-[#F1F5F9] rounded-md"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ) : (
-                            <div
+                            <button
+                              type="button"
+                              disabled={selectedProcess.isDead}
                               onClick={() =>
                                 !selectedProcess.isDead &&
                                 setEditingVar({ key: item.key, value: String(item.val) })
                               }
-                              className={`flex items-center gap-1 font-bold ${
+                              className={`flex items-center gap-1.5 px-2 min-h-[30px] rounded-md font-bold ${
                                 selectedProcess.isDead
-                                  ? "text-slate-500"
-                                  : "text-cyan-300 hover:text-white cursor-pointer"
+                                  ? "text-[#9CA3AF]"
+                                  : "text-[#7C2D48] bg-[#FDF2F4]/60 hover:bg-[#FDF2F4] cursor-pointer"
                               }`}
                             >
                               <span>{String(item.val)}</span>
                               {!selectedProcess.isDead && (
-                                <Edit2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 text-slate-500" />
+                                <Edit2 className="w-3 h-3 opacity-70" />
                               )}
-                            </div>
+                            </button>
                           )}
                         </div>
                       );
@@ -1366,52 +1392,52 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                 </div>
 
                 {/* Process Custom Local Variables (localVars) */}
-                <div className="rounded-lg bg-[#0a0f1d] border border-slate-800 overflow-hidden">
-                  <div className="px-3 py-1.5 bg-[#0e162a] border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-200">
+                <div className="rounded-xl bg-white border border-[#E2E8F0] overflow-hidden">
+                  <div className="px-3 py-2 bg-[#F8FAFC] border-b border-[#E2E8F0] flex items-center justify-between text-xs font-bold text-[#111827]">
                     <div className="flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Variables Locales (localVars)</span>
+                      <Sliders className="w-3.5 h-3.5 text-[#2F6F4E]" />
+                      <span>Variables Locales</span>
                     </div>
                     {!selectedProcess.isDead && (
                       <button
                         onClick={() => setIsAddingVar(!isAddingVar)}
-                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[10px] flex items-center gap-1"
+                        className="px-2.5 min-h-[30px] rounded-lg bg-[#7C2D48] text-white text-[11px] flex items-center gap-1 font-bold"
                       >
-                        <Plus className="w-2.5 h-2.5" />
+                        <Plus className="w-3 h-3" />
                         <span>Variable</span>
                       </button>
                     )}
                   </div>
 
                   {isAddingVar && (
-                    <div className="p-2 bg-slate-900 border-b border-slate-800 space-y-1.5">
+                    <div className="p-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0] space-y-2">
                       <div className="grid grid-cols-2 gap-1.5">
                         <input
                           type="text"
                           placeholder="Nombre (ej: salud)"
                           value={newVarName}
                           onChange={(e) => setNewVarName(e.target.value)}
-                          className="px-1.5 py-0.5 rounded bg-black border border-slate-700 text-slate-200 font-mono text-[10px] focus:outline-none focus:border-cyan-500"
+                          className="px-2 py-1.5 rounded-lg bg-white border border-[#CBD5E1] text-[#111827] font-mono text-xs focus:outline-none focus:border-[#7C2D48]"
                         />
                         <input
                           type="text"
                           placeholder="Valor (ej: 100)"
                           value={newVarValue}
                           onChange={(e) => setNewVarValue(e.target.value)}
-                          className="px-1.5 py-0.5 rounded bg-black border border-slate-700 text-slate-200 font-mono text-[10px] focus:outline-none focus:border-cyan-500"
+                          className="px-2 py-1.5 rounded-lg bg-white border border-[#CBD5E1] text-[#111827] font-mono text-xs focus:outline-none focus:border-[#7C2D48]"
                         />
                       </div>
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-end gap-1.5">
                         <button
                           onClick={() => setIsAddingVar(false)}
-                          className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px]"
+                          className="px-3 min-h-[32px] rounded-lg bg-[#E2E8F0] text-[#374151] text-xs font-semibold"
                         >
                           Cancelar
                         </button>
                         <button
                           onClick={handleAddNewVariable}
                           disabled={!newVarName.trim()}
-                          className="px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[10px] disabled:opacity-50"
+                          className="px-3 min-h-[32px] rounded-lg bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold text-xs disabled:opacity-50"
                         >
                           Guardar
                         </button>
@@ -1419,9 +1445,9 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                     </div>
                   )}
 
-                  <div className="p-2 divide-y divide-slate-800/40 font-mono text-[11px]">
+                  <div className="p-2 divide-y divide-[#F1F5F9] font-mono text-xs">
                     {Object.keys(selectedProcess.localVars).length === 0 ? (
-                      <div className="py-2 text-center text-slate-500 italic text-[10px]">
+                      <div className="py-3 text-center text-[#6B7280] italic text-[11px]">
                         Este proceso no tiene variables locales definidas aún.
                       </div>
                     ) : (
@@ -1430,9 +1456,9 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                         return (
                           <div
                             key={key}
-                            className="py-1 flex items-center justify-between group hover:bg-slate-900/60 px-1 rounded"
+                            className="py-1.5 flex items-center justify-between hover:bg-[#F8FAFC] px-1.5 rounded-lg"
                           >
-                            <span className="text-amber-400 font-bold text-[10px] truncate max-w-[130px]">
+                            <span className="text-[#2F6F4E] font-bold text-[11px] truncate max-w-[130px]">
                               {key}
                             </span>
 
@@ -1448,39 +1474,41 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                                     if (e.key === "Enter") handleSaveVariable(key, editingVar.value);
                                     if (e.key === "Escape") setEditingVar(null);
                                   }}
-                                  className="w-20 px-1 py-0.5 bg-black border border-amber-500 rounded text-amber-300 text-[10px] font-mono focus:outline-none"
+                                  className="w-20 h-8 px-2 bg-white border border-[#7C2D48] rounded-md text-[#111827] text-xs font-mono focus:outline-none"
                                   autoFocus
                                 />
                                 <button
                                   onClick={() => handleSaveVariable(key, editingVar.value)}
-                                  className="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                                  className="min-w-[32px] min-h-[32px] flex items-center justify-center text-white bg-[#2F6F4E] rounded-md"
                                 >
-                                  <Check className="w-3 h-3" />
+                                  <Check className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => setEditingVar(null)}
-                                  className="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                                  className="min-w-[32px] min-h-[32px] flex items-center justify-center text-[#4B5563] bg-[#F1F5F9] rounded-md"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             ) : (
-                              <div
+                              <button
+                                type="button"
+                                disabled={selectedProcess.isDead}
                                 onClick={() =>
                                   !selectedProcess.isDead &&
                                   setEditingVar({ key, value: String(val) })
                                 }
-                                className={`flex items-center gap-1 font-bold ${
+                                className={`flex items-center gap-1.5 px-2 min-h-[30px] rounded-md font-bold ${
                                   selectedProcess.isDead
-                                    ? "text-slate-500"
-                                    : "text-slate-200 hover:text-white cursor-pointer"
+                                    ? "text-[#9CA3AF]"
+                                    : "text-[#111827] bg-[#F8FAFC] hover:bg-[#F1F5F9] cursor-pointer"
                                 }`}
                               >
                                 <span>{String(val)}</span>
                                 {!selectedProcess.isDead && (
-                                  <Edit2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 text-slate-500" />
+                                  <Edit2 className="w-3 h-3 opacity-70 text-[#6B7280]" />
                                 )}
-                              </div>
+                              </button>
                             )}
                           </div>
                         );
@@ -1491,16 +1519,16 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
 
                 {/* Death Record Info */}
                 {selectedProcess.isDead && (
-                  <div className="p-2.5 rounded-lg bg-rose-950/30 border border-rose-900/60 text-[11px] text-rose-300 space-y-1">
-                    <div className="font-bold flex items-center gap-1">
-                      <Skull className="w-3.5 h-3.5 text-rose-400" />
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Skull className="w-4 h-4 text-rose-600" />
                       <span>Registro de Terminación</span>
                     </div>
-                    <div className="text-[10px] text-rose-200/80 font-mono">
+                    <div className="text-[11px] font-mono">
                       Causa: <strong>{selectedProcess.deathReason || "s_kill / ciclo finalizado"}</strong>
                     </div>
                     {selectedProcess.diedAt && (
-                      <div className="text-[10px] text-rose-200/70 font-mono">
+                      <div className="text-[11px] font-mono">
                         Hora: {new Date(selectedProcess.diedAt).toLocaleTimeString()} (Frame #{selectedProcess.diedFrame || 0})
                       </div>
                     )}
@@ -1508,13 +1536,13 @@ export const ProcessInspector: React.FC<ProcessInspectorProps> = ({
                 )}
               </div>
             ) : (
-              <div className="p-6 text-center text-slate-500 my-auto">
-                <Info className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                <p className="font-semibold text-slate-400 text-xs">
+              <div className="p-8 text-center text-[#6B7280] my-auto">
+                <Info className="w-7 h-7 mx-auto mb-2 text-[#CBD5E1]" />
+                <p className="font-bold text-[#374151] text-xs">
                   Selecciona un proceso
                 </p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Haz clic en cualquier fila para inspeccionar y editar sus coordenadas X, Y y variables locales en tiempo real.
+                <p className="text-[11px] text-[#6B7280] mt-1">
+                  Toca cualquier fila en "Procesos" para editar sus coordenadas X, Y y variables en vivo.
                 </p>
               </div>
             )}

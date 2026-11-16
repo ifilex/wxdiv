@@ -52,6 +52,9 @@ interface AppInventorWorkspaceProps {
   onSwitchToCodeEditor?: () => void;
   initialMode?: "designer" | "blocks";
   embeddedMode?: boolean;
+  designerLeftSlot?: React.ReactNode;
+  designerRightSlot?: React.ReactNode;
+  onOpenAiAssistant?: () => void;
 }
 
 export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
@@ -63,6 +66,9 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
   onSwitchToCodeEditor,
   initialMode = "designer",
   embeddedMode = false,
+  designerLeftSlot,
+  designerRightSlot,
+  onOpenAiAssistant,
 }) => {
   // Main view mode: "designer" (Mobile Phone Designer) | "blocks" (Blockly Canvas)
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<"designer" | "blocks">(initialMode);
@@ -403,7 +409,7 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
             </button>
 
             <button
-              onClick={() => setIsAiModalOpen(true)}
+              onClick={() => (onOpenAiAssistant ? onOpenAiAssistant() : setIsAiModalOpen(true))}
               className="px-2.5 py-1.5 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] font-semibold text-xs flex items-center gap-1 cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -460,12 +466,11 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
           onUpdateScreenProps={setScreenProps}
           onSwitchToBlocks={() => setActiveWorkspaceMode("blocks")}
           onRunGame={onRunGame}
+          headerLeftSlot={designerLeftSlot}
+          headerRightSlot={designerRightSlot}
         />
       ) : (
-        <div
-          className="flex-1 flex-grow min-h-0 w-full flex flex-col md:flex-row overflow-hidden relative"
-          style={{ flexGrow: 1, minHeight: 0, height: "100%" }}
-        >
+        <div className="flex-1 flex-grow min-h-0 h-full w-full flex flex-col md:flex-row overflow-hidden relative">
         {/* Mobile Blocks Quick Action Bar */}
         <div className="flex md:hidden items-center justify-between gap-2 px-3 py-2 bg-white border-b border-[#E2E8F0] flex-shrink-0 z-20">
           <button
@@ -488,7 +493,7 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setIsAiModalOpen(true)}
+              onClick={() => (onOpenAiAssistant ? onOpenAiAssistant() : setIsAiModalOpen(true))}
               className="min-h-[40px] px-2.5 py-1.5 rounded-lg bg-[#FDF2F5] border border-[#F3D0DC] text-[#7C2D48] font-semibold text-xs flex items-center gap-1 cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -502,7 +507,7 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
           className={`${
             isMobileBlocksDrawerOpen
               ? "flex absolute inset-0 sm:inset-y-0 sm:left-0 sm:w-72 z-40"
-              : "hidden md:flex md:w-60"
+              : "hidden md:flex md:w-48 lg:w-60"
           } bg-white border-r border-[#E2E8F0] flex-col flex-shrink-0 select-none overflow-y-auto`}
         >
           {/* Header Blocks Bar */}
@@ -630,7 +635,7 @@ export const AppInventorWorkspace: React.FC<AppInventorWorkspaceProps> = ({
 
         {/* Flyout Drawer: Full-screen/overlay on mobile, docked next to md+ sidebar */}
         {activeFlyoutCategory && (
-          <div className="absolute inset-0 md:inset-y-0 md:left-60 md:right-auto md:w-72 bg-white border-r border-[#E2E8F0] shadow-2xl z-50 p-3 overflow-y-auto flex flex-col gap-2.5">
+          <div className="absolute inset-0 md:inset-y-0 md:left-48 lg:left-60 md:right-auto md:w-64 lg:w-72 bg-white border-r border-[#E2E8F0] shadow-2xl z-50 p-3 overflow-y-auto flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b pb-2 border-[#E2E8F0]">
               <span className="font-bold text-xs text-[#111827]">
                 Bloques de {activeFlyoutCategory}

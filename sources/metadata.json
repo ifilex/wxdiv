@@ -1,7 +1,9 @@
 {
-  "name": "Remix WXDIV 3.0 - IDE DIV Games Studio AI",
+  "name": "Remix Remix Remix Remix Remix Remix Remix WXDIV 3.0 - IDE DIV Games Studio AI",
   "description": "Entorno multiplataforma de desarrollo de videojuegos con sintaxis DIV Games Studio, motor de ejecución de procesos, editor visual de assets FPG, copiloto IA y compilador exportable a React.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "microphone"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

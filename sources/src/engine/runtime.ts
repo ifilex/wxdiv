@@ -29,6 +29,7 @@ import { soundEngine } from "./sound";
 import { DEFAULT_SPRITES, createGraphicCanvas } from "./graphics";
 import { DivFont, DEFAULT_DIV_FONTS, renderDivBitmapText, FONT_0_SYSTEM, FONT_1_ARCADE_GOLD } from "./fonts";
 import { DivFpgPackage, DivMapFile, getInitialFpgPackages, getInitialMapFiles } from "./fpgManager";
+import { buildTracedSectors, findSectorAtPoint, inferPlacedModelStats } from "./mode8Geometry";
 import {
   BUILTIN_3D_MODELS,
   BUILTIN_VOXELS,
@@ -1141,12 +1142,44 @@ export class DivRuntime {
     y: number,
     dx: number,
     dy: number,
-    radius: number = 0.22
+    radius: number = 0.22,
+    currentZ?: number
   ): { x: number; y: number } {
     const m = this.m8[0];
     if (!m || !m.map || !m.active) return { x: x + dx, y: y + dy };
 
+    const hasDoomPolys = Array.isArray(m.doomLinedefs) && m.doomLinedefs.length > 0;
+    const sectorById = new Map<number, DivDoomSector>();
+    if (m.doomSectors) {
+      for (const s of m.doomSectors) sectorById.set(s.id, s);
+    }
+
     const isBlocked = (testX: number, testY: number): boolean => {
+      if (!Number.isFinite(testX) || !Number.isFinite(testY)) return true;
+
+      if (hasDoomPolys) {
+        for (const l of m.doomLinedefs!) {
+          if (l.blocking === false) continue;
+          const d = this.distToSegment(testX, testY, l.x1, l.y1, l.x2, l.y2);
+          if (d >= radius) continue;
+
+          if (!l.isTwoSided || l.blocking === true) {
+            return true;
+          }
+          const frontSec = sectorById.get(l.frontSectorId);
+          const backSec = l.backSectorId !== undefined ? sectorById.get(l.backSectorId) : undefined;
+          if (frontSec && backSec) {
+            const maxFloor = Math.max(frontSec.floorHeight, backSec.floorHeight);
+            const minCeil = Math.min(frontSec.ceilHeight, backSec.ceilHeight);
+            if (minCeil - maxFloor < 0.70) return true;
+            if (currentZ !== undefined && maxFloor - currentZ > 0.42) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
       if (testX < 0.2 || testX >= m.mapWidth - 0.2 || testY < 0.2 || testY >= m.mapHeight - 0.2) {
         return true;
       }
@@ -2452,10 +2485,14 @@ export class DivRuntime {
     if (!keyName) return false;
     const norm = keyName.toLowerCase().replace(/^_/, "");
     if (this.keyState[norm]) return true;
-    if (norm === "up" && (this.keyState["arrowup"] || this.keyState["w"] || this.keyState["keyw"])) return true;
-    if (norm === "down" && (this.keyState["arrowdown"] || this.keyState["s"] || this.keyState["keys"])) return true;
-    if (norm === "left" && (this.keyState["arrowleft"] || this.keyState["a"] || this.keyState["keya"])) return true;
-    if (norm === "right" && (this.keyState["arrowright"] || this.keyState["d"] || this.keyState["keyd"])) return true;
+    if (norm === "up" && (this.keyState["arrowup"] || this.keyState["up"])) return true;
+    if (norm === "down" && (this.keyState["arrowdown"] || this.keyState["down"])) return true;
+    if (norm === "left" && (this.keyState["arrowleft"] || this.keyState["left"])) return true;
+    if (norm === "right" && (this.keyState["arrowright"] || this.keyState["right"])) return true;
+    if (norm === "arrowup" && (this.keyState["arrowup"] || this.keyState["up"])) return true;
+    if (norm === "arrowdown" && (this.keyState["arrowdown"] || this.keyState["down"])) return true;
+    if (norm === "arrowleft" && (this.keyState["arrowleft"] || this.keyState["left"])) return true;
+    if (norm === "arrowright" && (this.keyState["arrowright"] || this.keyState["right"])) return true;
     if (norm === "space" && (this.keyState[" "] || this.keyState["space"])) return true;
     if (norm.startsWith("key") && this.keyState[norm.slice(3)]) return true;
     if (norm.startsWith("digit") && this.keyState[norm.slice(5)]) return true;
@@ -2833,8 +2870,12 @@ export class DivRuntime {
 
       if (shouldExecute) {
         const startRender = performance.now();
-        this.step();
-        this.render();
+        try {
+          this.step();
+          this.render();
+        } catch (err) {
+          console.error("[DivRuntime] Error recuperado en fotograma:", err);
+        }
         this.needsRedraw = false;
         this.renderDuration = performance.now() - startRender;
         this.frameCount++;
@@ -3413,30 +3454,130 @@ export class DivRuntime {
       }
     }
 
-    // 3. Proximity item pickup collection (keycards, medikits, ammo)
+    // 3. Proximity item pickup collection & Hostile Entity AI (monster/enemy/imp)
     if (m.entities && m.entities.length > 0) {
+      const nowSecEnt = this.frameCount / 60;
+      const tracedEntSectors =
+        m.doomSectors && m.doomLinedefs
+          ? buildTracedSectors(m.doomSectors, m.doomLinedefs)
+          : [];
       for (let i = m.entities.length - 1; i >= 0; i--) {
         const ent = m.entities[i];
         const ex = ent.x / 64;
         const ey = ent.y / 64;
         const dist = Math.hypot(ex - m.x, ey - m.y);
+        const eType = String(ent.type || "").toLowerCase();
+        if (eType === "player") continue;
 
-        if (dist < 0.65) {
-          if (ent.type === "medikit") {
+        if (dist < 0.72) {
+          if (eType === "medikit") {
             soundEngine.playMedikit();
-            this.globalVars.health = Math.min(100, (this.globalVars.health ?? 80) + 30);
+            const nextHealth = Math.min(100, (this.globalVars.salud ?? this.globalVars.health ?? doomWorldState.health ?? 80) + 30);
+            this.globalVars.health = nextHealth;
+            this.globalVars.salud = nextHealth;
+            doomWorldState.health = nextHealth;
             this.globalVars.score = (this.globalVars.score ?? 0) + 100;
             m.entities.splice(i, 1);
-          } else if (ent.type === "ammo") {
+            continue;
+          } else if (eType === "ammo") {
             soundEngine.playAmmo();
-            this.globalVars.ammo = (this.globalVars.ammo ?? 50) + 35;
+            const nextAmmo = (this.globalVars.cartuchos ?? this.globalVars.ammo ?? doomWorldState.ammo ?? 50) + 35;
+            this.globalVars.ammo = nextAmmo;
+            this.globalVars.cartuchos = nextAmmo;
+            doomWorldState.ammo = nextAmmo;
             this.globalVars.score = (this.globalVars.score ?? 0) + 50;
             m.entities.splice(i, 1);
-          } else if (ent.type === "key") {
+            continue;
+          } else if (eType === "key") {
             soundEngine.playKey();
             this.globalVars.hasKey = true;
             this.globalVars.score = (this.globalVars.score ?? 0) + 500;
             m.entities.splice(i, 1);
+            continue;
+          } else if (eType === "treasure") {
+            soundEngine.playCoin();
+            this.globalVars.score = (this.globalVars.score ?? 0) + 250;
+            m.entities.splice(i, 1);
+            continue;
+          }
+        }
+
+        if (eType === "monster" || eType === "enemy" || eType === "imp") {
+          if (ent.hp === undefined) ent.hp = 60;
+          if (ent.maxHp === undefined) ent.maxHp = 60;
+          if (ent.homeX === undefined) ent.homeX = ex;
+          if (ent.homeY === undefined) ent.homeY = ey;
+          if (ent.hitFlash && ent.hitFlash > 0) ent.hitFlash = Math.max(0, ent.hitFlash - 0.12);
+          if (ent.attackCooldown && ent.attackCooldown > 0) ent.attackCooldown--;
+
+          if (ent.hp <= 0) {
+            m.entities.splice(i, 1);
+            continue;
+          }
+
+          if (this.globalVars.menu_activo !== 1) {
+            const dxP = m.x - ex;
+            const dyP = m.y - ey;
+            const dP = Math.hypot(dxP, dyP);
+            const step = Math.min(0.055, (ent.speed || 1.7) * 0.015);
+            if (dP <= 1.3) {
+              ent.yaw = (Math.atan2(dyP, dxP) * 180) / Math.PI;
+              ent.animation = "attack";
+              if (!ent.attackCooldown || ent.attackCooldown <= 0) {
+                ent.attackCooldown = 50;
+                doomWorldState.applyDamage(ent.damage || 10);
+                this.globalVars.salud = doomWorldState.health;
+                this.globalVars.health = doomWorldState.health;
+                doomSound.playPlayerPain();
+                if (doomWorldState.health <= 0) {
+                  doomWorldState.health = 100;
+                  this.globalVars.salud = 100;
+                  this.globalVars.health = 100;
+                }
+              }
+            } else if (dP < 8.5) {
+              ent.yaw = (Math.atan2(dyP, dxP) * 180) / Math.PI;
+              ent.animation = "walk";
+              const moved = this.moveMode8WithCollision(
+                ex,
+                ey,
+                (dxP / Math.max(0.001, dP)) * step,
+                (dyP / Math.max(0.001, dP)) * step,
+                0.25
+              );
+              ent.x = moved.x * 64;
+              ent.y = moved.y * 64;
+            } else {
+              const hx = ent.homeX ?? ex;
+              const hy = ent.homeY ?? ey;
+              const pr = Math.max(0.8, Math.min(2.4, ent.patrolRadius || 1.8));
+              const orb = nowSecEnt * 0.7 + i * 1.7;
+              const tx = hx + Math.cos(orb) * pr * 0.65;
+              const ty = hy + Math.sin(orb) * pr * 0.65;
+              const dtx = tx - ex;
+              const dty = ty - ey;
+              const dtl = Math.hypot(dtx, dty);
+              if (dtl > 0.08) {
+                ent.yaw = (Math.atan2(dty, dtx) * 180) / Math.PI;
+                ent.animation = "walk";
+                const moved = this.moveMode8WithCollision(
+                  ex,
+                  ey,
+                  (dtx / dtl) * step * 0.6,
+                  (dty / dtl) * step * 0.6,
+                  0.25
+                );
+                ent.x = moved.x * 64;
+                ent.y = moved.y * 64;
+              } else {
+                ent.animation = "idle";
+              }
+            }
+
+            if (tracedEntSectors.length > 0) {
+              const sec = findSectorAtPoint(ent.x / 64, ent.y / 64, tracedEntSectors);
+              if (sec) ent.z = sec.floorHeight;
+            }
           }
         }
       }
@@ -3447,15 +3588,176 @@ export class DivRuntime {
       this.fluidParticles.update(m.sectors, m.mapWidth, m.mapHeight);
     }
 
-    // 5. Continuous 3D Voxel rotation & MD2/MD3 model animation frames
+    // 5. Continuous 3D Voxel rotation, pickups, Enemy AI & MD2/MD3 animations
+    const menuActive = this.globalVars.menu_activo === 1;
+    const tracedSectors =
+      m.doomSectors && m.doomLinedefs
+        ? buildTracedSectors(m.doomSectors, m.doomLinedefs)
+        : [];
+
     if (m.placedVoxels) {
       for (const vox of m.placedVoxels) {
+        if (vox.collected) continue;
         vox.yaw = (vox.yaw + (vox.rotSpeed ?? 2.5)) % 360;
+
+        if (!menuActive) {
+          const dist = Math.hypot(vox.x - m.x, vox.y - m.y);
+          const vId = String(vox.voxelId || "").toLowerCase();
+          if (dist < 0.85) {
+            if (vId.includes("coin")) {
+              vox.collected = true;
+              soundEngine.playCoin();
+              this.globalVars.score = (this.globalVars.score ?? 0) + 100;
+            } else if (vId.includes("medikit")) {
+              vox.collected = true;
+              soundEngine.playMedikit();
+              doomWorldState.health = Math.min(100, doomWorldState.health + 30);
+              this.globalVars.salud = doomWorldState.health;
+              this.globalVars.health = doomWorldState.health;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 50;
+            } else if (vId.includes("key")) {
+              vox.collected = true;
+              soundEngine.playKey();
+              doomWorldState.keys.yellow = true;
+              this.globalVars.hasKey = true;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 300;
+            } else if (vId.includes("potion")) {
+              vox.collected = true;
+              soundEngine.playMedikit();
+              doomWorldState.armor = Math.min(100, doomWorldState.armor + 25);
+              this.globalVars.armadura = doomWorldState.armor;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 120;
+            } else if (vId.includes("chest")) {
+              vox.collected = true;
+              soundEngine.playKey();
+              this.globalVars.score = (this.globalVars.score ?? 0) + 500;
+              this.globalVars.cartuchos = (this.globalVars.cartuchos ?? 0) + 12;
+              doomWorldState.ammo = this.globalVars.cartuchos;
+            } else if (vId.includes("checkpoint") && vox.name !== "CHECKED") {
+              vox.name = "CHECKED";
+              soundEngine.playSwitch();
+              doomWorldState.health = Math.min(100, doomWorldState.health + 20);
+              this.globalVars.salud = doomWorldState.health;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 150;
+            }
+          }
+        }
       }
     }
+
     if (m.placedModels) {
-      for (const mod of m.placedModels) {
+      const nowSec = this.frameCount / 60;
+      for (let idx = 0; idx < m.placedModels.length; idx++) {
+        const mod = m.placedModels[idx];
+        const stats = inferPlacedModelStats(mod);
+        if (mod.role === undefined) mod.role = stats.role;
+        if (mod.hp === undefined) mod.hp = stats.hp;
+        if (mod.maxHp === undefined) mod.maxHp = stats.maxHp;
+        if (mod.speed === undefined) mod.speed = stats.speed;
+        if (mod.damage === undefined) mod.damage = stats.damage;
+        if (mod.patrolRadius === undefined) mod.patrolRadius = stats.patrolRadius;
+        if (mod.homeX === undefined) mod.homeX = mod.x;
+        if (mod.homeY === undefined) mod.homeY = mod.y;
+        if (mod.hitFlash && mod.hitFlash > 0) {
+          mod.hitFlash = Math.max(0, mod.hitFlash - 0.12);
+        }
+        if (mod.attackCooldown && mod.attackCooldown > 0) {
+          mod.attackCooldown--;
+        }
+
+        // Advance animation cycle
         mod.animFrame = ((mod.animFrame || 0) + (mod.animationSpeed || 0.08)) % 1;
+
+        if (stats.role === "goal" && !menuActive) {
+          mod.yaw = (mod.yaw + 2.2) % 360;
+          const distToGoal = Math.hypot(mod.x - m.x, mod.y - m.y);
+          if (distToGoal < 1.0 && (!mod.attackCooldown || mod.attackCooldown <= 0)) {
+            mod.attackCooldown = 180;
+            soundEngine.playKey();
+            this.globalVars.score = (this.globalVars.score ?? 0) + 1000;
+            doomWorldState.health = 100;
+            this.globalVars.salud = 100;
+            doomWorldState.screenTeleportFlash = 0.45;
+          }
+          continue;
+        }
+
+        if (stats.role !== "enemy" || (mod.hp ?? 0) <= 0) continue;
+
+        if (menuActive) {
+          mod.currentAnimation = "idle";
+          continue;
+        }
+
+        const dxP = m.x - mod.x;
+        const dyP = m.y - mod.y;
+        const distP = Math.hypot(dxP, dyP);
+        const aggroRange = 9.0;
+        const attackRange = 1.35;
+        const moveStep = Math.min(0.06, (stats.speed || 1.7) * 0.016);
+
+        if (distP <= attackRange) {
+          mod.yaw = (Math.atan2(dyP, dxP) * 180) / Math.PI;
+          mod.currentAnimation = "attack";
+          if (!mod.attackCooldown || mod.attackCooldown <= 0) {
+            mod.attackCooldown = 48;
+            doomWorldState.applyDamage(stats.damage || 10);
+            this.globalVars.salud = doomWorldState.health;
+            this.globalVars.health = doomWorldState.health;
+            doomSound.playPlayerPain();
+            if (doomWorldState.health <= 0) {
+              // Auto-respawn safely at start with fresh HP
+              doomWorldState.health = 100;
+              this.globalVars.salud = 100;
+              this.globalVars.health = 100;
+              m.x = mod.homeX ? Math.max(2, m.x - (dxP / Math.max(0.2, distP)) * 2.5) : m.x;
+              m.y = mod.homeY ? Math.max(2, m.y - (dyP / Math.max(0.2, distP)) * 2.5) : m.y;
+            }
+          }
+        } else if (distP < aggroRange) {
+          // Chase player with wall-sliding collision
+          const targetYaw = (Math.atan2(dyP, dxP) * 180) / Math.PI;
+          mod.yaw = targetYaw;
+          mod.currentAnimation = "walk";
+          const nx = (dxP / Math.max(0.001, distP)) * moveStep;
+          const ny = (dyP / Math.max(0.001, distP)) * moveStep;
+          const moved = this.moveMode8WithCollision(mod.x, mod.y, nx, ny, 0.25);
+          mod.x = moved.x;
+          mod.y = moved.y;
+        } else {
+          // Smooth patrol loop around home anchor
+          const hx = mod.homeX ?? mod.x;
+          const hy = mod.homeY ?? mod.y;
+          const pr = Math.max(0.8, Math.min(2.8, stats.patrolRadius || 2.0));
+          const orbitAngle = nowSec * 0.75 + idx * 1.9;
+          const tx = hx + Math.cos(orbitAngle) * pr * 0.65;
+          const ty = hy + Math.sin(orbitAngle) * pr * 0.65;
+          const dtx = tx - mod.x;
+          const dty = ty - mod.y;
+          const dtl = Math.hypot(dtx, dty);
+          if (dtl > 0.08) {
+            mod.yaw = (Math.atan2(dty, dtx) * 180) / Math.PI;
+            mod.currentAnimation = "walk";
+            const pStep = moveStep * 0.62;
+            const moved = this.moveMode8WithCollision(
+              mod.x,
+              mod.y,
+              (dtx / dtl) * pStep,
+              (dty / dtl) * pStep,
+              0.25
+            );
+            mod.x = moved.x;
+            mod.y = moved.y;
+          } else {
+            mod.currentAnimation = "idle";
+          }
+        }
+
+        // Ground enemy to current sector height
+        if (tracedSectors.length > 0) {
+          const esec = findSectorAtPoint(mod.x, mod.y, tracedSectors);
+          if (esec) mod.z = esec.floorHeight;
+        }
       }
     }
 
@@ -3478,13 +3780,6 @@ export class DivRuntime {
     }
 
     // 7. Interactive Doom Controls & Scripts
-    // Fire weapon on Space / Ctrl / Left Mouse Click
-    if ((this.keyState[" "] || this.keyState["Control"] || this.mouseState?.left) && (!m.weaponAttackTime || m.weaponAttackTime === 0)) {
-      if (doomWorldState.shootWeapon()) {
-        m.weaponAttackTime = 0.01;
-      }
-    }
-
     // Toggle Doom Automap radar on Tab or M key
     if ((this.keyState["Tab"] || this.keyState["m"] || this.keyState["M"]) && !this.tabKeyDebounce) {
       m.showAutomap = !m.showAutomap;
@@ -3511,24 +3806,24 @@ export class DivRuntime {
       }
     }
 
-    // Hazard Floors & Teleporters check
-    if (m.doomSectors && this.frameCount % 25 === 0) {
-      const cellX = Math.floor(m.x);
-      const cellY = Math.floor(m.y);
-      const sec = m.doomSectors.find((s) => s.id === (m.sectors?.[cellY]?.[cellX]?.floorHeight ?? 0));
-      if (sec?.floorTexture === "NUKAGE" || sec?.special === 7) {
+    // Hazard Floors & Teleporters check (using true smallest-area polygon containment)
+    if (!menuActive && tracedSectors.length > 0 && this.frameCount % 25 === 0) {
+      const sec = findSectorAtPoint(m.x, m.y, tracedSectors);
+      const ft = String(sec?.floorTexture || "").toUpperCase();
+      if (ft === "NUKAGE" || ft === "SLIME1" || sec?.special === 7) {
         doomWorldState.applyDamage(5);
+        this.globalVars.salud = doomWorldState.health;
         doomWorldState.screenHazardFlash = 0.45;
         doomSound.playSlimeBurn();
-      } else if (sec?.floorTexture === "LAVA") {
-        doomWorldState.applyDamage(15);
-        doomWorldState.screenDamageFlash = 0.65;
+      } else if (ft === "LAVA") {
+        doomWorldState.applyDamage(12);
+        this.globalVars.salud = doomWorldState.health;
+        doomWorldState.screenDamageFlash = 0.6;
         doomSound.playSlimeBurn();
-      } else if (sec?.floorTexture === "GATE1" || sec?.special === 11) {
-        // Teleport pad
-        m.x += 4.0;
-        m.y += 2.0;
-        doomWorldState.screenTeleportFlash = 0.75;
+      } else if (ft === "GATE1" || sec?.special === 11) {
+        m.x += 2.5;
+        m.y += 1.5;
+        doomWorldState.screenTeleportFlash = 0.65;
         doomSound.playTeleport();
       }
     }
@@ -3551,7 +3846,11 @@ export class DivRuntime {
     const camId = m.camera || this.camara_id || 1;
     const camTarget = this.processes.get(camId);
     if (camTarget && !camTarget.isDead) {
-      if (camTarget.x > 20 || camTarget.y > 20) {
+      const explicitScale = Number(camTarget.localVars?.__worldScale);
+      if (explicitScale > 0) {
+        m.x = camTarget.x / explicitScale;
+        m.y = camTarget.y / explicitScale;
+      } else if (camTarget.x > 20 || camTarget.y > 20) {
         m.x = camTarget.x / 64;
         m.y = camTarget.y / 64;
       } else {
@@ -3614,6 +3913,9 @@ export class DivRuntime {
       {
         showHUD: true,
         showAutomap: m.showAutomap,
+        skyTexture: m.skyTexture,
+        cameraMode: m.cameraMode,
+        playerModelId: m.playerModelId,
       }
     );
   }
@@ -3891,13 +4193,14 @@ export class DivRuntime {
     z: number,
     yaw: number = 0,
     currentAnimation: string = "idle",
-    scale: number = 1.0
+    scale: number = 1.0,
+    extra?: Partial<DivMode8PlacedModel>
   ): string {
     const m = this.m8[0];
     if (!m) return "";
     if (!m.placedModels) m.placedModels = [];
     const id = "mod_" + Math.random().toString(36).substr(2, 6);
-    m.placedModels.push({
+    const base: DivMode8PlacedModel = {
       id,
       modelId,
       x,
@@ -3910,6 +4213,20 @@ export class DivRuntime {
       currentAnimation,
       animFrame: 0,
       animationSpeed: 0.1,
+      homeX: x,
+      homeY: y,
+      ...extra,
+    };
+    const stats = inferPlacedModelStats(base);
+    m.placedModels.push({
+      ...base,
+      role: base.role ?? stats.role,
+      hp: base.hp ?? stats.hp,
+      maxHp: base.maxHp ?? stats.maxHp,
+      speed: base.speed ?? stats.speed,
+      damage: base.damage ?? stats.damage,
+      patrolRadius: base.patrolRadius ?? stats.patrolRadius,
+      name: base.name ?? stats.name,
     });
     return id;
   }
@@ -3967,19 +4284,130 @@ export class DivRuntime {
   }
 
   /**
-   * Triggers an attack swing with the equipped first-person weapon
+   * Triggers an attack swing/shot with real hit detection against 3D enemies
    */
   public m8_attack() {
     const m = this.m8[0];
     if (!m) return;
     if (!m.weaponAttackTime || m.weaponAttackTime === 0) {
       m.weaponAttackTime = 0.01;
-      if (m.weaponModel?.includes("shotgun")) {
+      const wName = String(m.weaponModel || "shotgun").toLowerCase();
+      if (wName.includes("shotgun")) {
         soundEngine.playExplosion(0.75, 1.5);
-      } else if (m.weaponModel?.includes("pistol")) {
+      } else if (wName.includes("pistol")) {
         soundEngine.playLaser(0.6, 1.1);
       } else {
         soundEngine.playSound(1);
+      }
+
+      // Hit detection cone in front of player
+      const maxRange = wName.includes("sword") ? 2.9 : wName.includes("staff") ? 9.5 : 13.5;
+      const maxConeDeg = wName.includes("sword") ? 55 : wName.includes("shotgun") ? 24 : 15;
+      const dmg = wName.includes("shotgun") ? 45 : wName.includes("sword") ? 40 : wName.includes("staff") ? 35 : 28;
+      const pAngle = m.angle || 0;
+
+      const hasLineOfSight = (tx: number, ty: number): boolean => {
+        if (!m.doomLinedefs) return true;
+        const rdx = tx - m.x;
+        const rdy = ty - m.y;
+        for (const l of m.doomLinedefs) {
+          if (l.noDraw) continue;
+          if (l.isTwoSided && l.blocking !== true) continue;
+          const sx = l.x2 - l.x1;
+          const sy = l.y2 - l.y1;
+          const denom = rdx * sy - rdy * sx;
+          if (Math.abs(denom) < 1e-6) continue;
+          const qpx = l.x1 - m.x;
+          const qpy = l.y1 - m.y;
+          const t = (qpx * sy - qpy * sx) / denom;
+          const u = (qpx * rdy - qpy * rdx) / denom;
+          if (t > 0.02 && t < 0.98 && u >= 0 && u <= 1) return false;
+        }
+        return true;
+      };
+
+      if (m.placedModels && m.placedModels.length > 0) {
+        for (const mod of m.placedModels) {
+          const stats = inferPlacedModelStats(mod);
+          if (stats.role !== "enemy") continue;
+          const curHp = mod.hp ?? stats.hp;
+          if (curHp <= 0) continue;
+
+          const edx = mod.x - m.x;
+          const edy = mod.y - m.y;
+          const dist = Math.hypot(edx, edy);
+          if (dist > maxRange) continue;
+
+          const eAngle = (Math.atan2(edy, edx) * 180) / Math.PI;
+          let diff = ((eAngle - pAngle + 540) % 360) - 180;
+          if (Math.abs(diff) <= maxConeDeg && hasLineOfSight(mod.x, mod.y)) {
+            mod.hp = Math.max(0, curHp - dmg);
+            mod.hitFlash = 1.0;
+            // Knockback away from player
+            if (dist > 0.05) {
+              const kb = this.moveMode8WithCollision(
+                mod.x,
+                mod.y,
+                (edx / dist) * 0.45,
+                (edy / dist) * 0.45,
+                0.25
+              );
+              mod.x = kb.x;
+              mod.y = kb.y;
+            }
+            if (mod.hp <= 0) {
+              mod.currentAnimation = "die";
+              doomWorldState.kills++;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 250;
+              doomSound.playMonsterDeath();
+            } else {
+              this.globalVars.score = (this.globalVars.score ?? 0) + 25;
+            }
+            if (!wName.includes("shotgun") && !wName.includes("sword")) {
+              break; // single target for pistol/staff
+            }
+          }
+        }
+      }
+
+      if (m.entities && m.entities.length > 0) {
+        for (let i = m.entities.length - 1; i >= 0; i--) {
+          const ent = m.entities[i];
+          const eType = String(ent.type || "").toLowerCase();
+          if (eType !== "enemy" && eType !== "monster" && eType !== "imp") continue;
+          const ex = ent.x / 64;
+          const ey = ent.y / 64;
+          const edx = ex - m.x;
+          const edy = ey - m.y;
+          const dist = Math.hypot(edx, edy);
+          if (dist > maxRange) continue;
+          const eAngle = (Math.atan2(edy, edx) * 180) / Math.PI;
+          const diff = ((eAngle - pAngle + 540) % 360) - 180;
+          if (Math.abs(diff) <= maxConeDeg && hasLineOfSight(ex, ey)) {
+            const curHp = ent.hp ?? 60;
+            ent.hp = Math.max(0, curHp - dmg);
+            ent.hitFlash = 1.0;
+            if (dist > 0.05) {
+              const kb = this.moveMode8WithCollision(
+                ex,
+                ey,
+                (edx / dist) * 0.45,
+                (edy / dist) * 0.45,
+                0.25
+              );
+              ent.x = kb.x * 64;
+              ent.y = kb.y * 64;
+            }
+            if (ent.hp <= 0) {
+              m.entities.splice(i, 1);
+              doomWorldState.kills++;
+              this.globalVars.score = (this.globalVars.score ?? 0) + 250;
+              doomSound.playMonsterDeath();
+            } else {
+              this.globalVars.score = (this.globalVars.score ?? 0) + 25;
+            }
+          }
+        }
       }
     }
   }

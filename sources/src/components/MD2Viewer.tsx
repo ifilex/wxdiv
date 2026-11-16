@@ -20,6 +20,7 @@ import {
   ZoomIn,
   ZoomOut,
   RefreshCw,
+  Move,
 } from "lucide-react";
 import { DivModel3DData, DivModel3DVertex } from "../types";
 import {
@@ -30,6 +31,13 @@ import {
   STANDARD_MD2_ANIMATIONS,
 } from "../engine/md2Parser";
 import { BUILTIN_3D_MODELS } from "../engine/mode8Enhanced";
+import {
+  CustomModel3DAsset,
+  listCustomModels3D,
+  saveCustomModel3D,
+  toParsedMD2Model,
+  subscribeAssetLibrary,
+} from "../engine/assetLibrary";
 
 interface MD2ViewerProps {
   initialModelId?: string;
@@ -72,17 +80,45 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
   // Notifications / Feedback
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<"viewport" | "inspector">("viewport");
+  const [touchMode, setTouchMode] = useState<"orbit" | "pan">("orbit");
+
+  const [savedModels, setSavedModels] = useState<CustomModel3DAsset[]>(() => listCustomModels3D());
+  const [saveCustomName, setSaveCustomName] = useState<string>("");
+  const [saveCustomRole, setSaveCustomRole] = useState<"prop" | "enemy" | "ally" | "goal">("enemy");
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRequestRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(performance.now());
   const fractionalFrameRef = useRef<number>(0);
 
-  // Load selected built-in model
   useEffect(() => {
+    return subscribeAssetLibrary(() => {
+      setSavedModels(listCustomModels3D());
+    });
+  }, []);
+
+  // Load selected built-in or custom saved model
+  useEffect(() => {
+    if (selectedModelKey === "custom_uploaded") return;
+    if (selectedModelKey.startsWith("custom:")) {
+      const customId = selectedModelKey.slice("custom:".length);
+      const found = listCustomModels3D().find((m) => m.id === customId);
+      if (found) {
+        setCurrentModel(toParsedMD2Model(found));
+        setSaveCustomName(found.name);
+        setSaveCustomRole(found.defaultRole);
+        setActiveAnimIndex(0);
+        setCurrentFrame(0);
+        fractionalFrameRef.current = 0;
+      }
+      return;
+    }
     if (selectedModelKey === "hombre" || selectedModelKey === "mujer" || selectedModelKey === "nino" || selectedModelKey === "armado") {
       const charModel = generateDivCharacterModel(selectedModelKey as any);
       setCurrentModel(charModel);
+      setSaveCustomName(charModel.name);
       setActiveAnimIndex(0);
       setCurrentFrame(0);
       fractionalFrameRef.current = 0;
@@ -99,6 +135,7 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
           ...builtin,
           animationGroups: animGroups.length > 0 ? animGroups : [{ name: "DEFAULT", firstFrame: 0, lastFrame: 0, fps: 8 }],
         });
+        setSaveCustomName(builtin.name);
         setActiveAnimIndex(0);
         setCurrentFrame(0);
         fractionalFrameRef.current = 0;
@@ -125,12 +162,50 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
 
       setCurrentModel(parsed);
       setSelectedModelKey("custom_uploaded");
+      setSaveCustomName(file.name.replace(/\.(md2|md3)$/i, "").replace(/[_-]+/g, " "));
       setActiveAnimIndex(0);
       setCurrentFrame(0);
       fractionalFrameRef.current = 0;
     } catch (err: any) {
       setUploadError(err?.message || "Error al cargar archivo 3D");
     }
+  };
+
+  const handleSkinUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || 256;
+      c.height = img.naturalHeight || 256;
+      const cx = c.getContext("2d");
+      if (cx) {
+        cx.drawImage(img, 0, 0);
+        setCurrentModel((prev) => ({ ...prev, skinCanvas: c }));
+        setRenderMode("textured");
+        setSavedNotice("Textura Skin aplicada al modelo.");
+        setTimeout(() => setSavedNotice(null), 2500);
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  };
+
+  const handleSaveToAssetLibrary = () => {
+    const cleanName = saveCustomName.trim() || currentModel.name || "Objeto MD2";
+    const fmt = currentModel.format === "md3" ? "md3" : "md2";
+    const saved = saveCustomModel3D({
+      name: cleanName,
+      format: fmt,
+      defaultRole: saveCustomRole,
+      model: currentModel,
+    });
+    setSelectedModelKey(`custom:${saved.id}`);
+    setSavedNotice(`Guardado como "${saved.name}" (ID: ${saved.id}). Ya puedes usarlo en 3D.`);
+    setTimeout(() => setSavedNotice(null), 3500);
   };
 
   // Main 3D Canvas Rendering Loop
@@ -471,14 +546,16 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
     return () => cancelAnimationFrame(animId);
   }, [isPlaying, autoRotate, playbackSpeed, activeAnimIndex, currentModel, render3DViewport]);
 
-  // Mouse drag & drop controls for 3D Camera
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Pointer / Touch drag & drop controls for 3D Camera
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     setIsDragging(true);
-    setDragMode(e.button === 2 || e.shiftKey ? "pan" : "orbit");
+    setDragMode(touchMode === "pan" || e.button === 2 || e.shiftKey ? "pan" : "orbit");
     lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDragging) return;
     const dx = e.clientX - lastMousePos.current.x;
     const dy = e.clientY - lastMousePos.current.y;
@@ -492,7 +569,7 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
     }
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handlePointerUp = () => setIsDragging(false);
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -529,45 +606,66 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
   };
 
   return (
-    <div id="md2-viewer-window" className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#070b14] text-slate-200 select-none overflow-hidden font-sans">
+    <div id="md2-viewer-window" className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] select-none overflow-hidden font-sans">
       {/* Top Toolbar */}
-      <div className="h-11 bg-[#0e172a] border-b border-slate-800 px-3 flex items-center justify-between gap-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-cyan-400 font-semibold text-xs tracking-wide">
-            <Box className="w-4 h-4 text-cyan-400" />
-            <span>VISOR 3D MD2 / MD3</span>
+      <div className="bg-white border-b border-[#E2E8F0] px-3 py-2 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[#7C2D48] font-bold text-xs tracking-wide shrink-0">
+            <Box className="w-4 h-4" />
+            <span className="hidden sm:inline">VISOR 3D MD2/MD3</span>
           </div>
 
-          <div className="h-4 w-px bg-slate-700 mx-1" />
-
-          {/* Model Selector Dropdown */}
           <select
             value={selectedModelKey}
             onChange={(e) => setSelectedModelKey(e.target.value)}
-            className="bg-[#1e293b] border border-slate-700 text-slate-200 rounded px-2 py-1 text-xs outline-none hover:border-cyan-500 focus:border-cyan-500 transition-colors"
+            className="bg-[#F8FAFC] border border-[#CBD5E1] text-[#111827] rounded-lg px-2.5 min-h-[36px] text-xs font-medium outline-none focus:border-[#7C2D48] max-w-[180px] sm:max-w-xs"
           >
+            <optgroup label="Estilo Roblox / Arcade (MD2/MD3)">
+              <option value="blox_hero">Blox Hero Obby (MD2)</option>
+              <option value="blox_knight">Caballero Redcliff (MD2)</option>
+              <option value="samurai_fighter">Samurái Dojo (MD2)</option>
+              <option value="cyber_mech">Cyber Mech Pesado (MD3)</option>
+              <option value="trophy_star">Trofeo Estrella Dorada (MD2)</option>
+              <option value="portal_crystal">Cristal Checkpoint Neón (MD3)</option>
+            </optgroup>
             <optgroup label="Personajes DIV Studio">
               <option value="hombre">Hombre (Mono Azul - Clásico DIV)</option>
               <option value="mujer">Mujer (Túnica Roja)</option>
               <option value="nino">Niño (Ropa Verde)</option>
               <option value="armado">Armado (Soldado Combate)</option>
             </optgroup>
-            <optgroup label="Modelos Modo 8 / Hexen">
+            <optgroup label="Doom / Hexen Clásico (MD2/MD3)">
               <option value="knight">Paladín de Élite (MD2)</option>
               <option value="gargoyle">Gárgola Demonio (MD2)</option>
+              <option value="demon_brute">Ogro Demon Brute (MD3)</option>
+              <option value="doom_imp">Imp Demoníaco (MD2)</option>
+              <option value="doom_caco">Cacodemon Flotante (MD2)</option>
+              <option value="doom_marine">Marine Espacial (MD2)</option>
               <option value="drone">Dron de Asalto (MD3)</option>
               <option value="column">Columna Gótica (MD3)</option>
               <option value="chalice">Cáliz Místico (MD2)</option>
             </optgroup>
+            {savedModels.length > 0 && (
+              <optgroup label="Mis Objetos 3D Importados">
+                {savedModels.map((m) => (
+                  <option key={m.id} value={`custom:${m.id}`}>
+                    {m.name} ({m.format.toUpperCase()})
+                  </option>
+                ))}
+              </optgroup>
+            )}
             {selectedModelKey === "custom_uploaded" && (
               <option value="custom_uploaded">Archivo Importado ({currentModel.name})</option>
             )}
           </select>
 
-          {/* Upload Custom MD2 / MD3 */}
-          <label className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 cursor-pointer text-xs transition-colors">
-            <Upload className="w-3.5 h-3.5 text-amber-400" />
-            <span>Abrir .MD2 / .MD3</span>
+          <label
+            className="flex items-center gap-1.5 px-2.5 min-h-[36px] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#374151] rounded-lg border border-[#E2E8F0] cursor-pointer text-xs font-medium transition-colors whitespace-nowrap"
+            title="Importa archivos .md2 o .md3 gratuitos descargados de repositorios comunitarios (Quake2 / Quake3 / OpenGameArt)"
+          >
+            <Upload className="w-3.5 h-3.5 text-[#7C2D48]" />
+            <span className="hidden sm:inline">Abrir .MD2/.MD3</span>
+            <span className="sm:hidden">.MD2/.MD3</span>
             <input
               type="file"
               accept=".md2,.md3"
@@ -578,13 +676,12 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
         </div>
 
         {/* Right Toolbar Controls */}
-        <div className="flex items-center gap-1.5">
-          {/* Render Mode buttons */}
-          <div className="flex items-center bg-[#162032] p-0.5 rounded border border-slate-700/80">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center bg-[#F8FAFC] p-0.5 rounded-lg border border-[#E2E8F0]">
             <button
               onClick={() => setRenderMode("shaded")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                renderMode === "shaded" ? "bg-cyan-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              className={`px-2.5 min-h-[32px] rounded-md text-xs font-semibold transition-colors ${
+                renderMode === "shaded" ? "bg-[#7C2D48] text-white" : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Polígonos iluminados"
             >
@@ -592,8 +689,8 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
             </button>
             <button
               onClick={() => setRenderMode("wireframe")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                renderMode === "wireframe" ? "bg-cyan-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              className={`px-2.5 min-h-[32px] rounded-md text-xs font-semibold transition-colors ${
+                renderMode === "wireframe" ? "bg-[#7C2D48] text-white" : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Malla de alambre"
             >
@@ -601,8 +698,8 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
             </button>
             <button
               onClick={() => setRenderMode("points")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                renderMode === "points" ? "bg-cyan-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              className={`px-2.5 min-h-[32px] rounded-md text-xs font-semibold transition-colors ${
+                renderMode === "points" ? "bg-[#7C2D48] text-white" : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Nube de vértices"
             >
@@ -612,10 +709,10 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
 
           <button
             onClick={() => setShowGrid(!showGrid)}
-            className={`p-1.5 rounded border text-xs transition-colors ${
+            className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg border text-xs transition-colors ${
               showGrid
-                ? "bg-cyan-950/60 border-cyan-500/60 text-cyan-300"
-                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                ? "bg-[#FDF2F4] border-[#7C2D48]/40 text-[#7C2D48]"
+                : "bg-white border-[#E2E8F0] text-[#4B5563]"
             }`}
             title="Mostrar/ocultar cuadrícula y pedestal"
           >
@@ -624,74 +721,112 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
 
           <button
             onClick={() => setAutoRotate(!autoRotate)}
-            className={`p-1.5 rounded border text-xs transition-colors ${
+            className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg border text-xs transition-colors ${
               autoRotate
-                ? "bg-amber-950/60 border-amber-500/60 text-amber-300 animate-spin"
-                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                ? "bg-[#ECFDF5] border-[#2F6F4E] text-[#2F6F4E]"
+                : "bg-white border-[#E2E8F0] text-[#4B5563]"
             }`}
             title="Rotación orbital automática"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
 
-          {/* Action: Open in Sprite Generator */}
           {onOpenSpriteGenerator && (
             <button
               onClick={() => onOpenSpriteGenerator(currentModel)}
-              className="px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium rounded text-xs shadow flex items-center gap-1.5 transition-all"
+              className="px-3 min-h-[36px] bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap"
               title="Generar sprites 2D para la librería FPG a partir de este modelo"
             >
               <Film className="w-3.5 h-3.5" />
-              <span>Crear Sprites 2D</span>
+              <span className="hidden sm:inline">Crear Sprites 2D</span>
+              <span className="sm:hidden">Sprites</span>
             </button>
           )}
 
-          {/* Copy DIV code */}
           <button
             onClick={handleCopyCode}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded text-xs flex items-center gap-1 transition-colors"
+            className="px-2.5 min-h-[36px] bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#374151] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors whitespace-nowrap"
             title="Copiar código m8_add_model(...) para DIV Games Studio"
           >
-            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copiedCode ? "Copiado" : "Código DIV"}</span>
+            {copiedCode ? <Check className="w-3.5 h-3.5 text-[#2F6F4E]" /> : <Copy className="w-3.5 h-3.5 text-[#7C2D48]" />}
+            <span>{copiedCode ? "Copiado" : "Código"}</span>
           </button>
         </div>
       </div>
 
       {uploadError && (
-        <div className="bg-rose-950/80 border-b border-rose-800 text-rose-200 text-xs px-3 py-1.5 flex items-center justify-between">
+        <div className="bg-rose-50 border-b border-rose-200 text-rose-800 text-xs px-3 py-2 flex items-center justify-between flex-shrink-0">
           <span>{uploadError}</span>
-          <button onClick={() => setUploadError(null)} className="text-rose-400 hover:text-white font-bold">×</button>
+          <button onClick={() => setUploadError(null)} className="text-rose-600 font-bold px-2">×</button>
         </div>
       )}
 
+      {/* Mobile Tab Switcher */}
+      <div className="flex md:hidden items-center bg-white border-b border-[#E2E8F0] px-3 py-1.5 gap-2 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab("viewport")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "viewport"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Visor 3D
+        </button>
+        <button
+          onClick={() => setMobileTab("inspector")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "inspector"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Modelo y Animaciones ({currentModel.animationGroups.length})
+        </button>
+      </div>
+
       {/* Main Viewport & Sidebar Split */}
-      <div className="flex-1 flex-grow min-h-0 w-full h-full flex overflow-hidden">
+      <div className="flex-1 flex-grow min-h-0 w-full h-full flex flex-col md:flex-row overflow-hidden">
         {/* 3D Interactive Canvas Area */}
-        <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
+        <div
+          className={`${
+            mobileTab === "viewport" ? "flex" : "hidden md:flex"
+          } flex-1 relative overflow-hidden bg-[#0F172A] items-center justify-center min-h-[240px]`}
+        >
           <canvas
             ref={canvasRef}
             width={640}
             height={480}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
             onContextMenu={(e) => e.preventDefault()}
-            className="w-full h-full object-contain cursor-grab active:cursor-grabbing select-none"
+            className="w-full h-full object-contain cursor-grab active:cursor-grabbing select-none touch-none"
           />
 
           {/* On-screen Camera Info Overlay */}
-          <div className="absolute top-2 left-2 bg-[#090d16]/80 backdrop-blur-sm border border-slate-800 rounded px-2.5 py-1.5 text-[11px] text-slate-400 pointer-events-none flex items-center gap-3">
-            <span>Rotación: <strong className="text-cyan-400">{Math.round(yaw)}°</strong></span>
-            <span>Persp: <strong className="text-cyan-400">{Math.round(pitch)}°</strong></span>
-            <span>Zoom: <strong className="text-cyan-400">{zoom.toFixed(2)}x</strong></span>
-            <span className="text-slate-500">(Arrastra para rotar • Rueda para zoom)</span>
+          <div className="absolute top-2 left-2 bg-[#090d16]/85 backdrop-blur-xs border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 pointer-events-none flex flex-wrap items-center gap-2.5">
+            <span>Rot: <strong className="text-amber-300">{Math.round(yaw)}°</strong></span>
+            <span>Elev: <strong className="text-amber-300">{Math.round(pitch)}°</strong></span>
+            <span>Zoom: <strong className="text-amber-300">{zoom.toFixed(1)}x</strong></span>
+            <span className="hidden sm:inline text-slate-400">(Arrastra para {touchMode === "pan" ? "mover" : "rotar"})</span>
           </div>
 
-          {/* Reset View Button */}
-          <div className="absolute top-2 right-2 flex flex-col gap-1">
+          {/* Touch Camera Controls (Right Overlay) */}
+          <div className="absolute top-2 right-2 flex flex-col gap-1.5">
+            <button
+              onClick={() => setTouchMode((m) => (m === "orbit" ? "pan" : "orbit"))}
+              className={`min-w-[38px] min-h-[38px] flex items-center justify-center border rounded-lg shadow text-xs font-bold transition-colors ${
+                touchMode === "pan"
+                  ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                  : "bg-[#0e172a]/85 border-slate-700 text-slate-200 hover:bg-[#1e293b]"
+              }`}
+              title={touchMode === "pan" ? "Modo: Mover cámara" : "Modo: Orbitar modelo"}
+            >
+              <Move className="w-4 h-4" />
+            </button>
             <button
               onClick={() => {
                 setYaw(30);
@@ -699,91 +834,132 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
                 setZoom(1.2);
                 setPan({ x: 0, y: 0 });
               }}
-              className="p-1.5 bg-[#0e172a]/80 hover:bg-[#1e293b] border border-slate-700 text-slate-300 rounded shadow text-xs transition-colors"
+              className="min-w-[38px] min-h-[38px] flex items-center justify-center bg-[#0e172a]/85 hover:bg-[#1e293b] border border-slate-700 text-slate-200 rounded-lg shadow text-xs transition-colors"
               title="Restablecer posición de cámara"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-4 h-4" />
             </button>
             <button
               onClick={() => setZoom((prev) => Math.min(3.5, prev * 1.2))}
-              className="p-1.5 bg-[#0e172a]/80 hover:bg-[#1e293b] border border-slate-700 text-slate-300 rounded shadow text-xs transition-colors"
+              className="min-w-[38px] min-h-[38px] flex items-center justify-center bg-[#0e172a]/85 hover:bg-[#1e293b] border border-slate-700 text-slate-200 rounded-lg shadow text-xs transition-colors"
               title="Acercar zoom"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-4 h-4" />
             </button>
             <button
               onClick={() => setZoom((prev) => Math.max(0.4, prev / 1.2))}
-              className="p-1.5 bg-[#0e172a]/80 hover:bg-[#1e293b] border border-slate-700 text-slate-300 rounded shadow text-xs transition-colors"
+              className="min-w-[38px] min-h-[38px] flex items-center justify-center bg-[#0e172a]/85 hover:bg-[#1e293b] border border-slate-700 text-slate-200 rounded-lg shadow text-xs transition-colors"
               title="Alejar zoom"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Right Inspector & Animation Panel */}
-        <div className="w-72 bg-[#0a0f1d] border-l border-slate-800 flex flex-col overflow-y-auto">
-          {/* Model Header Info */}
-          <div className="p-3 border-b border-slate-800/80 bg-[#0e172a]/50">
-            <h3 className="font-semibold text-slate-100 text-sm flex items-center justify-between">
-              <span>{currentModel.name}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded uppercase font-mono font-bold bg-cyan-950 text-cyan-400 border border-cyan-800">
+        <div
+          className={`${
+            mobileTab === "inspector" ? "flex" : "hidden md:flex"
+          } w-full md:w-72 lg:w-80 bg-white md:border-l border-[#E2E8F0] flex-col overflow-y-auto`}
+        >
+          <div className="p-3.5 border-b border-[#E2E8F0] bg-[#F8FAFC]">
+            <h3 className="font-bold text-[#111827] text-sm flex items-center justify-between gap-2">
+              <span className="truncate">{currentModel.name}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded uppercase font-mono font-bold bg-[#FDF2F4] text-[#7C2D48] border border-[#FBCFE8]">
                 {currentModel.format.toUpperCase()}
               </span>
             </h3>
 
-            {/* Geometry stats */}
-            <div className="grid grid-cols-2 gap-2 mt-2.5 text-xs text-slate-400">
-              <div className="bg-[#121c30] p-1.5 rounded border border-slate-800">
-                <span className="text-slate-500 block text-[10px]">Vértices:</span>
-                <strong className="text-slate-200 font-mono">
+            <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-[#4B5563]">
+              <div className="bg-white p-2 rounded-lg border border-[#E2E8F0]">
+                <span className="text-[#6B7280] block text-[10px]">Vértices</span>
+                <strong className="text-[#111827] font-mono">
                   {currentModel.frames[0]?.vertices.length || 0}
                 </strong>
               </div>
-              <div className="bg-[#121c30] p-1.5 rounded border border-slate-800">
-                <span className="text-slate-500 block text-[10px]">Polígonos:</span>
-                <strong className="text-slate-200 font-mono">
+              <div className="bg-white p-2 rounded-lg border border-[#E2E8F0]">
+                <span className="text-[#6B7280] block text-[10px]">Polígonos</span>
+                <strong className="text-[#111827] font-mono">
                   {currentModel.triangles.length}
                 </strong>
               </div>
-              <div className="bg-[#121c30] p-1.5 rounded border border-slate-800">
-                <span className="text-slate-500 block text-[10px]">Fotogramas:</span>
-                <strong className="text-slate-200 font-mono">
+              <div className="bg-white p-2 rounded-lg border border-[#E2E8F0]">
+                <span className="text-[#6B7280] block text-[10px]">Fotogramas</span>
+                <strong className="text-[#111827] font-mono">
                   {currentModel.frames.length}
                 </strong>
               </div>
-              <div className="bg-[#121c30] p-1.5 rounded border border-slate-800">
-                <span className="text-slate-500 block text-[10px]">Animaciones:</span>
-                <strong className="text-slate-200 font-mono">
+              <div className="bg-white p-2 rounded-lg border border-[#E2E8F0]">
+                <span className="text-[#6B7280] block text-[10px]">Animaciones</span>
+                <strong className="text-[#111827] font-mono">
                   {currentModel.animationGroups.length}
                 </strong>
               </div>
             </div>
+
+            {/* Save to Project Asset Library Card */}
+            <div className="mt-3 p-2.5 bg-white rounded-xl border border-[#CBD5E1] space-y-2">
+              <div className="text-[11px] font-bold text-[#7C2D48]">Guardar en Biblioteca 3D</div>
+              <input
+                type="text"
+                value={saveCustomName}
+                onChange={(e) => setSaveCustomName(e.target.value)}
+                placeholder="Nombre del objeto 3D..."
+                className="w-full min-h-[36px] px-2.5 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1] text-xs font-semibold text-[#111827]"
+              />
+              <div className="grid grid-cols-2 gap-1.5">
+                <select
+                  value={saveCustomRole}
+                  onChange={(e) => setSaveCustomRole(e.target.value as any)}
+                  className="min-h-[36px] px-2 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-semibold"
+                >
+                  <option value="enemy">Enemigo IA</option>
+                  <option value="ally">Aliado / NPC</option>
+                  <option value="prop">Prop 3D</option>
+                  <option value="goal">Meta / Trofeo</option>
+                </select>
+                <label className="min-h-[36px] px-2 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#CBD5E1] text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer">
+                  <Upload className="w-3 h-3 text-[#2563EB]" />
+                  <span>Skin PNG</span>
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleSkinUpload} className="hidden" />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveToAssetLibrary}
+                className="w-full min-h-[38px] px-3 rounded-lg bg-[#7C2D48] hover:bg-[#642239] text-white text-xs font-bold cursor-pointer"
+              >
+                Guardar Objeto con Nombre
+              </button>
+              {savedNotice && (
+                <div className="text-[11px] font-semibold text-[#2F6F4E] bg-[#EEF6F1] px-2.5 py-1.5 rounded-lg border border-[#CFE4D7]">
+                  {savedNotice}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Skin Texture Preview */}
           {currentModel.skinCanvas && (
-            <div className="p-3 border-b border-slate-800/80">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+            <div className="p-3.5 border-b border-[#E2E8F0]">
+              <span className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider block mb-2">
                 Textura / Skin Map
               </span>
-              <div className="border border-slate-700 bg-slate-900 rounded p-1 flex items-center justify-center">
+              <div className="border border-[#CBD5E1] bg-[#0F172A] rounded-lg p-2 flex items-center justify-center">
                 <img
                   src={currentModel.skinCanvas.toDataURL()}
                   alt="Skin texture"
-                  className="w-24 h-24 object-contain rounded pixelated border border-slate-800"
+                  className="w-24 h-24 object-contain rounded pixelated"
                 />
               </div>
             </div>
           )}
 
-          {/* Animations List */}
-          <div className="p-3 flex-1 flex flex-col">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+          <div className="p-3.5 flex-1 flex flex-col">
+            <span className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider block mb-2">
               Secuencias de Animación
             </span>
 
-            <div className="flex-1 overflow-y-auto space-y-1 max-h-60 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
               {currentModel.animationGroups.map((anim, idx) => {
                 const isSelected = activeAnimIndex === idx;
                 const frameCount = anim.lastFrame - anim.firstFrame + 1;
@@ -791,15 +967,15 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
                   <button
                     key={idx}
                     onClick={() => handleSelectAnimation(idx)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between transition-colors ${
+                    className={`w-full text-left px-3 min-h-[38px] rounded-lg text-xs flex items-center justify-between transition-colors border ${
                       isSelected
-                        ? "bg-cyan-950 border border-cyan-500/80 text-cyan-200 font-medium"
-                        : "bg-[#11192a] hover:bg-[#18233a] border border-slate-800/80 text-slate-300"
+                        ? "bg-[#7C2D48] border-[#7C2D48] text-white font-bold"
+                        : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#E2E8F0] text-[#374151]"
                     }`}
                   >
                     <span className="truncate">{anim.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {frameCount} f ({anim.fps} fps)
+                    <span className={`text-[10px] font-mono ${isSelected ? "text-white/80" : "text-[#6B7280]"}`}>
+                      {frameCount}f • {anim.fps}fps
                     </span>
                   </button>
                 );
@@ -810,22 +986,20 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
       </div>
 
       {/* Bottom Animation Playback Bar */}
-      <div className="h-14 bg-[#0a101f] border-t border-slate-800 px-4 flex items-center justify-between gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          {/* Play / Pause */}
+      <div className="bg-white border-t border-[#E2E8F0] px-3 py-2 flex flex-wrap items-center justify-between gap-2.5 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className={`p-2 rounded-md font-semibold text-xs flex items-center gap-1.5 transition-colors ${
+            className={`min-w-[40px] min-h-[38px] px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors ${
               isPlaying
-                ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow"
-                : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                ? "bg-[#7C2D48] hover:bg-[#66233A] text-white"
+                : "bg-[#2F6F4E] hover:bg-[#25593E] text-white"
             }`}
             title={isPlaying ? "Pausar animación" : "Reproducir animación"}
           >
             {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
           </button>
 
-          {/* Step Prev */}
           <button
             onClick={() => {
               setIsPlaying(false);
@@ -834,13 +1008,12 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
               setCurrentFrame(prev);
               fractionalFrameRef.current = prev;
             }}
-            className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs"
+            className="px-2.5 min-h-[38px] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-[#374151] rounded-lg text-xs font-semibold"
             title="Fotograma anterior"
           >
-            ◀ Paso
+            ◀
           </button>
 
-          {/* Step Next */}
           <button
             onClick={() => {
               setIsPlaying(false);
@@ -849,23 +1022,21 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
               setCurrentFrame(next);
               fractionalFrameRef.current = next;
             }}
-            className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs"
+            className="px-2.5 min-h-[38px] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-[#374151] rounded-lg text-xs font-semibold"
             title="Fotograma siguiente"
           >
-            Paso ▶
+            ▶
           </button>
 
-          {/* Speed Selector */}
-          <div className="flex items-center gap-1 ml-2 text-xs text-slate-400">
-            <span>Velocidad:</span>
+          <div className="flex items-center gap-1 ml-1 text-xs">
             {[0.5, 1.0, 1.5, 2.0].map((spd) => (
               <button
                 key={spd}
                 onClick={() => setPlaybackSpeed(spd)}
-                className={`px-1.5 py-0.5 rounded text-[11px] ${
+                className={`px-2 min-h-[34px] rounded-md text-[11px] font-bold border ${
                   playbackSpeed === spd
-                    ? "bg-cyan-700 text-white font-bold"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                    ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                    : "bg-[#F8FAFC] border-[#E2E8F0] text-[#4B5563]"
                 }`}
               >
                 {spd}x
@@ -875,9 +1046,9 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
         </div>
 
         {/* Frame Scrubber Slider */}
-        <div className="flex-1 flex items-center gap-3 max-w-md">
-          <span className="text-xs text-slate-400 font-mono whitespace-nowrap">
-            Frame: <strong className="text-cyan-400">{Math.floor(currentFrame)}</strong> / {currentAnim.lastFrame}
+        <div className="flex-1 min-w-[180px] flex items-center gap-2.5 max-w-md">
+          <span className="text-xs text-[#4B5563] font-mono whitespace-nowrap">
+            <strong className="text-[#7C2D48]">{Math.floor(currentFrame)}</strong>/{currentAnim.lastFrame}
           </span>
           <input
             type="range"
@@ -890,19 +1061,18 @@ export const MD2Viewer: React.FC<MD2ViewerProps> = ({
               setCurrentFrame(val);
               fractionalFrameRef.current = val;
             }}
-            className="flex-1 accent-cyan-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+            className="flex-1 accent-[#7C2D48] cursor-pointer h-2 bg-[#E2E8F0] rounded-lg"
           />
         </div>
 
-        {/* Interpolation Toggle */}
-        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-xs text-[#4B5563] font-medium cursor-pointer select-none min-h-[34px]">
           <input
             type="checkbox"
             checked={interpolate}
             onChange={(e) => setInterpolate(e.target.checked)}
-            className="rounded border-slate-700 text-cyan-600 focus:ring-0"
+            className="w-4 h-4 rounded border-[#CBD5E1] accent-[#7C2D48]"
           />
-          <span>Interpolación 60 FPS</span>
+          <span>60 FPS suave</span>
         </label>
       </div>
     </div>

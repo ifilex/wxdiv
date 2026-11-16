@@ -7,13 +7,20 @@ import { Camera3DDebugOverlay } from "./Camera3DDebugOverlay";
 import { ProcessInspector } from "./ProcessInspector";
 import { Html5AppState, generateProductionHtml5Js } from "../engine/html5Engine";
 import { VB3Control } from "./VB3/types";
+import {
+  DraggedAssetPayload,
+  getActiveDraggedAsset,
+  parseDroppedAsset,
+} from "../engine/assetDragDrop";
+import { invalidateMode8ThreeTexture } from "../engine/mode8ThreeRenderer";
 
 interface GameStageProps {
   runtime: DivRuntime;
   onRestart: () => void;
+  onAssetDropped?: (payload: DraggedAssetPayload) => void;
 }
 
-export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
+export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart, onAssetDropped }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<EngineStats>({
@@ -81,9 +88,150 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
     };
   }, [runtime]);
 
+  const [dragOverlayLabel, setDragOverlayLabel] = useState<string | null>(null);
+  const [dropToast, setDropToast] = useState<string | null>(null);
+
+  const showStageDropToast = (msg: string) => {
+    setDropToast(msg);
+    window.setTimeout(() => setDropToast(null), 2600);
+  };
+
+  const handleStageDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    const active = getActiveDraggedAsset();
+    if (!active && !e.dataTransfer.types.includes("application/x-wxdiv-asset") && !e.dataTransfer.types.includes("text/plain")) {
+      return;
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (active?.kind === "model3d") {
+      setDragOverlayLabel(`Soltar modelo 3D "${active.name}" en la escena`);
+    } else if (active?.kind === "texture") {
+      setDragOverlayLabel(`Aplicar textura "${active.name}" a la escena`);
+    } else if (active?.kind === "fpg_sprite") {
+      setDragOverlayLabel(`Soltar sprite "${active.name}" (#${active.id}) en la escena`);
+    } else if (active?.kind === "fpg_package") {
+      setDragOverlayLabel(`Cargar paquete "${active.filename}" en la escena`);
+    } else {
+      setDragOverlayLabel("Soltar activo en la escena en vivo");
+    }
+  };
+
+  const handleStageDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    setDragOverlayLabel(null);
+    const payload = parseDroppedAsset(e);
+    if (!payload) return;
+    e.preventDefault();
+
+    const targetEl = canvasRef.current || e.currentTarget;
+    const rect = targetEl.getBoundingClientRect();
+    const normX = rect.width > 0 ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0.5;
+    const normY = rect.height > 0 ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)) : 0.5;
+    const rx = Math.round(normX * runtime.width);
+    const ry = Math.round(normY * runtime.height);
+
+    const m8 = runtime.m8[0];
+    if (m8?.active) {
+      const camRad = ((m8.angle || 0) * Math.PI) / 180;
+      const forwardDist = 3.2;
+      const lateralOffset = (normX - 0.5) * 3.0;
+      const camX = (m8.x || 320) / 64;
+      const camY = (m8.y || 320) / 64;
+      const wx = Number((camX + Math.cos(camRad) * forwardDist - Math.sin(camRad) * lateralOffset).toFixed(2));
+      const wy = Number((camY + Math.sin(camRad) * forwardDist + Math.cos(camRad) * lateralOffset).toFixed(2));
+
+      if (payload.kind === "model3d") {
+        runtime.m8_add_model(payload.id, wx, wy, 0, Math.round(((m8.angle || 0) + 180) % 360), "idle", payload.scale, {
+          name: payload.name,
+          role: payload.role,
+        });
+        runtime.markDirty();
+        runtime.wakeUp();
+        showStageDropToast(`Modelo "${payload.name}" colocado en (${wx}, ${wy})`);
+      } else if (payload.kind === "texture") {
+        const sectors = m8.doomSectors || [];
+        const lines = m8.doomLinedefs || [];
+        if (sectors.length > 0) {
+          sectors[0].floorTexture = payload.name;
+        }
+        for (let i = 0; i < Math.min(lines.length, 4); i++) {
+          lines[i].middleTexture = payload.name;
+          lines[i].lowerTexture = payload.name;
+        }
+        invalidateMode8ThreeTexture(payload.name);
+        runtime.markDirty();
+        runtime.wakeUp();
+        showStageDropToast(`Textura "${payload.name}" aplicada en la escena 3D`);
+      } else if (payload.kind === "fpg_sprite") {
+        if (!m8.entities) m8.entities = [];
+        m8.entities.push({
+          id: `ent_drop_${Date.now()}`,
+          type: "custom",
+          x: wx * 64,
+          y: wy * 64,
+          graph: payload.id,
+          name: payload.name,
+          alive: true,
+        });
+        runtime.markDirty();
+        runtime.wakeUp();
+        showStageDropToast(`Sprite "${payload.name}" (#${payload.id}) colocado en 3D`);
+      } else if (payload.kind === "fpg_package") {
+        runtime.load_fpg(payload.filename);
+        runtime.markDirty();
+        showStageDropToast(`Paquete ${payload.filename} activado en runtime`);
+      }
+    } else {
+      // 2D Canvas Stage
+      if (payload.kind === "fpg_sprite" || (payload.kind === "fpg_package" && payload.firstSpriteId !== undefined)) {
+        const spriteId = payload.kind === "fpg_sprite" ? payload.id : payload.firstSpriteId!;
+        const pkgId = payload.pkgId;
+        const procName = `__dropped_sprite_${spriteId}_${Date.now()}`;
+        runtime.registerProcess(procName, function* (proc) {
+          proc.file = pkgId;
+          proc.graph = spriteId;
+          proc.x = rx;
+          proc.y = ry;
+          proc.size = 100;
+          while (!proc.isDead) {
+            yield;
+          }
+        });
+        runtime.spawn(procName, [rx, ry]);
+        if (!runtime.isRunning) {
+          runtime.start();
+        }
+        runtime.markDirty();
+        runtime.wakeUp();
+        showStageDropToast(`Sprite #${spriteId} colocado en (${rx}, ${ry})`);
+      } else if (payload.kind === "model3d") {
+        runtime.m8_add_model(payload.id, 6, 6, 0, 0, "idle", payload.scale, {
+          name: payload.name,
+          role: payload.role,
+        });
+        showStageDropToast(`Modelo "${payload.name}" preparado para Modo 8`);
+      } else if (payload.kind === "texture") {
+        const sectors = m8?.doomSectors || [];
+        if (sectors[0]) sectors[0].floorTexture = payload.name;
+        invalidateMode8ThreeTexture(payload.name);
+        runtime.markDirty();
+        showStageDropToast(`Textura "${payload.name}" preparada en escena`);
+      } else if (payload.kind === "fpg_package") {
+        runtime.load_fpg(payload.filename);
+        showStageDropToast(`Paquete ${payload.filename} cargado`);
+      }
+    }
+
+    onAssetDropped?.(payload);
+  };
+
   // Responsive adaptive scale for Visual Form
   const visualFormContainerRef = useRef<HTMLDivElement>(null);
   const [formScale, setFormScale] = useState<number>(1);
+  const dragLookRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+  });
 
   useEffect(() => {
     if (!html5State.visualForm) return;
@@ -786,23 +934,15 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
       runtime.keyState[e.key.toLowerCase()] = true;
       runtime.keyState[e.code.toLowerCase()] = true;
 
-      // Also map arrow and common game key names
-      if (e.key === "ArrowUp" || e.code === "KeyW") {
-        runtime.keyState["up"] = true;
-        runtime.keyState["w"] = true;
-      }
-      if (e.key === "ArrowDown" || e.code === "KeyS") {
-        runtime.keyState["down"] = true;
-        runtime.keyState["s"] = true;
-      }
-      if (e.key === "ArrowLeft" || e.code === "KeyA") {
-        runtime.keyState["left"] = true;
-        runtime.keyState["a"] = true;
-      }
-      if (e.key === "ArrowRight" || e.code === "KeyD") {
-        runtime.keyState["right"] = true;
-        runtime.keyState["d"] = true;
-      }
+      // Map arrow keys and WASD independently (prevents A/D strafe from turning camera)
+      if (e.key === "ArrowUp" || e.code === "ArrowUp") runtime.keyState["up"] = true;
+      if (e.code === "KeyW") runtime.keyState["w"] = true;
+      if (e.key === "ArrowDown" || e.code === "ArrowDown") runtime.keyState["down"] = true;
+      if (e.code === "KeyS") runtime.keyState["s"] = true;
+      if (e.key === "ArrowLeft" || e.code === "ArrowLeft") runtime.keyState["left"] = true;
+      if (e.code === "KeyA") runtime.keyState["a"] = true;
+      if (e.key === "ArrowRight" || e.code === "ArrowRight") runtime.keyState["right"] = true;
+      if (e.code === "KeyD") runtime.keyState["d"] = true;
       if (e.code === "Space" || e.key === " ") runtime.keyState["space"] = true;
       if (e.key === "Enter") runtime.keyState["enter"] = true;
       if (e.key === "Escape") runtime.keyState["esc"] = true;
@@ -825,22 +965,14 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
       runtime.keyState[e.key.toLowerCase()] = false;
       runtime.keyState[e.code.toLowerCase()] = false;
 
-      if (e.key === "ArrowUp" || e.code === "KeyW") {
-        runtime.keyState["up"] = false;
-        runtime.keyState["w"] = false;
-      }
-      if (e.key === "ArrowDown" || e.code === "KeyS") {
-        runtime.keyState["down"] = false;
-        runtime.keyState["s"] = false;
-      }
-      if (e.key === "ArrowLeft" || e.code === "KeyA") {
-        runtime.keyState["left"] = false;
-        runtime.keyState["a"] = false;
-      }
-      if (e.key === "ArrowRight" || e.code === "KeyD") {
-        runtime.keyState["right"] = false;
-        runtime.keyState["d"] = false;
-      }
+      if (e.key === "ArrowUp" || e.code === "ArrowUp") runtime.keyState["up"] = false;
+      if (e.code === "KeyW") runtime.keyState["w"] = false;
+      if (e.key === "ArrowDown" || e.code === "ArrowDown") runtime.keyState["down"] = false;
+      if (e.code === "KeyS") runtime.keyState["s"] = false;
+      if (e.key === "ArrowLeft" || e.code === "ArrowLeft") runtime.keyState["left"] = false;
+      if (e.code === "KeyA") runtime.keyState["a"] = false;
+      if (e.key === "ArrowRight" || e.code === "ArrowRight") runtime.keyState["right"] = false;
+      if (e.code === "KeyD") runtime.keyState["d"] = false;
       if (e.code === "Space" || e.key === " ") runtime.keyState["space"] = false;
       if (e.key === "Enter") runtime.keyState["enter"] = false;
       if (e.key === "Escape") runtime.keyState["esc"] = false;
@@ -1009,8 +1141,8 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
             </button>
           )}
 
-          {/* Secondary Desktop Controls */}
-          <div className="hidden md:flex items-center gap-1.5">
+          {/* Secondary Desktop Controls (shown on lg+, overflow menu handles tablet/mobile) */}
+          <div className="hidden lg:flex items-center gap-1.5">
             <button
               onClick={() => runtime.stepFrame()}
               className="p-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
@@ -1083,11 +1215,11 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
             </button>
           </div>
 
-          {/* Mobile Overflow Actions Menu */}
-          <div className="relative md:hidden">
+          {/* Tablet & Mobile Overflow Actions Menu */}
+          <div className="relative lg:hidden">
             <button
               onClick={() => setShowMoreActions((prev) => !prev)}
-              className="p-2 min-w-[36px] min-h-[36px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center"
+              className="p-2 min-w-[36px] min-h-[36px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center cursor-pointer"
               title="Más opciones"
             >
               <MoreHorizontal className="w-4 h-4" />
@@ -1098,49 +1230,49 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
                 <div className="absolute right-0 mt-1.5 w-52 bg-[#0d1424] border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1">
                   <button
                     onClick={() => { toggleSound(); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
                     <span>{isMuted ? "Activar sonido" : "Silenciar"}</span>
                   </button>
                   <button
                     onClick={() => { runtime.stepFrame(); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <StepForward className="w-4 h-4 text-slate-400" />
                     <span>Avanzar 1 Frame</span>
                   </button>
                   <button
                     onClick={() => { setIsProcessDebuggerOpen(!isProcessDebuggerOpen); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <Cpu className="w-4 h-4 text-emerald-400" />
                     <span>Procesos ({stats.processCount})</span>
                   </button>
                   <button
                     onClick={() => { setIs3DDebugOpen(!is3DDebugOpen); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <Compass className="w-4 h-4 text-emerald-400" />
                     <span>Cámara 3D</span>
                   </button>
                   <button
                     onClick={() => { setCrtFilter(!crtFilter); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <Tv className="w-4 h-4 text-slate-400" />
                     <span>Filtro CRT: {crtFilter ? "ON" : "OFF"}</span>
                   </button>
                   <button
                     onClick={() => { setShowCodeModal(true); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <Code2 className="w-4 h-4 text-emerald-400" />
                     <span>Ver Código HTML/JS</span>
                   </button>
                   <button
                     onClick={() => { toggleFullscreen(); setShowMoreActions(false); }}
-                    className="w-full px-3 py-2.5 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-lg text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                   >
                     <Maximize className="w-4 h-4 text-slate-400" />
                     <span>Pantalla completa</span>
@@ -1154,9 +1286,26 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
 
       {/* Viewport Canvas or Direct HTML5 Container */}
       <div
-        className="relative flex-1 flex-grow min-h-0 w-full flex items-center justify-center bg-black p-2 overflow-hidden"
+        onDragOver={handleStageDragOver}
+        onDragLeave={() => setDragOverlayLabel(null)}
+        onDrop={handleStageDrop}
+        className={`relative flex-1 flex-grow min-h-0 w-full flex items-center justify-center bg-black p-2 overflow-hidden transition-all ${
+          dragOverlayLabel ? "ring-2 ring-inset ring-[#7C2D48]" : ""
+        }`}
         style={{ flexGrow: 1, minHeight: 0, height: "100%" }}
       >
+        {dragOverlayLabel && (
+          <div className="absolute inset-3 z-50 rounded-xl border-2 border-dashed border-amber-400 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center pointer-events-none">
+            <span className="px-4 py-2 rounded-xl bg-[#7C2D48] text-white text-xs font-bold shadow-lg">
+              {dragOverlayLabel}
+            </span>
+          </div>
+        )}
+        {dropToast && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-lg pointer-events-none">
+            {dropToast}
+          </div>
+        )}
         {/* Real-time 3D Camera Debugging Tool */}
         <Camera3DDebugOverlay
           runtime={runtime}
@@ -1943,8 +2092,11 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
             height={runtime.height}
             className="pixelated bg-[#050811] focus:outline-none touch-none"
             style={{
+              width: "100%",
+              height: "100%",
               maxWidth: "100%",
               maxHeight: "100%",
+              aspectRatio: `${runtime.width} / ${runtime.height}`,
               objectFit: "contain",
               imageRendering: "pixelated",
               transform: "translateZ(0)",
@@ -1957,14 +2109,25 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
                 runtime.mouseState.left = true;
                 runtime.appUiEngine?.handleMouseDown(runtime.mouseState.x, runtime.mouseState.y);
               }
-              if (e.button === 2) runtime.mouseState.right = true;
+              if (e.button === 2) {
+                runtime.mouseState.right = true;
+                if (runtime.m8[0]?.active) {
+                  dragLookRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+                }
+              }
             }}
             onMouseUp={(e) => {
               if (e.button === 0) {
                 runtime.mouseState.left = false;
                 runtime.appUiEngine?.handleMouseUp(runtime.mouseState.x, runtime.mouseState.y);
               }
-              if (e.button === 2) runtime.mouseState.right = false;
+              if (e.button === 2) {
+                runtime.mouseState.right = false;
+                dragLookRef.current.active = false;
+              }
+            }}
+            onMouseLeave={() => {
+              dragLookRef.current.active = false;
             }}
             onMouseMove={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
@@ -1972,6 +2135,22 @@ export const GameStage: React.FC<GameStageProps> = ({ runtime, onRestart }) => {
               const my = Math.floor(((e.clientY - rect.top) / rect.height) * runtime.height);
               runtime.mouseState.x = mx;
               runtime.mouseState.y = my;
+
+              if (dragLookRef.current.active && runtime.m8[0]?.active) {
+                const dx = e.clientX - dragLookRef.current.lastX;
+                const dy = e.clientY - dragLookRef.current.lastY;
+                dragLookRef.current.lastX = e.clientX;
+                dragLookRef.current.lastY = e.clientY;
+                const m8 = runtime.m8[0];
+                const camId = m8.camera || runtime.camara_id || 1;
+                const camProc = runtime.processes.get(camId);
+                if (camProc) {
+                  camProc.angle = ((camProc.angle || 0) + dx * 0.35 + 360) % 360;
+                }
+                m8.angle = ((m8.angle || 0) + dx * 0.35 + 360) % 360;
+                m8.pitch = Math.max(-45, Math.min(45, (m8.pitch || 0) - dy * 0.25));
+              }
+
               runtime.appUiEngine?.handleMouseMove(mx, my);
               const dynCursor = runtime.appUiEngine?.getCursorAt(mx, my) || (runtime.appUiEngine?.hasWidgets() ? "default" : "crosshair");
               if (dynCursor !== canvasCursor) {

@@ -211,7 +211,7 @@ export class WadParser {
     const data = this.getLumpData(lump);
     if (!data) return null;
     const text = new TextDecoder().decode(
-      data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+      data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
     );
     const textNoComments = text.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "");
 

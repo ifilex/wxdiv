@@ -207,6 +207,7 @@ export const SoundEditor: React.FC<SoundEditorProps> = ({ onInsertCode }) => {
   const [volume, setVolume] = useState<number>(PRESET_SOUNDS[0].config.volume || 0.35);
   const [isLooping, setIsLooping] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"synth" | "presets">("synth");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const loopIntervalRef = useRef<any>(null);
@@ -335,31 +336,28 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
   };
 
   return (
-    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#080d1a] text-slate-200 select-none overflow-hidden">
+    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] select-none overflow-hidden">
       {/* Top Header */}
-      <div className="bg-[#0b1222] border-b border-slate-800 px-3 py-2 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+      <div className="bg-white border-b border-[#E2E8F0] px-3 py-2 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded bg-cyan-950/80 border border-cyan-700/60 text-cyan-400">
+          <div className="p-1.5 rounded-lg bg-[#FDF2F4] border border-[#FBCFE8] text-[#7C2D48]">
             <Volume2 className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-xs font-bold font-mono text-white flex items-center gap-1.5">
-              <span>EDITOR DE SONIDOS RETRO</span>
-              <span className="text-[10px] text-cyan-400 font-normal px-1 rounded bg-cyan-950/60 border border-cyan-800/40">
-                SINTETIZADOR ADSR
-              </span>
+            <h2 className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
+              <span>Editor de Sonidos ADSR</span>
             </h2>
-            <span className="text-[10px] text-slate-400">
-              Revisa, modula y adapta efectos de sonido para tus juegos y el motor 3D
+            <span className="text-[11px] text-[#6B7280] hidden sm:inline">
+              {selectedPreset.name} • {waveform} ({baseFreq} Hz)
             </span>
           </div>
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={playCurrentSound}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/40 transition-all"
+            className="px-3 min-h-[38px] bg-[#2F6F4E] hover:bg-[#25593E] text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Escuchar</span>
@@ -367,10 +365,10 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
 
           <button
             onClick={() => setIsLooping(!isLooping)}
-            className={`px-2.5 py-1.5 rounded text-xs flex items-center gap-1 border transition-all ${
+            className={`px-2.5 min-h-[38px] rounded-lg text-xs flex items-center gap-1 border font-semibold transition-colors whitespace-nowrap ${
               isLooping
-                ? "bg-amber-950 border-amber-500 text-amber-300 font-semibold"
-                : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                : "bg-[#F8FAFC] border-[#E2E8F0] text-[#4B5563]"
             }`}
           >
             <Repeat className="w-3.5 h-3.5" />
@@ -379,55 +377,81 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
 
           <button
             onClick={handleCopyCode}
-            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded text-xs flex items-center gap-1 font-mono"
+            className="px-2.5 min-h-[38px] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] text-[#374151] rounded-lg text-xs flex items-center gap-1 font-mono font-semibold whitespace-nowrap"
           >
-            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-cyan-400" />}
-            <span>Copiar sound()</span>
+            {copiedCode ? <Check className="w-3.5 h-3.5 text-[#2F6F4E]" /> : <Copy className="w-3.5 h-3.5 text-[#7C2D48]" />}
+            <span className="hidden sm:inline">Copiar</span>
           </button>
 
           <button
             onClick={handleInsertDivCode}
-            className="px-2.5 py-1.5 bg-cyan-900/80 hover:bg-cyan-800 border border-cyan-600/60 text-cyan-200 rounded text-xs font-semibold flex items-center gap-1 font-mono"
+            className="px-3 min-h-[38px] bg-[#7C2D48] hover:bg-[#66233A] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
           >
-            <FileCode className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Insertar Código</span>
+            <FileCode className="w-3.5 h-3.5" />
+            <span>Insertar</span>
           </button>
         </div>
       </div>
 
+      {/* Mobile Tab Bar */}
+      <div className="flex md:hidden items-center bg-white border-b border-[#E2E8F0] px-3 py-1.5 gap-2 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab("synth")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "synth"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Sintetizador ADSR
+        </button>
+        <button
+          onClick={() => setMobileTab("presets")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "presets"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Efectos Preset ({PRESET_SOUNDS.length})
+        </button>
+      </div>
+
       {/* Main Workspace */}
-      <div className="flex-1 flex-grow min-h-0 w-full h-full flex overflow-hidden">
+      <div className="flex-1 flex-grow min-h-0 w-full h-full flex flex-col md:flex-row overflow-hidden">
         {/* Preset List Sidebar */}
-        <div className="w-64 bg-[#0a0f1d] border-r border-slate-800/80 flex flex-col p-2 gap-2 overflow-y-auto">
-          <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase font-mono mb-1 block">
+        <div
+          className={`${
+            mobileTab === "presets" ? "flex" : "hidden md:flex"
+          } w-full md:w-64 bg-white md:border-r border-[#E2E8F0] flex-col p-3 gap-2 overflow-y-auto`}
+        >
+          <span className="text-[11px] font-bold tracking-wider text-[#6B7280] uppercase font-mono mb-1 block">
             Efectos del Juego
           </span>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {PRESET_SOUNDS.map((preset) => {
               const isSelected = selectedPreset.id === preset.id;
               return (
                 <button
                   key={preset.id}
                   onClick={() => handleSelectPreset(preset)}
-                  className={`w-full px-2.5 py-2 rounded text-left flex items-center justify-between border transition-all ${
+                  className={`w-full px-3 min-h-[48px] rounded-xl text-left flex items-center justify-between border transition-colors ${
                     isSelected
-                      ? "bg-cyan-950/90 border-cyan-500 text-white font-medium shadow-sm"
-                      : "bg-slate-900/40 border-slate-800/80 text-slate-300 hover:bg-slate-800/50"
+                      ? "bg-[#7C2D48] border-[#7C2D48] text-white font-semibold"
+                      : "bg-[#F8FAFC] border-[#E2E8F0] text-[#111827] hover:bg-[#F1F5F9]"
                   }`}
                 >
-                  <div className="truncate">
-                    <div className="text-xs font-medium truncate">{preset.name}</div>
-                    <div className="text-[9px] text-slate-400 font-mono capitalize">
+                  <div className="truncate pr-2">
+                    <div className="text-xs font-semibold truncate">{preset.name}</div>
+                    <div className={`text-[10px] font-mono capitalize ${isSelected ? "text-white/80" : "text-[#6B7280]"}`}>
                       {preset.config.waveform} • {preset.config.frequency}Hz
                     </div>
                   </div>
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-mono ${
-                      preset.category === "mode8"
-                        ? "bg-indigo-950 text-indigo-300 border border-indigo-800/40"
-                        : preset.category === "combat"
-                        ? "bg-rose-950 text-rose-300 border border-rose-800/40"
-                        : "bg-cyan-950 text-cyan-300 border border-cyan-800/40"
+                    className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-mono shrink-0 font-bold ${
+                      isSelected
+                        ? "bg-white/20 text-white"
+                        : "bg-white border border-[#E2E8F0] text-[#4B5563]"
                     }`}
                   >
                     {preset.category}
@@ -439,37 +463,40 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
         </div>
 
         {/* Synthesizer Sliders & Waveform */}
-        <div className="flex-1 flex-grow min-h-0 flex flex-col p-4 gap-4 overflow-y-auto bg-[#050811]">
-          {/* Waveform Visualization Canvas */}
-          <div className="relative rounded-lg overflow-hidden border border-slate-800 bg-[#080e1d] shadow-inner">
-            <canvas ref={canvasRef} width={640} height={140} className="w-full h-32 block" />
-            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-cyan-400 border border-cyan-800/40 text-[10px] font-mono flex items-center gap-1.5">
+        <div
+          className={`${
+            mobileTab === "synth" ? "flex" : "hidden md:flex"
+          } flex-1 flex-grow min-h-0 flex-col p-3 sm:p-4 gap-4 overflow-y-auto bg-[#F7F8FA]`}
+        >
+          {/* Waveform Visualization Canvas (crisp dark oscilloscope) */}
+          <div className="relative rounded-xl overflow-hidden border border-[#CBD5E1] bg-[#080e1d] shadow-xs flex-shrink-0">
+            <canvas ref={canvasRef} width={640} height={140} className="w-full h-28 sm:h-36 block" />
+            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/65 rounded text-cyan-300 border border-cyan-800/40 text-[10px] font-mono flex items-center gap-1.5">
               <Waves className="w-3 h-3" />
-              <span>FORMA DE ONDA & ENVOLVENTE ADSR</span>
+              <span>FORMA DE ONDA & ADSR</span>
             </div>
           </div>
 
           {/* Synthesis Controls Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Waveform & Pitch */}
-            <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-3">
-              <span className="text-xs font-bold font-mono text-cyan-300 flex items-center gap-1.5">
+            <div className="p-3.5 bg-white rounded-xl border border-[#E2E8F0] space-y-3.5">
+              <span className="text-xs font-bold text-[#7C2D48] flex items-center gap-1.5">
                 <Radio className="w-3.5 h-3.5" />
-                <span>OSCILADOR & MODULACIÓN</span>
+                <span>Oscilador y Modulación</span>
               </span>
 
-              {/* Waveform Type */}
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-400">Tipo de Onda:</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#4B5563]">Tipo de Onda:</label>
                 <div className="grid grid-cols-5 gap-1">
                   {(["sine", "square", "sawtooth", "triangle", "noise"] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setWaveform(type)}
-                      className={`py-1 text-[10px] font-mono rounded border capitalize transition-all ${
+                      className={`min-h-[36px] text-[10px] font-mono rounded-lg border capitalize font-bold transition-colors ${
                         waveform === type
-                          ? "bg-cyan-950 border-cyan-500 text-cyan-300 font-semibold"
-                          : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                          ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                          : "bg-[#F8FAFC] border-[#E2E8F0] text-[#4B5563] hover:text-[#111827]"
                       }`}
                     >
                       {type}
@@ -478,11 +505,10 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                 </div>
               </div>
 
-              {/* Base Frequency */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Frecuencia Base:</span>
-                  <span className="font-mono text-cyan-400 font-bold">{baseFreq} Hz</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Frecuencia Base:</span>
+                  <span className="font-mono text-[#7C2D48] font-bold">{baseFreq} Hz</span>
                 </div>
                 <input
                   type="range"
@@ -491,15 +517,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={10}
                   value={baseFreq}
                   onChange={(e) => setBaseFreq(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Pitch Slide */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Deslizamiento de Tono:</span>
-                  <span className="font-mono text-amber-400 font-bold">{pitchSlide} Hz</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Deslizamiento de Tono:</span>
+                  <span className="font-mono text-[#2F6F4E] font-bold">{pitchSlide} Hz</span>
                 </div>
                 <input
                   type="range"
@@ -508,15 +533,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={20}
                   value={pitchSlide}
                   onChange={(e) => setPitchSlide(Number(e.target.value))}
-                  className="w-full accent-amber-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#2F6F4E] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Low-pass Filter Cutoff */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Filtro Pasa-Bajos:</span>
-                  <span className="font-mono text-purple-400 font-bold">{filterCutoff} Hz</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Filtro Pasa-Bajos:</span>
+                  <span className="font-mono text-[#111827] font-bold">{filterCutoff} Hz</span>
                 </div>
                 <input
                   type="range"
@@ -525,23 +549,22 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={100}
                   value={filterCutoff}
                   onChange={(e) => setFilterCutoff(Number(e.target.value))}
-                  className="w-full accent-purple-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
             </div>
 
             {/* ADSR Envelopes */}
-            <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-3">
-              <span className="text-xs font-bold font-mono text-cyan-300 flex items-center gap-1.5">
+            <div className="p-3.5 bg-white rounded-xl border border-[#E2E8F0] space-y-3.5">
+              <span className="text-xs font-bold text-[#7C2D48] flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5" />
-                <span>ENVOLVENTE ADSR & VOLUMEN</span>
+                <span>Envolvente ADSR y Volumen</span>
               </span>
 
-              {/* Attack */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Ataque (Attack):</span>
-                  <span className="font-mono text-slate-200">{(attack * 1000).toFixed(0)} ms</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Ataque (Attack):</span>
+                  <span className="font-mono text-[#111827] font-bold">{(attack * 1000).toFixed(0)} ms</span>
                 </div>
                 <input
                   type="range"
@@ -550,15 +573,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={0.01}
                   value={attack}
                   onChange={(e) => setAttack(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Decay */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Caída (Decay):</span>
-                  <span className="font-mono text-slate-200">{(decay * 1000).toFixed(0)} ms</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Caída (Decay):</span>
+                  <span className="font-mono text-[#111827] font-bold">{(decay * 1000).toFixed(0)} ms</span>
                 </div>
                 <input
                   type="range"
@@ -567,15 +589,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={0.02}
                   value={decay}
                   onChange={(e) => setDecay(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Sustain */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Sostenido (Sustain):</span>
-                  <span className="font-mono text-slate-200">{(sustain * 100).toFixed(0)}%</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Sostenido (Sustain):</span>
+                  <span className="font-mono text-[#111827] font-bold">{(sustain * 100).toFixed(0)}%</span>
                 </div>
                 <input
                   type="range"
@@ -584,15 +605,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={0.05}
                   value={sustain}
                   onChange={(e) => setSustain(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Release */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Relajación (Release):</span>
-                  <span className="font-mono text-slate-200">{(release * 1000).toFixed(0)} ms</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563]">Relajación (Release):</span>
+                  <span className="font-mono text-[#111827] font-bold">{(release * 1000).toFixed(0)} ms</span>
                 </div>
                 <input
                   type="range"
@@ -601,15 +621,14 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={0.05}
                   value={release}
                   onChange={(e) => setRelease(Number(e.target.value))}
-                  className="w-full accent-cyan-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#7C2D48] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
 
-              {/* Volume */}
-              <div className="space-y-1 pt-1 border-t border-slate-800">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Volumen General:</span>
-                  <span className="font-mono text-emerald-400 font-bold">{(volume * 100).toFixed(0)}%</span>
+              <div className="space-y-1 pt-2 border-t border-[#E2E8F0]">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#4B5563] font-semibold">Volumen General:</span>
+                  <span className="font-mono text-[#2F6F4E] font-bold">{(volume * 100).toFixed(0)}%</span>
                 </div>
                 <input
                   type="range"
@@ -618,7 +637,7 @@ sound(1, ${Math.round(volume * 100)}, ${Math.round(baseFreq)});`;
                   step={0.05}
                   value={volume}
                   onChange={(e) => setVolume(Number(e.target.value))}
-                  className="w-full accent-emerald-500 h-1 bg-slate-800 rounded"
+                  className="w-full accent-[#2F6F4E] h-2 bg-[#E2E8F0] rounded"
                 />
               </div>
             </div>

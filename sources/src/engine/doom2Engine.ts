@@ -16,6 +16,7 @@
  * - Automatic Grid-to-Doom Polygon Converter (convertGridMapToDoomPolygons) for running any Mode 8 map
  */
 
+import earcut from "earcut";
 import {
   DivDoomLinedef,
   DivDoomSector,
@@ -26,423 +27,118 @@ import {
   DivMode8Sector,
   DivMode8Door,
   DivVectorWall,
+  Mode8CameraMode,
 } from "../types";
 import {
-  Camera3DPose,
-  render3DModel,
+  ModelOverlayPoint,
+  render3DModelToBuffer,
+  renderVoxelToBuffer,
   renderFirstPersonWeapon3D,
   BUILTIN_3D_MODELS,
   BUILTIN_VOXELS,
 } from "./mode8Enhanced";
 import { WadParser } from "./doom3d/WadParser";
 import { DoomMapData, DoomThing } from "./doom3d/types";
+import { renderMode8ThreeWorld, Mode8ThreeEditorOverlay } from "./mode8ThreeRenderer";
+import {
+  ZBufferManager,
+  clipPolygonToFrustum,
+  clipSegmentToFrustum,
+  FrustumParams,
+} from "./mode8ZBuffer";
+import {
+  CANONICAL_TEXTURES,
+  paintMode8TextureToCanvas,
+  resolveCanonicalTextureName,
+} from "./mode8TextureRegistry";
 
-// --- Authentic Doom 2 Textures & Flats Registry ---
+// --- Canonical Mode 8 Textures & Flats Registry (100% Parity Across Editor, IDE & HTML) ---
 
 export interface DoomTextureMeta {
   name: string;
-  category: "walls" | "tech" | "gothic" | "doors_steps" | "sky";
+  category: "walls" | "tech" | "gothic" | "doors_steps" | "sky" | "roblox_arcade" | "custom";
   width: number;
   height: number;
   description: string;
+  kidLabel?: string;
   dominantColor: string;
 }
 
 export interface DoomFlatMeta {
   name: string;
   description: string;
+  kidLabel?: string;
   color: string;
   type: "floor" | "ceiling" | "liquid" | "step";
   damage?: number;
 }
 
-export const DOOM_WALL_TEXTURES: DoomTextureMeta[] = [
-  { name: "STARTAN3", category: "walls", width: 128, height: 128, description: "Paneles de aleación titanio clásicos", dominantColor: "#9e8b6e" },
-  { name: "BROWN144", category: "walls", width: 128, height: 128, description: "Ladrillos marrones y basalto reforzado", dominantColor: "#694d38" },
-  { name: "TEKGREN2", category: "tech", width: 128, height: 128, description: "Consolas tecno-industriales verdes", dominantColor: "#2d5236" },
-  { name: "COMP2", category: "tech", width: 128, height: 128, description: "Supercomputadora UAC con diales LED", dominantColor: "#223344" },
-  { name: "BRICK1", category: "gothic", width: 128, height: 128, description: "Muralla de ladrillo rojo de fortaleza", dominantColor: "#853127" },
-  { name: "MARBFAC", category: "gothic", width: 128, height: 128, description: "Mármol verde con rostro gárgola demoníaca", dominantColor: "#2b4c3b" },
-  { name: "STONE2", category: "gothic", width: 128, height: 128, description: "Sillar de mazmorra medieval", dominantColor: "#52525b" },
-  { name: "SHAWN2", category: "tech", width: 128, height: 128, description: "Plancha de aluminio blindada UAC", dominantColor: "#71717a" },
-  { name: "DOOR3", category: "doors_steps", width: 128, height: 128, description: "Puerta blindada neumática con advertencia", dominantColor: "#a16207" },
-  { name: "STEP1", category: "doors_steps", width: 128, height: 32, description: "Frontal contrahuella de escalera con remaches", dominantColor: "#475569" },
-  { name: "STEP2", category: "doors_steps", width: 128, height: 16, description: "Contrahuella de peldaño bajo metálico", dominantColor: "#334155" },
-  { name: "SLIME01", category: "walls", width: 128, height: 128, description: "Cascada de fango tóxico radiactivo", dominantColor: "#4d7c0f" },
-  { name: "FIREWALL", category: "gothic", width: 128, height: 128, description: "Pared viva de carne y magma demoníaco", dominantColor: "#991b1b" },
-  { name: "WOOD1", category: "gothic", width: 128, height: 128, description: "Vigas de roble oscuro de fortaleza", dominantColor: "#78350f" },
-  { name: "METAL1", category: "tech", width: 128, height: 128, description: "Chapa de acero corrugado militar", dominantColor: "#475569" },
-  { name: "CRATE1", category: "tech", width: 128, height: 128, description: "Caja de carga con logotipo UAC", dominantColor: "#854d0e" },
-  { name: "EXIT1", category: "tech", width: 128, height: 128, description: "Letrero de salida de emergencia parpadeante", dominantColor: "#dc2626" },
-  { name: "SWITCH1", category: "tech", width: 128, height: 128, description: "Interruptor de palanca desactivado (OFF)", dominantColor: "#ef4444" },
-  { name: "SWITCH2", category: "tech", width: 128, height: 128, description: "Interruptor de palanca activado (ON)", dominantColor: "#22c55e" },
-  { name: "SKY1", category: "sky", width: 256, height: 128, description: "Cielo montañoso alienígena de Phobos", dominantColor: "#253342" },
-  { name: "SKY2", category: "sky", width: 256, height: 128, description: "Firmamento rojizo demoníaco de Deimos", dominantColor: "#6e1d1d" },
-  { name: "SKY3", category: "sky", width: 256, height: 128, description: "Horizonte llameante del Averno / Infierno", dominantColor: "#7f1d1d" },
-];
+export const DOOM_WALL_TEXTURES: DoomTextureMeta[] = CANONICAL_TEXTURES.filter(
+  (t) => t.kind === "wall" || t.kind === "both" || t.kind === "sky"
+).map((t) => ({
+  name: t.name,
+  category:
+    t.category === "roblox_lego"
+      ? "roblox_arcade"
+      : t.category === "floors" || t.category === "liquids"
+      ? "walls"
+      : t.category,
+  width: t.width,
+  height: t.height,
+  description: t.description,
+  kidLabel: t.kidLabel,
+  dominantColor: t.dominantColor,
+}));
 
-export const DOOM_FLATS: DoomFlatMeta[] = [
-  { name: "FLOOR4_8", description: "Baldosas de hormigón desgastadas", color: "#6b6255", type: "floor" },
-  { name: "CEIL3_5", description: "Placas acústicas de techo UAC", color: "#3f464e", type: "ceiling" },
-  { name: "TLITE6_5", description: "Luminaria halógena de techo", color: "#e2e8f0", type: "ceiling" },
-  { name: "STEP", description: "Huella antideslizante de escalera", color: "#334155", type: "step" },
-  { name: "NUKAGE", description: "Residuo químico tóxico (-5 HP)", color: "#4ade80", type: "liquid", damage: 5 },
-  { name: "LAVA", description: "Magma fundido hirviente (-20 HP)", color: "#f97316", type: "liquid", damage: 20 },
-  { name: "BLOOD1", description: "Estanque de sangre infernal", color: "#881337", type: "liquid" },
-  { name: "WATER", description: "Agua subterránea cristalina", color: "#0284c7", type: "liquid" },
-  { name: "GRASS", description: "Tierra y vegetación de pantano", color: "#365314", type: "floor" },
-  { name: "FLAT10", description: "Losas octogonales de basalto", color: "#27272a", type: "floor" },
-  { name: "CRATOP2", description: "Tapa de madera de caja de suministros", color: "#78350f", type: "floor" },
-  { name: "GATE1", description: "Grabados arcanos de portal teletransporte", color: "#a855f7", type: "floor" },
-  { name: "RROCK01", description: "Roca volcánica del averno", color: "#7f1d1d", type: "floor" },
-];
+export const DOOM_FLATS: DoomFlatMeta[] = CANONICAL_TEXTURES.filter(
+  (t) => t.kind === "flat" || t.kind === "both"
+).map((t) => ({
+  name: t.name,
+  description: t.description,
+  kidLabel: t.kidLabel,
+  color: t.dominantColor,
+  type:
+    t.category === "liquids"
+      ? "liquid"
+      : t.name.includes("CEIL") || t.name.includes("TLITE")
+      ? "ceiling"
+      : t.name.includes("STEP")
+      ? "step"
+      : "floor",
+  damage: t.damage,
+}));
 
 // Cache of generated texture canvases
 const textureCanvasCache = new Map<string, HTMLCanvasElement>();
 
 /**
- * Procedural generation of authentic retro Doom 2 textures
+ * Canonical Mode 8 wall/sky/block texture generator (parity with Three.js WebGL & Compiled HTML)
  */
-export function getDoomTextureCanvas(name: string, frameTime: number = 0): HTMLCanvasElement {
-  // If animated texture (SLIME01, COMP2, SWITCH1/2), append frame cycle
-  const isAnimated = name === "SLIME01" || name === "COMP2" || name === "FIREWALL";
+export function getDoomTextureCanvas(rawName: string, frameTime: number = 0): HTMLCanvasElement {
+  const { canonical, meta } = resolveCanonicalTextureName(rawName, "STUD_BLUE");
+  const isAnimated =
+    Boolean(meta.animatedScroll) || canonical === "SLIME01" || canonical === "COMP2" || canonical === "FIREWALL";
   const animFrame = isAnimated ? Math.floor(frameTime * 4) % 4 : 0;
-  const cacheKey = isAnimated ? `${name}_${animFrame}` : name;
+  const cacheKey = isAnimated ? `${canonical}_${animFrame}` : canonical;
 
   const cached = textureCanvasCache.get(cacheKey);
   if (cached) return cached;
 
   const canvas = document.createElement("canvas");
-  const meta = DOOM_WALL_TEXTURES.find((t) => t.name === name);
-  const width = meta ? meta.width : 128;
-  const height = meta ? meta.height : 128;
+  const width = meta.width || 128;
+  const height = meta.height || 128;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
 
-  // Render specific texture visuals
-  switch (name) {
-    case "STARTAN3": {
-      // Classic tan tech panels
-      ctx.fillStyle = "#8c7a5e";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#a39072";
-      ctx.fillRect(4, 4, width - 8, height / 2 - 6);
-      ctx.fillRect(4, height / 2 + 2, width - 8, height / 2 - 6);
-      ctx.fillStyle = "#4a3e2d";
-      for (let x = 12; x < width; x += 28) {
-        ctx.fillRect(x, 8, 3, 3);
-        ctx.fillRect(x, height / 2 - 6, 3, 3);
-        ctx.fillRect(x, height / 2 + 6, 3, 3);
-        ctx.fillRect(x, height - 10, 3, 3);
-      }
-      ctx.strokeStyle = "#2e2417";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(2, 2, width - 4, height - 4);
-      ctx.beginPath();
-      ctx.moveTo(0, height / 2);
-      ctx.lineTo(width, height / 2);
-      ctx.stroke();
-      break;
-    }
-    case "BROWN144": {
-      // Brown heavy brickwork
-      ctx.fillStyle = "#4e3626";
-      ctx.fillRect(0, 0, width, height);
-      const rows = 8;
-      const rowH = height / rows;
-      for (let r = 0; r < rows; r++) {
-        const offset = (r % 2) * 24;
-        for (let x = -24; x < width + 24; x += 48) {
-          ctx.fillStyle = (r + x) % 3 === 0 ? "#674934" : "#5a3f2c";
-          ctx.fillRect(x + offset + 2, r * rowH + 2, 44, rowH - 4);
-          ctx.fillStyle = "#2d1c12";
-          ctx.fillRect(x + offset + 2, r * rowH + rowH - 2, 44, 2);
-        }
-      }
-      break;
-    }
-    case "TEKGREN2": {
-      // Green tech wall with computer slots
-      ctx.fillStyle = "#1e3a27";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#2a5237";
-      ctx.fillRect(6, 6, width - 12, height - 12);
-      ctx.fillStyle = "#0f1f14";
-      for (let y = 16; y < height - 16; y += 8) {
-        ctx.fillRect(16, y, width - 32, 4);
-      }
-      ctx.fillStyle = "#22c55e";
-      ctx.fillRect(20, height - 24, 6, 6);
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(32, height - 24, 6, 6);
-      ctx.fillStyle = "#eab308";
-      ctx.fillRect(44, height - 24, 6, 6);
-      break;
-    }
-    case "COMP2": {
-      // Computer mainframe console (animated)
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(0, 0, width, height);
-      // Screen 1
-      ctx.fillStyle = "#0284c7";
-      ctx.fillRect(12, 12, 48, 40);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillRect(16, 20, (animFrame % 2 === 0 ? 36 : 28), 4);
-      ctx.fillRect(16, 28, (animFrame >= 2 ? 34 : 20), 4);
-      ctx.fillRect(16, 36, 40, 4);
-      // Screen 2
-      ctx.fillStyle = "#052e16";
-      ctx.fillRect(68, 12, 48, 40);
-      ctx.fillStyle = "#22c55e";
-      ctx.fillRect(72, 24, 40, 3);
-      ctx.fillRect(72, 32, (animFrame % 3 === 0 ? 38 : 24), 3);
-      // Server card slots & blinking LEDs
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(12, 64, width - 24, 52);
-      for (let x = 16; x < width - 20; x += 12) {
-        const isBlinking = ((x / 12 + animFrame) % 3 === 0);
-        ctx.fillStyle = isBlinking ? "#10b981" : "#f43f5e";
-        ctx.fillRect(x, 72, 6, 3);
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(x, 82, 8, 24);
-      }
-      break;
-    }
-    case "BRICK1": {
-      // Red gothic castle brick
-      ctx.fillStyle = "#5c1d15";
-      ctx.fillRect(0, 0, width, height);
-      const rows = 10;
-      const rowH = height / rows;
-      for (let r = 0; r < rows; r++) {
-        const offset = (r % 2) * 20;
-        for (let x = -20; x < width + 20; x += 40) {
-          ctx.fillStyle = (r + x) % 2 === 0 ? "#7f2b20" : "#993527";
-          ctx.fillRect(x + offset + 2, r * rowH + 2, 36, rowH - 3);
-        }
-      }
-      break;
-    }
-    case "MARBFAC": {
-      // Marble gargoyle face
-      ctx.fillStyle = "#1e382b";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#2e5944";
-      ctx.fillRect(8, 8, width - 16, height - 16);
-      ctx.fillStyle = "#112219";
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2 - 10, 24, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(width / 2 - 14, height / 2 - 14, 8, 6);
-      ctx.fillRect(width / 2 + 6, height / 2 - 14, 8, 6);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(width / 2 - 8, height / 2 + 6, 4, 10);
-      ctx.fillRect(width / 2 + 4, height / 2 + 6, 4, 10);
-      break;
-    }
-    case "STONE2": {
-      // Dungeon ashlar stone
-      ctx.fillStyle = "#3f3f46";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#52525b";
-      ctx.fillRect(4, 4, width / 2 - 6, height / 2 - 6);
-      ctx.fillRect(width / 2 + 2, 4, width / 2 - 6, height / 2 - 6);
-      ctx.fillRect(4, height / 2 + 2, width / 2 - 6, height / 2 - 6);
-      ctx.fillRect(width / 2 + 2, height / 2 + 2, width / 2 - 6, height / 2 - 6);
-      ctx.strokeStyle = "#18181b";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(0, 0, width, height);
-      break;
-    }
-    case "SHAWN2": {
-      // Aluminum armor plate
-      ctx.fillStyle = "#71717a";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#a1a1aa";
-      ctx.fillRect(6, 6, width - 12, height - 12);
-      ctx.fillStyle = "#3f3f46";
-      for (let x = 12; x < width; x += 32) {
-        for (let y = 12; y < height; y += 32) {
-          ctx.fillRect(x, y, 4, 4);
-        }
-      }
-      break;
-    }
-    case "DOOR3": {
-      // Blast door with yellow/black hazard stripes
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(0, 0, width, height);
-      for (let x = 0; x < width; x += 16) {
-        ctx.fillStyle = (x / 16) % 2 === 0 ? "#eab308" : "#0f172a";
-        ctx.fillRect(x, 6, 16, 16);
-      }
-      ctx.fillStyle = "#64748b";
-      ctx.fillRect(10, 28, width - 20, height - 34);
-      ctx.fillStyle = "#0f172a";
-      ctx.fillRect(width / 2 - 12, height / 2 - 12, 24, 24);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillRect(width / 2 - 6, height / 2 - 6, 12, 12);
-      break;
-    }
-    case "STEP1": {
-      // Stair riser metal plate with rivets
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(2, 2, width - 4, height - 4);
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(0, height - 3, width, 3);
-      ctx.fillStyle = "#94a3b8";
-      for (let x = 8; x < width; x += 18) {
-        ctx.fillRect(x, height / 2 - 2, 4, 4);
-      }
-      break;
-    }
-    case "STEP2": {
-      // Narrow stair step
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(2, 2, width - 4, height - 4);
-      break;
-    }
-    case "SLIME01": {
-      // Animated falling toxic sludge
-      ctx.fillStyle = "#365314";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#65a30d";
-      const yOffset = (animFrame * 16) % 32;
-      for (let x = 0; x < width; x += 12) {
-        const streamH = height * (0.6 + Math.sin((x + yOffset) * 0.4) * 0.35);
-        ctx.fillRect(x, 0, 8, streamH);
-      }
-      ctx.fillStyle = "#84cc16";
-      for (let i = 0; i < 6; i++) {
-        ctx.fillRect((i * 22 + animFrame * 7) % width, (i * 20 + animFrame * 12) % height, 4, 4);
-      }
-      break;
-    }
-    case "FIREWALL": {
-      // Demonic hell fire and flesh wall
-      ctx.fillStyle = "#450a0a";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#dc2626";
-      for (let y = 0; y < height; y += 16) {
-        for (let x = 0; x < width; x += 16) {
-          const r = 4 + Math.sin(x * 0.2 + y * 0.3 + animFrame) * 3;
-          ctx.beginPath();
-          ctx.arc(x + 8, y + 8, Math.max(1, r), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      break;
-    }
-    case "WOOD1": {
-      // Wood planking
-      ctx.fillStyle = "#78350f";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#92400e";
-      for (let y = 0; y < height; y += 32) {
-        ctx.fillRect(0, y + 2, width, 28);
-        ctx.fillStyle = "#451a03";
-        ctx.fillRect(0, y + 30, width, 2);
-      }
-      break;
-    }
-    case "METAL1": {
-      // Corrugated steel
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, width, height);
-      for (let x = 0; x < width; x += 8) {
-        ctx.fillStyle = (x / 8) % 2 === 0 ? "#64748b" : "#1e293b";
-        ctx.fillRect(x, 0, 4, height);
-      }
-      break;
-    }
-    case "SWITCH1": {
-      // Wall switch OFF
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(width / 2 - 20, height / 2 - 20, 40, 40);
-      ctx.fillStyle = "#ef4444"; // Red LED
-      ctx.fillRect(width / 2 - 12, height / 2 - 16, 24, 12);
-      break;
-    }
-    case "SWITCH2": {
-      // Wall switch ON
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(width / 2 - 20, height / 2 - 20, 40, 40);
-      ctx.fillStyle = "#22c55e"; // Green LED
-      ctx.fillRect(width / 2 - 12, height / 2 + 4, 24, 12);
-      break;
-    }
-    case "SKY1": {
-      // Phobos alien mountain sky
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
-      skyGrad.addColorStop(0, "#1e293b");
-      skyGrad.addColorStop(0.6, "#334155");
-      skyGrad.addColorStop(1, "#475569");
-      ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#0f172a";
-      ctx.beginPath();
-      ctx.moveTo(0, height);
-      for (let x = 0; x <= width; x += 16) {
-        const y = height - 20 - Math.sin(x * 0.05) * 25 - Math.cos(x * 0.12) * 15;
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(width, height);
-      ctx.closePath();
-      ctx.fill();
-      break;
-    }
-    case "SKY2": {
-      // Deimos reddish blood sky
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
-      skyGrad.addColorStop(0, "#450a0a");
-      skyGrad.addColorStop(0.7, "#991b1b");
-      skyGrad.addColorStop(1, "#7f1d1d");
-      ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#260505";
-      ctx.beginPath();
-      ctx.moveTo(0, height);
-      for (let x = 0; x <= width; x += 16) {
-        const y = height - 28 - Math.sin(x * 0.08) * 30;
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(width, height);
-      ctx.closePath();
-      ctx.fill();
-      break;
-    }
-    case "SKY3": {
-      // Hell burning fire sky
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
-      skyGrad.addColorStop(0, "#7f1d1d");
-      skyGrad.addColorStop(0.6, "#ea580c");
-      skyGrad.addColorStop(1, "#f97316");
-      ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, width, height);
-      break;
-    }
-    default: {
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(4, 4, width - 8, height - 8);
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "bold 13px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(name.substring(0, 8), width / 2, height / 2 + 5);
-      break;
-    }
+  if (width !== height) {
+    ctx.save();
+    ctx.scale(1, height / width);
+    paintMode8TextureToCanvas(canonical, ctx, width, frameTime);
+    ctx.restore();
+  } else {
+    paintMode8TextureToCanvas(canonical, ctx, width, frameTime);
   }
 
   textureCanvasCache.set(cacheKey, canvas);
@@ -452,12 +148,14 @@ export function getDoomTextureCanvas(name: string, frameTime: number = 0): HTMLC
 const flatCanvasCache = new Map<string, HTMLCanvasElement>();
 
 /**
- * Procedural generation of authentic Doom flats (floors and ceilings)
+ * Canonical Mode 8 floor/ceiling/liquid flat generator (parity with Three.js WebGL & Compiled HTML)
  */
-export function getDoomFlatCanvas(name: string, frameTime: number = 0): HTMLCanvasElement {
-  const isAnimated = name === "NUKAGE" || name === "LAVA" || name === "BLOOD1" || name === "WATER";
+export function getDoomFlatCanvas(rawName: string, frameTime: number = 0): HTMLCanvasElement {
+  const { canonical, meta } = resolveCanonicalTextureName(rawName, "STUD_FLOOR_BLUE");
+  const isAnimated =
+    Boolean(meta.animatedScroll) || canonical === "NUKAGE" || canonical === "LAVA" || canonical === "BLOOD1" || canonical === "WATER";
   const animFrame = isAnimated ? Math.floor(frameTime * 4) % 4 : 0;
-  const cacheKey = isAnimated ? `${name}_${animFrame}` : name;
+  const cacheKey = isAnimated ? `${canonical}_${animFrame}` : canonical;
 
   const cached = flatCanvasCache.get(cacheKey);
   if (cached) return cached;
@@ -468,129 +166,7 @@ export function getDoomFlatCanvas(name: string, frameTime: number = 0): HTMLCanv
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
 
-  switch (name) {
-    case "NUKAGE": {
-      // Radioactive bubbling slime
-      ctx.fillStyle = "#15803d";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#4ade80";
-      for (let i = 0; i < 8; i++) {
-        const bx = (i * 19 + animFrame * 7) % 64;
-        const by = (i * 13 + animFrame * 11) % 64;
-        const br = 3 + Math.sin(animFrame + i) * 2;
-        ctx.beginPath();
-        ctx.arc(bx, by, Math.max(1.5, br), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#86efac";
-      for (let i = 0; i < 4; i++) {
-        const bx = (i * 29 + animFrame * 5) % 64;
-        const by = (i * 23 + animFrame * 9) % 64;
-        ctx.fillRect(bx, by, 2, 2);
-      }
-      break;
-    }
-    case "LAVA": {
-      // Flowing hell magma
-      ctx.fillStyle = "#991b1b";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#ea580c";
-      for (let y = 0; y < 64; y += 8) {
-        for (let x = 0; x < 64; x += 8) {
-          if ((x + y + animFrame * 4) % 16 === 0) {
-            ctx.fillRect(x, y, 8, 8);
-          }
-        }
-      }
-      ctx.fillStyle = "#facc15";
-      for (let i = 0; i < 6; i++) {
-        const lx = (i * 17 + animFrame * 3) % 64;
-        const ly = (i * 21 + animFrame * 5) % 64;
-        ctx.fillRect(lx, ly, 4, 3);
-      }
-      break;
-    }
-    case "BLOOD1": {
-      // Crimson sacrificial blood
-      ctx.fillStyle = "#4c0519";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#881337";
-      for (let i = 0; i < 6; i++) {
-        ctx.fillRect((i * 15) % 64, (i * 23) % 64, 18, 12);
-      }
-      ctx.fillStyle = "#be123c";
-      ctx.fillRect(16, 20, 10, 6);
-      ctx.fillRect(40, 42, 8, 5);
-      break;
-    }
-    case "WATER": {
-      // Underground clear water
-      ctx.fillStyle = "#0c4a6e";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#0284c7";
-      for (let y = 0; y < 64; y += 16) {
-        const shift = Math.sin((y + animFrame * 4) * 0.2) * 6;
-        ctx.fillRect(0, y + shift, 64, 4);
-      }
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillRect(20, 24, 6, 2);
-      ctx.fillRect(44, 48, 8, 2);
-      break;
-    }
-    case "STEP": {
-      // Diamond plate steel tread
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#475569";
-      for (let y = 0; y < 64; y += 8) {
-        for (let x = 0; x < 64; x += 8) {
-          if ((x + y) % 16 === 0) {
-            ctx.fillRect(x + 2, y + 2, 4, 2);
-            ctx.fillRect(x + 3, y + 4, 2, 2);
-          }
-        }
-      }
-      break;
-    }
-    case "TLITE6_5": {
-      // Ceiling light fixture
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(8, 8, 48, 48);
-      ctx.fillStyle = "#e2e8f0";
-      ctx.fillRect(14, 14, 36, 36);
-      break;
-    }
-    case "CEIL3_5": {
-      // Square acoustic ceiling tiles
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#475569";
-      ctx.fillRect(2, 2, 28, 28);
-      ctx.fillRect(34, 2, 28, 28);
-      ctx.fillRect(2, 34, 28, 28);
-      ctx.fillRect(34, 34, 28, 28);
-      ctx.fillStyle = "#1e293b";
-      ctx.strokeRect(0, 0, 64, 64);
-      break;
-    }
-    default: {
-      // FLOOR4_8 / Concrete pavers
-      ctx.fillStyle = "#57534e";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = "#6b6255";
-      ctx.fillRect(2, 2, 28, 28);
-      ctx.fillRect(34, 2, 28, 28);
-      ctx.fillRect(2, 34, 28, 28);
-      ctx.fillRect(34, 34, 28, 28);
-      ctx.fillStyle = "#292524";
-      ctx.fillRect(0, 30, 64, 4);
-      ctx.fillRect(30, 0, 4, 64);
-      break;
-    }
-  }
-
+  paintMode8TextureToCanvas(canonical, ctx, 64, frameTime);
   flatCanvasCache.set(cacheKey, canvas);
   return canvas;
 }
@@ -603,20 +179,26 @@ class DoomAudioEngine {
   private ctx: AudioContext | null = null;
 
   private getContext(): AudioContext | null {
-    if (!this.ctx && typeof window !== "undefined") {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AudioCtx) this.ctx = new AudioCtx();
+    try {
+      if (!this.ctx && typeof window !== "undefined") {
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) this.ctx = new AudioCtx();
+      }
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+      return this.ctx;
+    } catch {
+      this.ctx = null;
+      return null;
     }
-    if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume();
-    }
-    return this.ctx;
   }
 
   public playShotgun() {
-    const actx = this.getContext();
-    if (!actx) return;
-    const t = actx.currentTime;
+    try {
+      const actx = this.getContext();
+      if (!actx) return;
+      const t = actx.currentTime;
 
     // 1. Noise blast
     const bufferSize = actx.sampleRate * 0.35;
@@ -656,10 +238,17 @@ class DoomAudioEngine {
     osc.start(t);
     osc.stop(t + 0.35);
 
-    // 3. Pump action click
-    setTimeout(() => {
-      this.playClick(240, 0.06);
-    }, 450);
+      // 3. Pump action click
+      setTimeout(() => {
+        try {
+          this.playClick(240, 0.06);
+        } catch {
+          // Ignore audio playback errors
+        }
+      }, 450);
+    } catch {
+      // Ignore Web Audio failures
+    }
   }
 
   public playDoorOpen() {
@@ -831,6 +420,14 @@ class DoomAudioEngine {
     osc.stop(t + 0.52);
   }
 
+  public playPlayerPain() {
+    this.playPain();
+  }
+
+  public playMonsterDeath() {
+    this.playMonsterGrowl();
+  }
+
   private playClick(freq: number, duration: number) {
     const actx = this.getContext();
     if (!actx) return;
@@ -874,6 +471,7 @@ export interface DoomLiftState {
 
 export class DoomWorldStateManager {
   public doors = new Map<number, DoomDoorState>();
+  public doorOffsets = new Map<number, number>();
   public lifts = new Map<number, DoomLiftState>();
   public muzzleFlashFrames = 0;
   public screenDamageFlash = 0; // alpha of red damage flash
@@ -884,6 +482,7 @@ export class DoomWorldStateManager {
   public armor = 50;
   public ammo = 50;
   public maxAmmo = 200;
+  public kills = 0;
   public keys = { blue: false, red: false, yellow: false };
   public lastPainTime = 0;
   public lastGrinTime = 0;
@@ -962,6 +561,8 @@ export class DoomWorldStateManager {
           door.state = "closed";
         }
       }
+      const span = Math.max(0.1, door.openCeil - door.baseCeil);
+      this.doorOffsets.set(door.sectorId, Math.max(0, Math.min(1, (sec.ceilHeight - door.baseCeil) / span)));
     }
 
     // Update active lifts
@@ -1191,9 +792,12 @@ export function generateDoomStaircase(
   stepLength: number,
   baseFloorHeight: number,
   stepHeightDelta: number,
-  baseCeilingHeight: number = 1.6,
+  baseCeilingHeight: number = 1.8,
   stairTexture: string = "STEP1",
-  flatTexture: string = "STEP"
+  flatTexture: string = "STEP",
+  startSectorId: number = 0,
+  endSectorId?: number,
+  baseSectorId?: number
 ): {
   sectors: DivDoomSector[];
   linedefs: DivDoomLinedef[];
@@ -1209,7 +813,7 @@ export function generateDoomStaircase(
 
   const halfW = stepWidth / 2;
   let currentFloor = baseFloorHeight;
-  const sectorBaseId = Math.floor(100 + Math.random() * 800);
+  const sectorBaseId = baseSectorId ?? Math.floor(100 + Math.random() * 800);
 
   for (let i = 0; i < stepCount; i++) {
     const secId = sectorBaseId + i;
@@ -1218,10 +822,10 @@ export function generateDoomStaircase(
     sectors.push({
       id: secId,
       floorHeight: Number(currentFloor.toFixed(2)),
-      ceilHeight: baseCeilingHeight,
+      ceilHeight: Math.max(baseCeilingHeight, currentFloor + 1.2),
       floorTexture: flatTexture,
       ceilTexture: "CEIL3_5",
-      lightLevel: 180 + i * 5,
+      lightLevel: Math.min(255, 190 + i * 6),
     });
 
     const stepCenterStartX = startX + nx * (i * stepLength);
@@ -1229,12 +833,13 @@ export function generateDoomStaircase(
     const stepCenterEndX = startX + nx * ((i + 1) * stepLength);
     const stepCenterEndY = startY + ny * ((i + 1) * stepLength);
 
-    const v1 = { x: stepCenterStartX - px * halfW, y: stepCenterStartY - py * halfW };
-    const v2 = { x: stepCenterStartX + px * halfW, y: stepCenterStartY + py * halfW };
-    const v3 = { x: stepCenterEndX + px * halfW, y: stepCenterEndY + py * halfW };
-    const v4 = { x: stepCenterEndX - px * halfW, y: stepCenterEndY - py * halfW };
+    const v1 = { x: Number((stepCenterStartX - px * halfW).toFixed(2)), y: Number((stepCenterStartY - py * halfW).toFixed(2)) };
+    const v2 = { x: Number((stepCenterStartX + px * halfW).toFixed(2)), y: Number((stepCenterStartY + py * halfW).toFixed(2)) };
+    const v3 = { x: Number((stepCenterEndX + px * halfW).toFixed(2)), y: Number((stepCenterEndY + py * halfW).toFixed(2)) };
+    const v4 = { x: Number((stepCenterEndX - px * halfW).toFixed(2)), y: Number((stepCenterEndY - py * halfW).toFixed(2)) };
 
-    const prevSecId = i === 0 ? 0 : sectorBaseId + i - 1;
+    const prevSecId = i === 0 ? startSectorId : sectorBaseId + i - 1;
+    // Front step riser portal
     linedefs.push({
       id: `stair_${secId}_front`,
       x1: v1.x,
@@ -1248,6 +853,7 @@ export function generateDoomStaircase(
       blocking: false,
     });
 
+    // Left flank (2-sided against surrounding room so step sides show risers from outside!)
     linedefs.push({
       id: `stair_${secId}_left`,
       x1: v1.x,
@@ -1255,32 +861,35 @@ export function generateDoomStaircase(
       x2: v4.x,
       y2: v4.y,
       frontSectorId: secId,
-      isTwoSided: false,
-      middleTexture: "BROWN144",
-      blocking: true,
+      backSectorId: startSectorId,
+      isTwoSided: true,
+      lowerTexture: stairTexture,
+      blocking: false,
     });
 
+    // Right flank (clockwise winding v3->v2 points inward normal toward step)
     linedefs.push({
       id: `stair_${secId}_right`,
-      x1: v2.x,
-      y1: v2.y,
-      x2: v3.x,
-      y2: v3.y,
+      x1: v3.x,
+      y1: v3.y,
+      x2: v2.x,
+      y2: v2.y,
       frontSectorId: secId,
-      isTwoSided: false,
-      middleTexture: "BROWN144",
-      blocking: true,
+      backSectorId: startSectorId,
+      isTwoSided: true,
+      lowerTexture: stairTexture,
+      blocking: false,
     });
 
     if (i === stepCount - 1) {
       linedefs.push({
         id: `stair_${secId}_back`,
-        x1: v3.x,
-        y1: v3.y,
-        x2: v4.x,
-        y2: v4.y,
+        x1: v4.x,
+        y1: v4.y,
+        x2: v3.x,
+        y2: v3.y,
         frontSectorId: secId,
-        backSectorId: 1,
+        backSectorId: endSectorId ?? startSectorId,
         isTwoSided: true,
         lowerTexture: stairTexture,
         blocking: false,
@@ -1536,52 +1145,55 @@ export function loadDoomE1M1Map(): {
   ];
 
   const linedefs: DivDoomLinedef[] = [
-    // --- Sector 0: Starting Room Outer Walls ---
+    // --- Sector 0: Starting Room Outer Walls (clockwise winding = inward normals!) ---
     { id: "e1_w0", x1: 1.0, y1: 1.0, x2: 6.0, y2: 1.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_w1", x1: 1.0, y1: 1.0, x2: 1.0, y2: 6.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_w2", x1: 1.0, y1: 6.0, x2: 6.0, y2: 6.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_w1", x1: 1.0, y1: 6.0, x2: 1.0, y2: 1.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_w2", x1: 6.0, y1: 6.0, x2: 1.0, y2: 6.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
     // Armor Pedestal Portal (Sector 0 to Sector 1)
     { id: "e1_w3", x1: 1.5, y1: 2.0, x2: 1.5, y2: 5.0, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "e1_w4", x1: 1.5, y1: 2.0, x2: 1.0, y2: 2.0, frontSectorId: 1, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_w5", x1: 1.5, y1: 5.0, x2: 1.0, y2: 5.0, frontSectorId: 1, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_w4", x1: 1.0, y1: 2.0, x2: 1.5, y2: 2.0, frontSectorId: 1, backSectorId: 0, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
+    { id: "e1_w5", x1: 1.5, y1: 5.0, x2: 1.0, y2: 5.0, frontSectorId: 1, backSectorId: 0, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
 
-    // Tech Pillars in Sector 0
-    { id: "e1_pil1_1", x1: 3.0, y1: 2.5, x2: 3.6, y2: 2.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil1_2", x1: 3.6, y1: 2.5, x2: 3.6, y2: 3.1, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil1_3", x1: 3.6, y1: 3.1, x2: 3.0, y2: 3.1, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil1_4", x1: 3.0, y1: 3.1, x2: 3.0, y2: 2.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    // Tech Pillars in Sector 0 (CCW perimeter = outward facing normals)
+    { id: "e1_pil1_1", x1: 3.6, y1: 2.5, x2: 3.0, y2: 2.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil1_2", x1: 3.6, y1: 3.1, x2: 3.6, y2: 2.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil1_3", x1: 3.0, y1: 3.1, x2: 3.6, y2: 3.1, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil1_4", x1: 3.0, y1: 2.5, x2: 3.0, y2: 3.1, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
 
-    { id: "e1_pil2_1", x1: 3.0, y1: 3.9, x2: 3.6, y2: 3.9, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil2_2", x1: 3.6, y1: 3.9, x2: 3.6, y2: 4.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil2_3", x1: 3.6, y1: 4.5, x2: 3.0, y2: 4.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "e1_pil2_4", x1: 3.0, y1: 4.5, x2: 3.0, y2: 3.9, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil2_1", x1: 3.6, y1: 3.9, x2: 3.0, y2: 3.9, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil2_2", x1: 3.6, y1: 4.5, x2: 3.6, y2: 3.9, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil2_3", x1: 3.0, y1: 4.5, x2: 3.6, y2: 4.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
+    { id: "e1_pil2_4", x1: 3.0, y1: 3.9, x2: 3.0, y2: 4.5, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
 
     // Main Door Portal (Sector 0 to Sector 2 to Sector 3)
-    { id: "e1_door_f", x1: 6.0, y1: 3.0, x2: 6.0, y2: 4.0, frontSectorId: 0, backSectorId: 2, isTwoSided: true, upperTexture: "DOOR3", middleTexture: "DOOR3", blocking: false },
+    { id: "e1_door_f", x1: 6.0, y1: 3.0, x2: 6.0, y2: 4.0, frontSectorId: 0, backSectorId: 2, isTwoSided: true, upperTexture: "DOOR3", blocking: false },
     { id: "e1_wall_rf1", x1: 6.0, y1: 1.0, x2: 6.0, y2: 3.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
     { id: "e1_wall_rf2", x1: 6.0, y1: 4.0, x2: 6.0, y2: 6.0, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
 
     { id: "e1_door_b", x1: 6.8, y1: 3.0, x2: 6.8, y2: 4.0, frontSectorId: 2, backSectorId: 3, isTwoSided: true, upperTexture: "DOOR3", blocking: false },
     { id: "e1_door_side1", x1: 6.0, y1: 3.0, x2: 6.8, y2: 3.0, frontSectorId: 2, isTwoSided: false, middleTexture: "DOOR3", blocking: true },
-    { id: "e1_door_side2", x1: 6.0, y1: 4.0, x2: 6.8, y2: 4.0, frontSectorId: 2, isTwoSided: false, middleTexture: "DOOR3", blocking: true },
+    { id: "e1_door_side2", x1: 6.8, y1: 4.0, x2: 6.0, y2: 4.0, frontSectorId: 2, isTwoSided: false, middleTexture: "DOOR3", blocking: true },
 
     // --- Sector 3: Computer Terminal Room ---
     { id: "e1_c0", x1: 6.8, y1: 1.5, x2: 12.0, y2: 1.5, frontSectorId: 3, isTwoSided: false, middleTexture: "COMP2", blocking: true },
-    { id: "e1_c1", x1: 6.8, y1: 1.5, x2: 6.8, y2: 3.0, frontSectorId: 3, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_c2", x1: 6.8, y1: 4.0, x2: 6.8, y2: 6.5, frontSectorId: 3, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_c3", x1: 6.8, y1: 6.5, x2: 12.0, y2: 6.5, frontSectorId: 3, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
+    { id: "e1_c1", x1: 6.8, y1: 3.0, x2: 6.8, y2: 1.5, frontSectorId: 3, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_c2", x1: 6.8, y1: 6.5, x2: 6.8, y2: 4.0, frontSectorId: 3, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_c3_l", x1: 8.5, y1: 6.5, x2: 6.8, y2: 6.5, frontSectorId: 3, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
+    { id: "e1_c3_r", x1: 12.0, y1: 6.5, x2: 11.0, y2: 6.5, frontSectorId: 3, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
 
     // Balcony Stair Steps & Portal (Sector 3 to Sector 4)
-    { id: "e1_balc1", x1: 10.0, y1: 2.0, x2: 10.0, y2: 6.0, frontSectorId: 3, backSectorId: 4, isTwoSided: true, lowerTexture: "STEP1", upperTexture: "STARTAN3", blocking: false },
+    { id: "e1_balc1", x1: 10.0, y1: 1.5, x2: 10.0, y2: 6.5, frontSectorId: 3, backSectorId: 4, isTwoSided: true, lowerTexture: "STEP1", upperTexture: "STARTAN3", blocking: false },
     { id: "e1_balc_back", x1: 12.0, y1: 1.5, x2: 12.0, y2: 6.5, frontSectorId: 4, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
 
     // Window opening onto Nukage Slime Courtyard (Sector 3 to Sector 5)
-    { id: "e1_win1", x1: 8.5, y1: 6.5, x2: 11.0, y2: 6.5, frontSectorId: 3, backSectorId: 5, isTwoSided: true, upperTexture: "STARTAN3", lowerTexture: "STEP1", blocking: true },
+    { id: "e1_win1", x1: 11.0, y1: 6.5, x2: 8.5, y2: 6.5, frontSectorId: 3, backSectorId: 5, isTwoSided: true, upperTexture: "STARTAN3", lowerTexture: "STEP1", blocking: true },
 
     // --- Sector 5 & 6: Toxic Nukage Courtyard ---
-    { id: "e1_nuk1", x1: 7.0, y1: 6.5, x2: 7.0, y2: 12.0, frontSectorId: 5, isTwoSided: false, middleTexture: "SLIME01", blocking: true },
-    { id: "e1_nuk2", x1: 7.0, y1: 12.0, x2: 13.0, y2: 12.0, frontSectorId: 5, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "e1_nuk3", x1: 13.0, y1: 12.0, x2: 13.0, y2: 6.5, frontSectorId: 5, isTwoSided: false, middleTexture: "SLIME01", blocking: true },
+    { id: "e1_nuk0_l", x1: 7.0, y1: 6.5, x2: 8.5, y2: 6.5, frontSectorId: 5, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_nuk0_r", x1: 11.0, y1: 6.5, x2: 13.0, y2: 6.5, frontSectorId: 5, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_nuk1", x1: 7.0, y1: 12.0, x2: 7.0, y2: 6.5, frontSectorId: 5, isTwoSided: false, middleTexture: "SLIME01", blocking: true },
+    { id: "e1_nuk2", x1: 13.0, y1: 12.0, x2: 7.0, y2: 12.0, frontSectorId: 5, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
+    { id: "e1_nuk3", x1: 13.0, y1: 6.5, x2: 13.0, y2: 12.0, frontSectorId: 5, isTwoSided: false, middleTexture: "SLIME01", blocking: true },
 
     // Walkway across the acid
     { id: "e1_walk1", x1: 9.0, y1: 6.5, x2: 9.0, y2: 11.0, frontSectorId: 5, backSectorId: 6, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
@@ -1614,6 +1226,558 @@ export function loadDoomE1M1Map(): {
 // MAIN HTML5 DOOM POLYGON SECTOR & PORTAL RENDERER
 // =============================================================================
 
+function getFlatDominantRgb(flatName: string, now: number): { r: number; g: number; b: number; accent: string; emissive?: boolean } {
+  switch (flatName) {
+    case "NUKAGE": {
+      const pulse = 0.85 + Math.sin(now * 4) * 0.15;
+      return { r: Math.round(34 * pulse), g: Math.round(197 * pulse), b: Math.round(94 * pulse), accent: "#86efac", emissive: true };
+    }
+    case "LAVA": {
+      const pulse = 0.85 + Math.sin(now * 5) * 0.15;
+      return { r: Math.round(234 * pulse), g: Math.round(88 * pulse), b: Math.round(12 * pulse), accent: "#fde047", emissive: true };
+    }
+    case "BLOOD1":
+      return { r: 127, g: 29, b: 29, accent: "#fb7185" };
+    case "WATER":
+      return { r: 2, g: 132, b: 199, accent: "#7dd3fc" };
+    case "STEP":
+      return { r: 71, g: 85, b: 105, accent: "#cbd5e1" };
+    case "GRASS":
+      return { r: 77, g: 124, b: 15, accent: "#a3e635" };
+    case "GRASS_ROBLOX":
+      return { r: 34, g: 197, b: 94, accent: "#86efac" };
+    case "CRATOP2":
+      return { r: 146, g: 64, b: 14, accent: "#fbbf24" };
+    case "WOOD_ROBLOX":
+      return { r: 217, g: 119, b: 6, accent: "#fde68a" };
+    case "GATE1":
+      return { r: 126, g: 34, b: 206, accent: "#e879f9", emissive: true };
+    case "RROCK01":
+      return { r: 127, g: 29, b: 29, accent: "#f87171" };
+    case "FLAT10":
+      return { r: 63, g: 63, b: 70, accent: "#a1a1aa" };
+    case "STUD_FLOOR_BLUE":
+      return { r: 2, g: 132, b: 199, accent: "#7dd3fc" };
+    case "STUD_FLOOR_RED":
+      return { r: 220, g: 38, b: 38, accent: "#fca5a5" };
+    case "STUD_FLOOR_GOLD":
+      return { r: 234, g: 179, b: 8, accent: "#fef08a" };
+    case "STUD_FLOOR_GREEN":
+      return { r: 22, g: 163, b: 74, accent: "#86efac" };
+    case "STUD_FLOOR_WHITE":
+      return { r: 203, g: 213, b: 225, accent: "#ffffff" };
+    case "NEON_FLOOR":
+      return { r: 30, g: 27, b: 75, accent: "#22d3ee", emissive: true };
+    case "OBBY_FINISH":
+      return { r: 245, g: 158, b: 11, accent: "#fef08a", emissive: true };
+    case "DOJO_MAT":
+      return { r: 180, g: 83, b: 9, accent: "#fde68a" };
+    case "CEIL3_5":
+      return { r: 51, g: 65, b: 85, accent: "#94a3b8" };
+    case "TLITE6_5":
+      return { r: 203, g: 213, b: 225, accent: "#ffffff" };
+    default:
+      return { r: 92, g: 84, b: 74, accent: "#a8a29e" };
+  }
+}
+
+interface Pt2D {
+  x: number;
+  y: number;
+}
+
+interface SectorGeometry {
+  outerLoops: Pt2D[][];
+  holeLoops: Pt2D[][];
+  area: number;
+  triangles: [Pt2D, Pt2D, Pt2D][];
+}
+
+function isPointInPoly2D(px: number, py: number, poly: Pt2D[]): boolean {
+  if (poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    const intersect = yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function signedPolyArea(poly: Pt2D[]): number {
+  let sum = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    sum += (poly[j].x - poly[i].x) * (poly[j].y + poly[i].y);
+  }
+  return sum * 0.5;
+}
+
+function getInteriorPointForLoop(poly: Pt2D[]): Pt2D {
+  if (poly.length < 3) return poly[0] || { x: 0, y: 0 };
+  const a = poly[0];
+  const b = poly[1];
+  const mx = (a.x + b.x) * 0.5;
+  const my = (a.y + b.y) * 0.5;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const eps = Math.min(0.02, len * 0.1);
+  const p1 = { x: mx - (dy / len) * eps, y: my + (dx / len) * eps };
+  if (isPointInPoly2D(p1.x, p1.y, poly)) return p1;
+  const p2 = { x: mx + (dy / len) * eps, y: my - (dx / len) * eps };
+  if (isPointInPoly2D(p2.x, p2.y, poly)) return p2;
+  return {
+    x: poly.reduce((s, p) => s + p.x, 0) / poly.length,
+    y: poly.reduce((s, p) => s + p.y, 0) / poly.length,
+  };
+}
+
+const sectorGeomCache = new WeakMap<DivDoomLinedef[], { len: number; sig: string; bySector: Map<number, SectorGeometry> }>();
+
+function buildSectorGeometryMap(linedefs: DivDoomLinedef[]): Map<number, SectorGeometry> {
+  const sig = linedefs
+    .map((l) => `${l.x1.toFixed(2)},${l.y1.toFixed(2)}-${l.x2.toFixed(2)},${l.y2.toFixed(2)}:${l.frontSectorId}:${l.backSectorId ?? -1}`)
+    .join("|");
+  const cached = sectorGeomCache.get(linedefs);
+  if (cached && cached.len === linedefs.length && cached.sig === sig) {
+    return cached.bySector;
+  }
+
+  const sectorIds = new Set<number>();
+  for (const l of linedefs) {
+    if (l.frontSectorId !== undefined) sectorIds.add(l.frontSectorId);
+    if (l.backSectorId !== undefined) sectorIds.add(l.backSectorId);
+  }
+
+  const bySector = new Map<number, SectorGeometry>();
+  const keyOf = (x: number, y: number) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
+
+  for (const secId of sectorIds) {
+    const segs = linedefs.filter((l) => l.frontSectorId === secId || l.backSectorId === secId);
+    if (segs.length < 3) continue;
+
+    interface EdgeItem {
+      uKey: string;
+      vKey: string;
+      u: Pt2D;
+      v: Pt2D;
+      used: boolean;
+    }
+
+    const edges: EdgeItem[] = [];
+    const seenPairs = new Set<string>();
+    const adj = new Map<string, number[]>();
+
+    for (const s of segs) {
+      const k1 = keyOf(s.x1, s.y1);
+      const k2 = keyOf(s.x2, s.y2);
+      if (k1 === k2) continue;
+      const pairKey = k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+
+      const idx = edges.length;
+      edges.push({
+        uKey: k1,
+        vKey: k2,
+        u: { x: s.x1, y: s.y1 },
+        v: { x: s.x2, y: s.y2 },
+        used: false,
+      });
+      if (!adj.has(k1)) adj.set(k1, []);
+      if (!adj.has(k2)) adj.set(k2, []);
+      adj.get(k1)!.push(idx);
+      adj.get(k2)!.push(idx);
+    }
+
+    const rawLoops: Pt2D[][] = [];
+    for (let startIdx = 0; startIdx < edges.length; startIdx++) {
+      if (edges[startIdx].used) continue;
+      edges[startIdx].used = true;
+      const loop: Pt2D[] = [edges[startIdx].u];
+      const startKey = edges[startIdx].uKey;
+      let curKey = edges[startIdx].vKey;
+      let curPt = edges[startIdx].v;
+      let prevPt = edges[startIdx].u;
+
+      let safety = 0;
+      while (curKey !== startKey && safety < edges.length + 4) {
+        safety++;
+        loop.push(curPt);
+        const candidates = (adj.get(curKey) || []).filter((ei) => !edges[ei].used);
+        if (candidates.length === 0) break;
+
+        let chosenIdx = candidates[0];
+        if (candidates.length > 1) {
+          const inAngle = Math.atan2(curPt.y - prevPt.y, curPt.x - prevPt.x);
+          let bestTurn = Infinity;
+          for (const ei of candidates) {
+            const e = edges[ei];
+            const nextPt = e.uKey === curKey ? e.v : e.u;
+            const outAngle = Math.atan2(nextPt.y - curPt.y, nextPt.x - curPt.x);
+            let turn = outAngle - inAngle;
+            while (turn <= -Math.PI) turn += Math.PI * 2;
+            while (turn > Math.PI) turn -= Math.PI * 2;
+            if (turn < bestTurn) {
+              bestTurn = turn;
+              chosenIdx = ei;
+            }
+          }
+        }
+
+        const chosen = edges[chosenIdx];
+        chosen.used = true;
+        prevPt = curPt;
+        if (chosen.uKey === curKey) {
+          curKey = chosen.vKey;
+          curPt = chosen.v;
+        } else {
+          curKey = chosen.uKey;
+          curPt = chosen.u;
+        }
+      }
+
+      if (curKey === startKey && loop.length >= 3 && Math.abs(signedPolyArea(loop)) > 1e-4) {
+        rawLoops.push(loop);
+      }
+    }
+
+    if (rawLoops.length === 0) continue;
+
+    // Sort loops from largest |area| to smallest
+    const sortedLoops = rawLoops
+      .map((loop) => ({ loop, absArea: Math.abs(signedPolyArea(loop)), testPt: getInteriorPointForLoop(loop) }))
+      .sort((a, b) => b.absArea - a.absArea);
+
+    const outerIndices: number[] = [];
+    const holeChildren = new Map<number, number[]>();
+    const loopDepth: number[] = new Array(sortedLoops.length).fill(0);
+    const parentIdx: number[] = new Array(sortedLoops.length).fill(-1);
+
+    for (let i = 0; i < sortedLoops.length; i++) {
+      let depth = 0;
+      let directParent = -1;
+      for (let j = 0; j < i; j++) {
+        if (isPointInPoly2D(sortedLoops[i].testPt.x, sortedLoops[i].testPt.y, sortedLoops[j].loop)) {
+          depth++;
+          directParent = j;
+        }
+      }
+      loopDepth[i] = depth;
+      parentIdx[i] = directParent;
+      if (depth % 2 === 0) {
+        outerIndices.push(i);
+        holeChildren.set(i, []);
+      } else if (directParent >= 0 && holeChildren.has(directParent)) {
+        holeChildren.get(directParent)!.push(i);
+      }
+    }
+
+    const outerLoops: Pt2D[][] = [];
+    const holeLoops: Pt2D[][] = [];
+    const triangles: [Pt2D, Pt2D, Pt2D][] = [];
+    let totalArea = 0;
+
+    for (const oi of outerIndices) {
+      const outer = sortedLoops[oi].loop;
+      outerLoops.push(outer);
+      totalArea += sortedLoops[oi].absArea;
+
+      const coords: number[] = [];
+      const flatVerts: Pt2D[] = [];
+      for (const p of outer) {
+        coords.push(p.x, p.y);
+        flatVerts.push(p);
+      }
+
+      const holeIndices: number[] = [];
+      for (const hi of holeChildren.get(oi) || []) {
+        const hole = sortedLoops[hi].loop;
+        holeLoops.push(hole);
+        totalArea -= sortedLoops[hi].absArea;
+        holeIndices.push(flatVerts.length);
+        for (const p of hole) {
+          coords.push(p.x, p.y);
+          flatVerts.push(p);
+        }
+      }
+
+      const triIndices = earcut(coords, holeIndices.length > 0 ? holeIndices : undefined, 2);
+      for (let t = 0; t + 2 < triIndices.length; t += 3) {
+        const a = flatVerts[triIndices[t]];
+        const b = flatVerts[triIndices[t + 1]];
+        const c = flatVerts[triIndices[t + 2]];
+        if (a && b && c) triangles.push([a, b, c]);
+      }
+    }
+
+    bySector.set(secId, {
+      outerLoops,
+      holeLoops,
+      area: Math.max(0.01, totalArea),
+      triangles,
+    });
+  }
+
+  sectorGeomCache.set(linedefs, { len: linedefs.length, sig, bySector });
+  return bySector;
+}
+
+export function getOrderedSectorPolygon(sectorId: number, linedefs: DivDoomLinedef[]): { x: number; y: number }[] {
+  const geomMap = buildSectorGeometryMap(linedefs);
+  const g = geomMap.get(sectorId);
+  if (g && g.outerLoops.length > 0) return g.outerLoops[0];
+
+  const segs = linedefs.filter((l) => l.frontSectorId === sectorId || l.backSectorId === sectorId);
+  if (segs.length < 3) return [];
+  const pts: Pt2D[] = [];
+  for (const s of segs) {
+    if (!pts.some((p) => Math.hypot(p.x - s.x1, p.y - s.y1) < 0.05)) pts.push({ x: s.x1, y: s.y1 });
+    if (!pts.some((p) => Math.hypot(p.x - s.x2, p.y - s.y2) < 0.05)) pts.push({ x: s.x2, y: s.y2 });
+  }
+  if (pts.length < 3) return [];
+  const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+  const cy = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+  pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  return pts;
+}
+
+export function findSectorAtPoint(
+  x: number,
+  y: number,
+  sectors: DivDoomSector[],
+  linedefs: DivDoomLinedef[]
+): DivDoomSector | null {
+  if (!sectors || sectors.length === 0 || !linedefs || linedefs.length === 0) return null;
+  const geomMap = buildSectorGeometryMap(linedefs);
+  let bestSector: DivDoomSector | null = null;
+  let bestArea = Infinity;
+
+  for (const sec of sectors) {
+    const geom = geomMap.get(sec.id);
+    if (!geom || geom.outerLoops.length === 0) continue;
+    const inOuter = geom.outerLoops.some((loop) => isPointInPoly2D(x, y, loop));
+    if (!inOuter) continue;
+    const inHole = geom.holeLoops.some((hole) => isPointInPoly2D(x, y, hole));
+    if (inHole) continue;
+    if (geom.area < bestArea || (Math.abs(geom.area - bestArea) < 0.01 && bestSector && sec.floorHeight > bestSector.floorHeight)) {
+      bestArea = geom.area;
+      bestSector = sec;
+    }
+  }
+  return bestSector;
+}
+
+export function findSectorFloorHeightAt(
+  x: number,
+  y: number,
+  sectors: DivDoomSector[],
+  linedefs: DivDoomLinedef[]
+): number | null {
+  const sec = findSectorAtPoint(x, y, sectors, linedefs);
+  return sec ? sec.floorHeight : null;
+}
+
+// =============================================================================
+// SOFTWARE Z-BUFFERED TEXTURE CACHE & RASTERIZER BUFFERS
+// =============================================================================
+
+const IS_LITTLE_ENDIAN_SYS = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
+
+function packRgba32(r: number, g: number, b: number, a: number = 255): number {
+  const cr = r < 0 ? 0 : r > 255 ? 255 : r | 0;
+  const cg = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+  const cb = b < 0 ? 0 : b > 255 ? 255 : b | 0;
+  const ca = a < 0 ? 0 : a > 255 ? 255 : a | 0;
+  return IS_LITTLE_ENDIAN_SYS
+    ? ((ca << 24) | (cb << 16) | (cg << 8) | cr) >>> 0
+    : ((cr << 24) | (cg << 16) | (cb << 8) | ca) >>> 0;
+}
+
+function shadePackedAbgr(c32: number, multFixed256: number): number {
+  if (multFixed256 >= 254 && multFixed256 <= 258) return c32;
+  if (IS_LITTLE_ENDIAN_SYS) {
+    const r = Math.min(255, (((c32 & 0xff) * multFixed256) >> 8));
+    const g = Math.min(255, ((((c32 >>> 8) & 0xff) * multFixed256) >> 8));
+    const b = Math.min(255, ((((c32 >>> 16) & 0xff) * multFixed256) >> 8));
+    return (0xff000000 | (b << 16) | (g << 8) | r) >>> 0;
+  }
+  const r = Math.min(255, ((((c32 >>> 24) & 0xff) * multFixed256) >> 8));
+  const g = Math.min(255, ((((c32 >>> 16) & 0xff) * multFixed256) >> 8));
+  const b = Math.min(255, ((((c32 >>> 8) & 0xff) * multFixed256) >> 8));
+  return ((r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0;
+}
+
+interface CachedPixelTex {
+  data: Uint32Array;
+  w: number;
+  h: number;
+}
+
+const canvasPixelCache = new WeakMap<HTMLCanvasElement, CachedPixelTex>();
+
+function getCanvasPixels(canvas: HTMLCanvasElement): CachedPixelTex {
+  const cached = canvasPixelCache.get(canvas);
+  if (cached) return cached;
+  const w = Math.max(1, canvas.width);
+  const h = Math.max(1, canvas.height);
+  const ctx = canvas.getContext("2d");
+  let data: Uint32Array;
+  if (ctx) {
+    const img = ctx.getImageData(0, 0, w, h);
+    data = new Uint32Array(img.data.buffer);
+  } else {
+    data = new Uint32Array(w * h);
+  }
+  const entry = { data, w, h };
+  canvasPixelCache.set(canvas, entry);
+  return entry;
+}
+
+interface SoftwareFb {
+  w: number;
+  h: number;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  imageData: ImageData;
+  pixels: Uint32Array;
+  zbuf: ZBufferManager;
+}
+
+let sharedFb: SoftwareFb | null = null;
+
+function getSoftwareFramebuffer(w: number, h: number): SoftwareFb {
+  if (sharedFb && sharedFb.w === w && sharedFb.h === h) {
+    return sharedFb;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  const imageData = ctx.createImageData(w, h);
+  const pixels = new Uint32Array(imageData.data.buffer);
+  const zbuf = new ZBufferManager(w, h);
+  sharedFb = { w, h, canvas, ctx, imageData, pixels, zbuf };
+  return sharedFb;
+}
+
+interface ProjFlatVert {
+  sx: number;
+  sy: number;
+  iz: number;
+  wxZ: number;
+  wyZ: number;
+}
+
+function rasterizeTexturedFlatTri(
+  pixels: Uint32Array,
+  invZBuf: Float32Array,
+  w: number,
+  h: number,
+  v0: ProjFlatVert,
+  v1: ProjFlatVert,
+  v2: ProjFlatVert,
+  tex: CachedPixelTex,
+  baseLightNorm: number,
+  isEmissive: boolean
+) {
+  const area = (v1.sx - v0.sx) * (v2.sy - v0.sy) - (v1.sy - v0.sy) * (v2.sx - v0.sx);
+  if (Math.abs(area) < 0.25) return;
+
+  const minX = Math.max(0, Math.floor(Math.min(v0.sx, v1.sx, v2.sx)));
+  const maxX = Math.min(w - 1, Math.ceil(Math.max(v0.sx, v1.sx, v2.sx)));
+  const minY = Math.max(0, Math.floor(Math.min(v0.sy, v1.sy, v2.sy)));
+  const maxY = Math.min(h - 1, Math.ceil(Math.max(v0.sy, v1.sy, v2.sy)));
+  if (minX > maxX || minY > maxY) return;
+
+  const absArea = Math.abs(area);
+  const invArea = 1 / absArea;
+  const sign = area > 0 ? 1 : -1;
+
+  const dx12 = v1.sy - v2.sy;
+  const dy12 = v2.sx - v1.sx;
+  const dx20 = v2.sy - v0.sy;
+  const dy20 = v0.sx - v2.sx;
+  const texData = tex.data;
+  const twMask = tex.w - 1;
+  const thMask = tex.h - 1;
+  const isPow2 = (tex.w & twMask) === 0 && (tex.h & thMask) === 0;
+  const tw = tex.w;
+  const th = tex.h;
+
+  for (let py = minY; py <= maxY; py++) {
+    const cy = py + 0.5;
+    const rowOff = py * w;
+    for (let px = minX; px <= maxX; px++) {
+      const cx = px + 0.5;
+      const w0s = ((cx - v1.sx) * dx12 + (cy - v1.sy) * dy12) * sign;
+      if (w0s < -0.002) continue;
+      const w1s = ((cx - v2.sx) * dx20 + (cy - v2.sy) * dy20) * sign;
+      if (w1s < -0.002) continue;
+      const w2s = absArea - w0s - w1s;
+      if (w2s < -0.002) continue;
+
+      const u0 = w0s * invArea;
+      const u1 = w1s * invArea;
+      const u2 = 1 - u0 - u1;
+      const iz = u0 * v0.iz + u1 * v1.iz + u2 * v2.iz;
+      if (iz <= 0) continue;
+
+      const idx = rowOff + px;
+      if (iz <= invZBuf[idx]) continue;
+
+      invZBuf[idx] = iz;
+      const z = 1 / iz;
+      const wx = (u0 * v0.wxZ + u1 * v1.wxZ + u2 * v2.wxZ) * z;
+      const wy = (u0 * v0.wyZ + u1 * v1.wyZ + u2 * v2.wyZ) * z;
+      const ux = Math.floor(wx * 64);
+      const uy = Math.floor(wy * 64);
+      const tx = isPow2 ? ux & twMask : ((ux % tw) + tw) % tw;
+      const ty = isPow2 ? uy & thMask : ((uy % th) + th) % th;
+
+      const texel = texData[ty * tw + tx];
+      const fog = isEmissive ? 1.0 : Math.max(0.45, 1.02 - z * 0.025);
+      const mult = Math.round(Math.max(0.35, Math.min(1.12, baseLightNorm * fog)) * 256);
+      pixels[idx] = shadePackedAbgr(texel, mult);
+    }
+  }
+}
+
+function raycastSpringArm(
+  originX: number,
+  originY: number,
+  targetX: number,
+  targetY: number,
+  linedefs: DivDoomLinedef[]
+): number {
+  const rdx = targetX - originX;
+  const rdy = targetY - originY;
+  let minT = 1.0;
+
+  for (const l of linedefs) {
+    if (l.noDraw) continue;
+    if (l.isTwoSided && l.blocking !== true) continue;
+
+    const sx = l.x2 - l.x1;
+    const sy = l.y2 - l.y1;
+    const denom = rdx * sy - rdy * sx;
+    if (Math.abs(denom) < 1e-6) continue;
+
+    const qpx = l.x1 - originX;
+    const qpy = l.y1 - originY;
+    const t = (qpx * sy - qpy * sx) / denom;
+    const u = (qpx * rdy - qpy * rdx) / denom;
+
+    if (t > 0.08 && t < minT && u >= 0 && u <= 1) {
+      minT = t;
+    }
+  }
+  return minT;
+}
+
 export function renderDoom2PolygonWorld(
   ctx: CanvasRenderingContext2D,
   screenWidth: number,
@@ -1638,118 +1802,403 @@ export function renderDoom2PolygonWorld(
     showHUD?: boolean;
     showAutomap?: boolean;
     skyTexture?: string;
+    cameraMode?: Mode8CameraMode;
+    playerModelId?: string;
+    editorOverlay?: Mode8ThreeEditorOverlay;
   }
 ) {
+  if (!ctx || !cam || !Number.isFinite(screenWidth) || !Number.isFinite(screenHeight) || screenWidth <= 0 || screenHeight <= 0) {
+    return;
+  }
+  const baseCamX = Number.isFinite(cam.x) ? cam.x : 4.5;
+  const baseCamY = Number.isFinite(cam.y) ? cam.y : 5.5;
+  const baseCamZ = Number.isFinite(cam.z) ? cam.z : 0.6;
+  const baseCamAngle = Number.isFinite(cam.angle) ? cam.angle : 0;
+  const baseCamPitch = Number.isFinite(cam.pitch) ? cam.pitch : 0;
+
   const now = performance.now() / 1000;
-  doomWorldState.update(0.016, sectors);
+  doomWorldState.update(0.016, sectors || []);
+
+  // Primary Hardware-Accelerated Three.js WebGL 3D Pipeline (Roblox SmoothPlastic/Stud PBR, SkyDome, Articulated Rigs)
+  const enemyScreenBars: Array<{
+    sx: number;
+    sy: number;
+    name: string;
+    hp: number;
+    maxHp: number;
+    dist: number;
+  }> = [];
+  const threeRendered = renderMode8ThreeWorld(
+    ctx,
+    screenWidth,
+    screenHeight,
+    {
+      x: baseCamX,
+      y: baseCamY,
+      z: baseCamZ,
+      angle: baseCamAngle,
+      pitch: baseCamPitch,
+    },
+    linedefs || [],
+    sectors || [],
+    {
+      skyTexture: options?.skyTexture,
+      cameraMode: options?.cameraMode,
+      playerModelId: options?.playerModelId,
+      weaponModel,
+      weaponAttackTime,
+      walkCycle,
+      doorOffsets: doomWorldState.doorOffsets,
+      lights,
+      entities,
+      placedModels,
+      placedVoxels,
+      editorOverlay: options?.editorOverlay,
+      onEnemyScreenBars: enemyScreenBars,
+    }
+  );
+
+  if (threeRendered) {
+    // Draw crisp Roblox-style floating enemy HP bars & nameplates
+    if (enemyScreenBars.length > 0) {
+      ctx.save();
+      for (const bar of enemyScreenBars) {
+        if (bar.sx < -40 || bar.sx > screenWidth + 40 || bar.sy < 16 || bar.sy > screenHeight - 20) continue;
+        const bw = Math.max(46, Math.min(82, Math.round(280 / Math.max(2.5, bar.dist))));
+        const bh = 6;
+        const bx = Math.round(bar.sx - bw * 0.5);
+        const by = Math.round(bar.sy);
+        const ratio = Math.max(0, Math.min(1, bar.hp / Math.max(1, bar.maxHp)));
+
+        ctx.font = "bold 10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fillRect(bx - 3, by - 16, bw + 6, 26);
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(bar.name, bar.sx, by - 5);
+
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = ratio > 0.5 ? "#22c55e" : ratio > 0.25 ? "#f59e0b" : "#ef4444";
+        ctx.fillRect(bx, by, Math.round(bw * ratio), bh);
+      }
+      ctx.restore();
+    }
+
+    // Damage / Hazard / Teleport screen flashes
+    if (doomWorldState.screenDamageFlash > 0) {
+      ctx.fillStyle = `rgba(220, 38, 38, ${doomWorldState.screenDamageFlash})`;
+      ctx.fillRect(0, 0, screenWidth, screenHeight);
+    }
+    if (doomWorldState.screenHazardFlash > 0) {
+      ctx.fillStyle = `rgba(34, 197, 94, ${doomWorldState.screenHazardFlash})`;
+      ctx.fillRect(0, 0, screenWidth, screenHeight);
+    }
+    if (doomWorldState.screenTeleportFlash > 0) {
+      ctx.fillStyle = `rgba(168, 85, 247, ${doomWorldState.screenTeleportFlash})`;
+      ctx.fillRect(0, 0, screenWidth, screenHeight);
+    }
+
+    // Crosshair in FPS mode
+    if ((options?.cameraMode || "fps") === "fps" && options?.showHUD !== false) {
+      const cx = screenWidth * 0.5;
+      const cy = screenHeight * 0.45;
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 6, cy);
+      ctx.lineTo(cx - 2, cy);
+      ctx.moveTo(cx + 2, cy);
+      ctx.lineTo(cx + 6, cy);
+      ctx.moveTo(cx, cy - 6);
+      ctx.lineTo(cx, cy - 2);
+      ctx.moveTo(cx, cy + 2);
+      ctx.lineTo(cx, cy + 6);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (options?.showHUD !== false) {
+      renderDoomHUD(ctx, screenWidth, screenHeight, {
+        health: doomWorldState.health,
+        armor: doomWorldState.armor,
+        ammo: doomWorldState.ammo,
+        maxAmmo: doomWorldState.maxAmmo,
+        keys: doomWorldState.keys,
+      });
+    }
+
+    if (options?.showAutomap) {
+      renderDoomAutomap(ctx, screenWidth, screenHeight, { x: baseCamX, y: baseCamY, angle: baseCamAngle }, linedefs, sectors);
+    }
+    return;
+  }
+
+  // Compute chase/isometric/orbit camera with wall-collision spring-arm (software fallback)
+  const cameraMode: Mode8CameraMode = options?.cameraMode || "fps";
+  const playerFootZ = Math.max(-2.0, baseCamZ - 0.6);
+  const baseRad = (baseCamAngle * Math.PI) / 180;
+  let renderCam = { x: baseCamX, y: baseCamY, z: baseCamZ, angle: baseCamAngle, pitch: baseCamPitch };
+
+  if (cameraMode === "third_person") {
+    const desiredDist = 1.95;
+    const rawX = baseCamX - Math.cos(baseRad) * desiredDist;
+    const rawY = baseCamY - Math.sin(baseRad) * desiredDist;
+    const hitT = raycastSpringArm(baseCamX, baseCamY, rawX, rawY, linedefs);
+    const safeT = Math.max(0.28, hitT * 0.86);
+    renderCam = {
+      x: baseCamX + (rawX - baseCamX) * safeT,
+      y: baseCamY + (rawY - baseCamY) * safeT,
+      z: baseCamZ + 0.55 + (1 - safeT) * 0.35,
+      angle: baseCamAngle,
+      pitch: Math.max(-135, Math.min(135, baseCamPitch - 22)),
+    };
+  } else if (cameraMode === "isometric") {
+    const isoAngle = baseCamAngle + 28;
+    const isoRad = (isoAngle * Math.PI) / 180;
+    const desiredDist = 3.1;
+    const rawX = baseCamX - Math.cos(isoRad) * desiredDist;
+    const rawY = baseCamY - Math.sin(isoRad) * desiredDist;
+    const hitT = raycastSpringArm(baseCamX, baseCamY, rawX, rawY, linedefs);
+    const safeT = Math.max(0.35, hitT * 0.88);
+    renderCam = {
+      x: baseCamX + (rawX - baseCamX) * safeT,
+      y: baseCamY + (rawY - baseCamY) * safeT,
+      z: baseCamZ + 2.05,
+      angle: isoAngle,
+      pitch: -74,
+    };
+  } else if (cameraMode === "orbit") {
+    const orbitYaw = (baseCamAngle + now * 26) % 360;
+    const orbitRad = (orbitYaw * Math.PI) / 180;
+    const desiredDist = 2.45;
+    const rawX = baseCamX - Math.cos(orbitRad) * desiredDist;
+    const rawY = baseCamY - Math.sin(orbitRad) * desiredDist;
+    const hitT = raycastSpringArm(baseCamX, baseCamY, rawX, rawY, linedefs);
+    const safeT = Math.max(0.35, hitT * 0.86);
+    renderCam = {
+      x: baseCamX + (rawX - baseCamX) * safeT,
+      y: baseCamY + (rawY - baseCamY) * safeT,
+      z: baseCamZ + 1.15,
+      angle: orbitYaw,
+      pitch: -38,
+    };
+  }
+
+  const viewCam = renderCam;
+
+  // Adaptive crisp software framebuffer resolution + ZBufferManager
+  const rw = Math.max(240, Math.min(540, Math.round(screenWidth)));
+  const rh = Math.max(160, Math.round((rw * screenHeight) / screenWidth));
+  const fb = getSoftwareFramebuffer(rw, rh);
+  const { pixels, zbuf } = fb;
+  const invZ = zbuf.invZ;
+  zbuf.resetFrame();
 
   // Pre-index sectors by ID
   const sectorMap = new Map<number, DivDoomSector>();
   sectors.forEach((s) => sectorMap.set(s.id, s));
-
   if (!sectorMap.has(0)) {
     sectorMap.set(0, {
       id: 0,
       floorHeight: 0,
-      ceilHeight: 1.4,
-      floorTexture: "FLOOR4_8",
-      ceilTexture: "CEIL3_5",
-      lightLevel: 190,
+      ceilHeight: 2.2,
+      floorTexture: "STUD_FLOOR_BLUE",
+      ceilTexture: "SKY_ROBLOX",
+      lightLevel: 235,
     });
   }
 
-  const halfW = screenWidth / 2;
-  const halfH = screenHeight / 2;
-  const horizonY = halfH + Math.max(-140, Math.min(140, cam.pitch || 0));
+  const halfW = rw * 0.5;
+  const halfH = rh * 0.5;
+  const pitchScaled = Math.max(-140, Math.min(140, viewCam.pitch || 0)) * (rh / Math.max(1, screenHeight));
+  const horizonY = halfH + pitchScaled;
 
-  // Doom 75-degree FOV
   const fovDeg = 75;
-  const fovRad = (fovDeg * Math.PI) / 180;
-  const focalLength = halfW / Math.tan(fovRad / 2);
-
-  // Camera yaw trigonometry
-  const camAngleRad = ((cam.angle || 0) * Math.PI) / 180;
+  const focalLength = halfW / Math.tan((fovDeg * Math.PI) / 360);
+  const camAngleRad = ((viewCam.angle || 0) * Math.PI) / 180;
   const cosA = Math.cos(camAngleRad);
   const sinA = Math.sin(camAngleRad);
 
-  // 1. Draw Panoramic Skybox
-  const skyName = options?.skyTexture || "SKY1";
-  const skyTex = getDoomTextureCanvas(skyName);
-  const skyWidth = skyTex.width || 256;
-  const skyOffset = -((cam.angle % 360) / 360) * skyWidth * 2;
-  const skyShift = ((skyOffset % skyWidth) + skyWidth) % skyWidth;
-  const skyDrawH = Math.max(1, Math.floor(horizonY));
-  for (let sx = -skyWidth + skyShift; sx < screenWidth; sx += skyWidth) {
-    ctx.drawImage(skyTex, sx, 0, skyWidth, skyDrawH);
-  }
+  // 1. Fill Skybox & Abyss Backdrop directly into pixel buffer
+  const skyName = options?.skyTexture || "SKY_ROBLOX";
+  const skyTex = getCanvasPixels(getDoomTextureCanvas(skyName, now));
+  const horizonRow = Math.max(0, Math.min(rh, Math.round(horizonY)));
+  const skyShiftPx = (((viewCam.angle % 360) / 360) * skyTex.w * 2) | 0;
+  const isBrightSky = skyName === "SKY_ROBLOX" || skyName === "SKY_CYBER";
+  const groundTopR = isBrightSky ? 30 : 24;
+  const groundTopG = isBrightSky ? 41 : 22;
+  const groundTopB = isBrightSky ? 59 : 24;
 
-  // 2. Perspective Floor Plane with Depth Shading & Liquid Animation
-  const floorStart = Math.max(0, Math.floor(horizonY));
-  const floorGrad = ctx.createLinearGradient(0, floorStart, 0, screenHeight);
-  floorGrad.addColorStop(0, "#1c1917");
-  floorGrad.addColorStop(0.25, "#18181b");
-  floorGrad.addColorStop(1, "#09090b");
-  ctx.fillStyle = floorGrad;
-  ctx.fillRect(0, floorStart, screenWidth, screenHeight - floorStart);
-
-  // Perspective floor grid guidelines
-  ctx.save();
-  for (let y = floorStart + 2; y < screenHeight; y += Math.max(3, Math.floor((y - floorStart) * 0.16))) {
-    const rowDist = (1.2 * focalLength) / Math.max(1, y - horizonY);
-    const alpha = Math.max(0.04, Math.min(0.22, 0.25 - rowDist * 0.015));
-    ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(screenWidth, y);
-    ctx.stroke();
-  }
-  for (let angleOff = -60; angleOff <= 60; angleOff += 15) {
-    const startX = halfW + Math.tan((angleOff * Math.PI) / 180) * focalLength;
-    if (startX >= -100 && startX <= screenWidth + 100) {
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.07)";
-      ctx.beginPath();
-      ctx.moveTo(halfW, horizonY);
-      ctx.lineTo(startX, screenHeight);
-      ctx.stroke();
+  for (let py = 0; py < horizonRow; py++) {
+    const sy = Math.min(skyTex.h - 1, Math.floor((py / Math.max(1, horizonRow)) * skyTex.h));
+    const texRowOff = sy * skyTex.w;
+    const dstRowOff = py * rw;
+    for (let px = 0; px < rw; px++) {
+      const tx = ((px + skyShiftPx) % skyTex.w + skyTex.w) % skyTex.w;
+      pixels[dstRowOff + px] = skyTex.data[texRowOff + tx];
     }
   }
-  ctx.restore();
+  for (let py = horizonRow; py < rh; py++) {
+    const t = (py - horizonRow) / Math.max(1, rh - horizonRow);
+    const shade = 1.0 - t * 0.55;
+    const bg32 = packRgba32(groundTopR * shade, groundTopG * shade, groundTopB * shade, 255);
+    pixels.fill(bg32, py * rw, (py + 1) * rw);
+  }
 
-  // 1D Depth Buffer for column occlusion
-  const zBuffer = new Float32Array(screenWidth);
-  zBuffer.fill(9999);
-
-  // Sutherland-Hodgman Frustum Near Plane distance (prevents wall blowups)
+  // 2. Rasterize Perspective-Correct Textured Sector Floors & Non-Sky Ceilings (5-Plane Frustum Clip + ZBuffer)
   const Z_NEAR = 0.15;
+  const frustum: FrustumParams = {
+    zNear: Z_NEAR,
+    zFar: 160,
+    tanHalfH: halfW / Math.max(1, focalLength),
+    tanHalfV: (halfH + Math.abs(pitchScaled) + 20) / Math.max(1, focalLength),
+  };
+  const geomMap = buildSectorGeometryMap(linedefs);
 
-  // Sort linedefs front-to-back for early depth-buffer rejection
-  const sortedLinedefs = [...linedefs].sort((a, b) => {
-    const distA = Math.hypot((a.x1 + a.x2) / 2 - cam.x, (a.y1 + a.y2) / 2 - cam.y);
-    const distB = Math.hypot((b.x1 + b.x2) / 2 - cam.x, (b.y1 + b.y2) / 2 - cam.y);
-    return distA - distB;
-  });
+  for (const sec of sectors) {
+    const geom = geomMap.get(sec.id);
+    if (!geom || geom.triangles.length === 0) continue;
 
-  // Process all linedefs
-  for (const line of sortedLinedefs) {
+    const flatName = String(sec.floorTexture || "FLOOR4_8");
+    const flatInfo = getFlatDominantRgb(flatName, now);
+    const flatTex = getCanvasPixels(getDoomFlatCanvas(flatName, now));
+    const lightNorm = flatInfo.emissive ? 1.04 : Math.max(0.45, Math.min(1.08, (sec.lightLevel ?? 210) / 215));
+
+    // Floor triangles (5-plane clipped)
+    if (viewCam.z > sec.floorHeight - 0.02) {
+      const dyFloor = sec.floorHeight - viewCam.z;
+      for (const [p0, p1, p2] of geom.triangles) {
+        const vVerts = [p0, p1, p2].map((pt) => {
+          const dx = pt.x - viewCam.x;
+          const dy = pt.y - viewCam.y;
+          return {
+            x: -dx * sinA + dy * cosA,
+            y: dyFloor,
+            z: dx * cosA + dy * sinA,
+            u: pt.x,
+            v: pt.y,
+          };
+        });
+        const clipped = clipPolygonToFrustum(vVerts, frustum);
+        if (clipped.length < 3) continue;
+
+        const proj: ProjFlatVert[] = clipped.map((cv) => {
+          const iz = 1 / cv.z;
+          return {
+            sx: halfW + cv.x * focalLength * iz,
+            sy: horizonY - cv.y * focalLength * iz,
+            iz,
+            wxZ: cv.u * iz,
+            wyZ: cv.v * iz,
+          };
+        });
+        for (let i = 1; i + 1 < proj.length; i++) {
+          rasterizeTexturedFlatTri(pixels, invZ, rw, rh, proj[0], proj[i], proj[i + 1], flatTex, lightNorm, Boolean(flatInfo.emissive));
+        }
+      }
+    }
+
+    // Non-sky indoor ceilings (5-plane clipped)
+    const ceilTexName = String(sec.ceilTexture || "CEIL3_5");
+    if (!ceilTexName.startsWith("SKY") && viewCam.z < sec.ceilHeight + 0.02) {
+      const ceilTex = getCanvasPixels(getDoomFlatCanvas(ceilTexName, now));
+      const ceilLight = Math.max(0.35, Math.min(0.95, (sec.lightLevel ?? 190) / 235));
+      const dyCeil = sec.ceilHeight - viewCam.z;
+      for (const [p0, p1, p2] of geom.triangles) {
+        const vVerts = [p0, p1, p2].map((pt) => {
+          const dx = pt.x - viewCam.x;
+          const dy = pt.y - viewCam.y;
+          return {
+            x: -dx * sinA + dy * cosA,
+            y: dyCeil,
+            z: dx * cosA + dy * sinA,
+            u: pt.x,
+            v: pt.y,
+          };
+        });
+        const clipped = clipPolygonToFrustum(vVerts, frustum);
+        if (clipped.length < 3) continue;
+
+        const proj: ProjFlatVert[] = clipped.map((cv) => {
+          const iz = 1 / cv.z;
+          return {
+            sx: halfW + cv.x * focalLength * iz,
+            sy: horizonY - cv.y * focalLength * iz,
+            iz,
+            wxZ: cv.u * iz,
+            wyZ: cv.v * iz,
+          };
+        });
+        for (let i = 1; i + 1 < proj.length; i++) {
+          rasterizeTexturedFlatTri(pixels, invZ, rw, rh, proj[0], proj[i], proj[i + 1], ceilTex, ceilLight, false);
+        }
+      }
+    }
+  }
+
+  // 3. Rasterize 1-Sided Solid Walls & 2-Sided Portal Lower/Upper Walls with True Per-Pixel 1/Z Occlusion & Frustum Segment Clipping
+  const drawWallSpan = (
+    x: number,
+    yTopFlt: number,
+    yBotFlt: number,
+    worldZTop: number,
+    worldZBot: number,
+    tex: CachedPixelTex,
+    texU: number,
+    iz: number,
+    shadeMult256: number,
+    transparentGlass: boolean = false
+  ) => {
+    const y0 = Math.max(0, Math.floor(yTopFlt));
+    const y1 = Math.min(rh - 1, Math.ceil(yBotFlt) - 1);
+    if (y0 > y1) return;
+
+    const spanScreenH = Math.max(0.5, yBotFlt - yTopFlt);
+    const worldSpanH = Math.max(0.05, worldZTop - worldZBot);
+    const colU = ((texU % tex.w) + tex.w) % tex.w;
+    const tData = tex.data;
+    const tw = tex.w;
+    const th = tex.h;
+
+    for (let py = y0; py <= y1; py++) {
+      const idx = py * rw + x;
+      if (iz <= invZ[idx]) continue;
+
+      const vFrac = (py - yTopFlt) / spanScreenH;
+      const texV = Math.floor(Math.abs(vFrac * worldSpanH * 64)) % th;
+      const texel = tData[texV * tw + colU];
+
+      if (transparentGlass) {
+        const dst = pixels[idx];
+        const sr = shadePackedAbgr(texel, shadeMult256);
+        const r = (((sr & 0xff) + (dst & 0xff)) >> 1);
+        const g = ((((sr >>> 8) & 0xff) + ((dst >>> 8) & 0xff)) >> 1);
+        const b = ((((sr >>> 16) & 0xff) + ((dst >>> 16) & 0xff)) >> 1);
+        pixels[idx] = packRgba32(r, g, b, 255);
+      } else {
+        invZ[idx] = iz;
+        pixels[idx] = shadePackedAbgr(texel, shadeMult256);
+      }
+    }
+  };
+
+  for (const line of linedefs) {
     if (line.noDraw) continue;
 
-    // Backface culling and front/back orientation
-    // Vector along line: (lx, ly) = (line.x2 - line.x1, line.y2 - line.y1)
-    // Normal to the right in canvas coords (+Y down): (-ly, lx)
     const lx = line.x2 - line.x1;
     const ly = line.y2 - line.y1;
+    const len = Math.hypot(lx, ly);
+    if (len < 1e-4) continue;
+
     const normalX = -ly;
     const normalY = lx;
-    const facingDot = (cam.x - line.x1) * normalX + (cam.y - line.y1) * normalY;
+    const facingDot = (viewCam.x - line.x1) * normalX + (viewCam.y - line.y1) * normalY;
 
-    if (!line.isTwoSided) {
-      // 1-sided solid wall: strictly visible only from the front side
-      if (facingDot <= 0) continue;
-    }
+    if (!line.isTwoSided && facingDot <= 0) continue;
 
     const isFrontSide = facingDot > 0;
-    // For 2-sided portals viewed from the back: orient endpoints so screen order is left-to-right
     const lx1 = isFrontSide ? line.x1 : line.x2;
     const ly1 = isFrontSide ? line.y1 : line.y2;
     const lx2 = isFrontSide ? line.x2 : line.x1;
@@ -1757,162 +2206,125 @@ export function renderDoom2PolygonWorld(
 
     const nearSecId = isFrontSide ? (line.frontSectorId ?? 0) : (line.backSectorId ?? line.frontSectorId ?? 0);
     const farSecId = isFrontSide ? line.backSectorId : line.frontSectorId;
-
     const frontSec = sectorMap.get(nearSecId) || sectorMap.get(0)!;
     const backSec = farSecId !== undefined ? sectorMap.get(farSecId) : undefined;
 
-    const ceilFront = frontSec ? frontSec.ceilHeight : 1.4;
-    const floorFront = frontSec ? frontSec.floorHeight : 0.0;
+    const ceilFront = frontSec.ceilHeight;
+    const floorFront = frontSec.floorHeight;
     const ceilBack = backSec ? backSec.ceilHeight : ceilFront;
     const floorBack = backSec ? backSec.floorHeight : floorFront;
-    const lightFront = frontSec ? (frontSec.lightLevel ?? 200) : 200;
+    const lightFront = frontSec.lightLevel ?? 215;
 
-    const dx1 = lx1 - cam.x;
-    const dy1 = ly1 - cam.y;
-    const dx2 = lx2 - cam.x;
-    const dy2 = ly2 - cam.y;
+    const dx1 = lx1 - viewCam.x;
+    const dy1 = ly1 - viewCam.y;
+    const dx2 = lx2 - viewCam.x;
+    const dy2 = ly2 - viewCam.y;
 
-    // True perspective coordinate projection: +X view right, +Z forward depth
-    let tx1 = -dx1 * sinA + dy1 * cosA;
-    let tz1 = dx1 * cosA + dy1 * sinA;
-    let tx2 = -dx2 * sinA + dy2 * cosA;
-    let tz2 = dx2 * cosA + dy2 * sinA;
+    const clippedSeg = clipSegmentToFrustum(
+      { x: -dx1 * sinA + dy1 * cosA, z: dx1 * cosA + dy1 * sinA, u: 0 },
+      { x: -dx2 * sinA + dy2 * cosA, z: dx2 * cosA + dy2 * sinA, u: len },
+      Z_NEAR,
+      frustum.tanHalfH
+    );
+    if (!clippedSeg) continue;
 
-    if (tz1 <= Z_NEAR && tz2 <= Z_NEAR) continue;
-
-    let u1 = 0;
-    let u2 = Math.hypot(lx2 - lx1, ly2 - ly1);
-
-    // Sutherland-Hodgman Frustum Near-Plane Clipping
-    if (tz1 < Z_NEAR) {
-      const t = (Z_NEAR - tz1) / (tz2 - tz1);
-      tx1 = tx1 + t * (tx2 - tx1);
-      tz1 = Z_NEAR;
-      u1 = u1 + t * (u2 - u1);
-    } else if (tz2 < Z_NEAR) {
-      const t = (Z_NEAR - tz2) / (tz1 - tz2);
-      tx2 = tx2 + t * (tx1 - tx2);
-      tz2 = Z_NEAR;
-      u2 = u2 + t * (u1 - u2);
-    }
+    const tx1 = clippedSeg.a.x;
+    let tz1 = clippedSeg.a.z;
+    let u1 = clippedSeg.a.u;
+    const tx2 = clippedSeg.b.x;
+    let tz2 = clippedSeg.b.z;
+    let u2 = clippedSeg.b.u;
 
     let sx1 = halfW + (tx1 * focalLength) / tz1;
     let sx2 = halfW + (tx2 * focalLength) / tz2;
 
-    // Swap endpoints if segment runs right-to-left on screen
     if (sx1 > sx2) {
-      let tNum = sx1; sx1 = sx2; sx2 = tNum;
-      tNum = tx1; tx1 = tx2; tx2 = tNum;
-      tNum = tz1; tz1 = tz2; tz2 = tNum;
-      tNum = u1; u1 = u2; u2 = tNum;
+      let tmp = sx1; sx1 = sx2; sx2 = tmp;
+      tmp = tz1; tz1 = tz2; tz2 = tmp;
+      tmp = u1; u1 = u2; u2 = tmp;
     }
+
+    if (sx2 <= 0 || sx1 >= rw) continue;
 
     const scale1 = focalLength / tz1;
     const scale2 = focalLength / tz2;
 
-    let yTopF1 = horizonY - (ceilFront - cam.z) * scale1;
-    let yTopF2 = horizonY - (ceilFront - cam.z) * scale2;
-    let yBotF1 = horizonY - (floorFront - cam.z) * scale1;
-    let yBotF2 = horizonY - (floorFront - cam.z) * scale2;
+    const yTopF1 = horizonY - (ceilFront - viewCam.z) * scale1;
+    const yTopF2 = horizonY - (ceilFront - viewCam.z) * scale2;
+    const yBotF1 = horizonY - (floorFront - viewCam.z) * scale1;
+    const yBotF2 = horizonY - (floorFront - viewCam.z) * scale2;
 
-    let yTopB1 = horizonY - (ceilBack - cam.z) * scale1;
-    let yTopB2 = horizonY - (ceilBack - cam.z) * scale2;
-    let yBotB1 = horizonY - (floorBack - cam.z) * scale1;
-    let yBotB2 = horizonY - (floorBack - cam.z) * scale2;
+    const yTopB1 = horizonY - (ceilBack - viewCam.z) * scale1;
+    const yTopB2 = horizonY - (ceilBack - viewCam.z) * scale2;
+    const yBotB1 = horizonY - (floorBack - viewCam.z) * scale1;
+    const yBotB2 = horizonY - (floorBack - viewCam.z) * scale2;
 
-    let tu1 = u1;
-    let tu2 = u2;
+    const midTexName = typeof line.middleTexture === "string" && line.middleTexture ? line.middleTexture : "STARTAN3";
+    const lowerTexName = typeof line.lowerTexture === "string" && line.lowerTexture ? line.lowerTexture : "STEP1";
+    const upperTexName = typeof line.upperTexture === "string" && line.upperTexture ? line.upperTexture : "STARTAN3";
 
-    if (sx2 <= 0 || sx1 >= screenWidth) continue;
-
-    const midTexName = typeof line.middleTexture === "string" ? line.middleTexture : "STARTAN3";
-    const lowerTexName = typeof line.lowerTexture === "string" ? line.lowerTexture : "STEP1";
-    const upperTexName = typeof line.upperTexture === "string" ? line.upperTexture : "STARTAN3";
-
-    const midCanvas = getDoomTextureCanvas(midTexName, now);
-    const lowerCanvas = getDoomTextureCanvas(lowerTexName, now);
-    const upperCanvas = getDoomTextureCanvas(upperTexName, now);
+    const midPix = getCanvasPixels(getDoomTextureCanvas(midTexName, now));
+    const lowPix = getCanvasPixels(getDoomTextureCanvas(lowerTexName, now));
+    const upPix = getCanvasPixels(getDoomTextureCanvas(upperTexName, now));
 
     const startCol = Math.max(0, Math.floor(sx1));
-    const endCol = Math.min(screenWidth - 1, Math.ceil(sx2));
+    const endCol = Math.min(rw - 1, Math.ceil(sx2));
     const deltaX = sx2 - sx1 || 1;
 
-    const invZ1 = 1 / tz1;
-    const invZ2 = 1 / tz2;
-    const uOverZ1 = tu1 * invZ1;
-    const uOverZ2 = tu2 * invZ2;
+    const invZ1 = 1 / Math.max(0.05, tz1);
+    const invZ2 = 1 / Math.max(0.05, tz2);
+    const uOverZ1 = u1 * invZ1;
+    const uOverZ2 = u2 * invZ2;
+
+    // Directional face sun contrast (helps corners & studs pop cleanly)
+    const dirContrast = 0.86 + Math.abs(lx / len) * 0.14;
+    const frontCeilSky = String(frontSec.ceilTexture || "").startsWith("SKY");
+    const backCeilSky = backSec ? String(backSec.ceilTexture || "").startsWith("SKY") : false;
+    const skipSkyUpper = frontCeilSky && backCeilSky;
 
     for (let x = startCol; x <= endCol; x++) {
-      const t = (x - sx1) / deltaX;
-      const invZ = (1 - t) * invZ1 + t * invZ2;
-      const z = 1 / invZ;
+      const t = Math.max(0, Math.min(1, (x - sx1) / deltaX));
+      const iz = (1 - t) * invZ1 + t * invZ2;
+      if (!Number.isFinite(iz) || iz <= 0) continue;
+      const z = 1 / iz;
 
-      if (z >= zBuffer[x]) continue;
+      const u = ((1 - t) * uOverZ1 + t * uOverZ2) * z;
+      const texU = Math.floor(Math.abs((Number.isFinite(u) ? u : 0) * 64));
+      const distLight = Math.max(0.35, Math.min(1.06, (lightFront / 225) * dirContrast * (1.02 - z * 0.025)));
+      const shade256 = Math.round(distLight * 256);
 
       const yTopF = (1 - t) * yTopF1 + t * yTopF2;
       const yBotF = (1 - t) * yBotF1 + t * yBotF2;
 
-      // Perspective-correct texture mapping
-      const u = ((1 - t) * uOverZ1 + t * uOverZ2) * z;
-      const texU = Math.floor(Math.abs(u * 64)) % midCanvas.width;
-
-      // Atmospheric diminishing lighting formula
-      const lightFactor = Math.max(0.18, Math.min(1.0, (lightFront / 255) * (1.0 - z * 0.045)));
-
       if (!line.isTwoSided) {
-        // --- 1-SIDED SOLID WALL ---
         if (yBotF > yTopF) {
-          ctx.drawImage(
-            midCanvas,
-            texU, 0, 1, midCanvas.height,
-            x, yTopF, 1, Math.max(1, yBotF - yTopF)
-          );
-          if (lightFactor < 0.95) {
-            ctx.fillStyle = `rgba(0,0,0,${1.0 - lightFactor})`;
-            ctx.fillRect(x, yTopF, 1, Math.max(1, yBotF - yTopF));
-          }
-          zBuffer[x] = z;
+          drawWallSpan(x, yTopF, yBotF, ceilFront, floorFront, midPix, texU, iz, shade256, false);
         }
       } else {
-        // --- 2-SIDED PORTAL ---
         const yTopB = (1 - t) * yTopB1 + t * yTopB2;
         const yBotB = (1 - t) * yBotB1 + t * yBotB2;
 
-        // 1. Upper Wall (Archway / Lintel)
-        if (ceilFront > ceilBack && yTopB > yTopF) {
-          ctx.drawImage(
-            upperCanvas,
-            texU, 0, 1, upperCanvas.height,
-            x, yTopF, 1, Math.max(1, yTopB - yTopF)
-          );
-          if (lightFactor < 0.95) {
-            ctx.fillStyle = `rgba(0,0,0,${1.0 - lightFactor})`;
-            ctx.fillRect(x, yTopF, 1, Math.max(1, yTopB - yTopF));
-          }
+        if (!skipSkyUpper && ceilFront > ceilBack && yTopB > yTopF) {
+          drawWallSpan(x, yTopF, yTopB, ceilFront, ceilBack, upPix, texU, iz, shade256, false);
         }
-
-        // 2. Lower Wall (Stair Riser / Elevated Ledge)
         if (floorBack > floorFront && yBotF > yBotB) {
-          ctx.drawImage(
-            lowerCanvas,
-            texU % lowerCanvas.width, 0, 1, lowerCanvas.height,
-            x, yBotB, 1, Math.max(1, yBotF - yBotB)
-          );
-          if (lightFactor < 0.95) {
-            ctx.fillStyle = `rgba(0,0,0,${1.0 - lightFactor})`;
-            ctx.fillRect(x, yBotB, 1, Math.max(1, yBotF - yBotB));
-          }
+          drawWallSpan(x, yBotB, yBotF, floorBack, floorFront, lowPix, texU, iz, shade256, false);
         }
-
-        // 3. Middle transparent texture (grate or window if defined)
-        if (line.middleTexture) {
+        if (line.middleTexture && (line.middleTexture === "CYBER_GLASS" || line.middleTexture === "DOOR3")) {
           const midTop = Math.max(yTopF, yTopB);
           const midBot = Math.min(yBotF, yBotB);
           if (midBot > midTop) {
-            ctx.drawImage(
-              midCanvas,
-              texU, 0, 1, midCanvas.height,
-              x, midTop, 1, Math.max(1, midBot - midTop)
+            drawWallSpan(
+              x,
+              midTop,
+              midBot,
+              Math.min(ceilFront, ceilBack),
+              Math.max(floorFront, floorBack),
+              midPix,
+              texU,
+              iz,
+              shade256,
+              line.middleTexture === "CYBER_GLASS"
             );
           }
         }
@@ -1920,242 +2332,155 @@ export function renderDoom2PolygonWorld(
     }
   }
 
-  // 3. Render 3D MD2 & MD3 Models with Z-Buffer Occlusion
-  const camPose: Camera3DPose = {
-    x: cam.x,
-    y: cam.y,
-    z: cam.z,
-    angle: cam.angle || 0,
-    pitch: cam.pitch || 0,
-    fov: fovDeg,
-    screenWidth,
-    screenHeight,
+  // 4. Rasterize 3D MD2 & MD3 Models, Player 3rd-Person Avatar, & Voxels into the SAME 1/Z Buffer
+  const modelCam = {
+    x: viewCam.x,
+    y: viewCam.y,
+    z: viewCam.z,
+    cosA,
+    sinA,
+    focalLength,
+    horizonY,
   };
+  const overlays: ModelOverlayPoint[] = [];
 
   for (const placedModel of placedModels) {
     const modelData = BUILTIN_3D_MODELS.get(String(placedModel.modelId));
     if (!modelData) continue;
-
-    const mdx = placedModel.x - cam.x;
-    const mdy = placedModel.y - cam.y;
-    const mdist = Math.hypot(mdx, mdy);
-    if (mdist < 0.2 || mdist > 40) continue;
-
-    const mtx = -mdx * sinA + mdy * cosA;
-    const mtz = mdx * cosA + mdy * sinA;
-    if (mtz <= Z_NEAR) continue;
-
-    const msx = Math.floor(halfW + (mtx * focalLength) / mtz);
-    if (msx >= 0 && msx < screenWidth) {
-      if (mtz > zBuffer[msx] + 0.08) continue; // Behind wall!
-    }
-
-    render3DModel(ctx, modelData, placedModel, camPose, zBuffer, 1, lights);
+    render3DModelToBuffer(pixels, invZ, rw, rh, modelData, placedModel, modelCam, lights, overlays);
   }
 
-  // 4. Render 3D Voxels with Z-Buffer Occlusion
   if (placedVoxels && placedVoxels.length > 0) {
-    const sortedVoxels = [...placedVoxels].sort((a, b) => {
-      const distA = Math.hypot(a.x - cam.x, a.y - cam.y);
-      const distB = Math.hypot(b.x - cam.x, b.y - cam.y);
-      return distB - distA;
+    for (const placed of placedVoxels) {
+      if (placed.collected) continue;
+      const voxelModel = BUILTIN_VOXELS.get(String(placed.voxelId));
+      if (!voxelModel) continue;
+      renderVoxelToBuffer(pixels, invZ, rw, rh, voxelModel, placed, modelCam);
+    }
+  }
+
+  if (cameraMode !== "fps") {
+    const avatarId = options?.playerModelId || "blox_hero";
+    const avatarModel = BUILTIN_3D_MODELS.get(avatarId) || BUILTIN_3D_MODELS.get("blox_hero");
+    if (avatarModel) {
+      const avatarPlaced: DivMode8PlacedModel = {
+        id: "__player_avatar__",
+        modelId: avatarId,
+        x: baseCamX,
+        y: baseCamY,
+        z: playerFootZ,
+        yaw: (baseCamAngle + 90) % 360,
+        scale: 1.0,
+        animation: weaponAttackTime > 0 ? "attack" : walkCycle > 0.05 ? "walk" : "idle",
+        role: "ally",
+      };
+      render3DModelToBuffer(pixels, invZ, rw, rh, avatarModel, avatarPlaced, modelCam, lights);
+    }
+  }
+
+  // Blit software rasterizer buffer onto main viewport canvas
+  fb.ctx.putImageData(fb.imageData, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(fb.canvas, 0, 0, rw, rh, 0, 0, screenWidth, screenHeight);
+  ctx.restore();
+
+  const scaleX = screenWidth / rw;
+  const scaleY = screenHeight / rh;
+
+  // 5. Render 2D Sprite Entities (Barrels, Pickups, Legacy Sprites) with accurate sector floor & Z-buffer check
+  const sortedEntities = [...entities]
+    .filter((ent) => ent.alive !== false)
+    .sort((a, b) => {
+      const da = Math.hypot(a.x / 64 - viewCam.x, a.y / 64 - viewCam.y);
+      const db = Math.hypot(b.x / 64 - viewCam.x, b.y / 64 - viewCam.y);
+      return db - da;
     });
 
-    for (const placed of sortedVoxels) {
-      const voxelModel = BUILTIN_VOXELS.get(String(placed.voxelId)) || BUILTIN_VOXELS[placed.voxelId];
-      if (!voxelModel) continue;
-
-      const vdx = placed.x - cam.x;
-      const vdy = placed.y - cam.y;
-      const vdist = Math.hypot(vdx, vdy);
-      if (vdist < 0.1 || vdist > 40) continue;
-
-      const vtz = vdx * cosA + vdy * sinA;
-      if (vtz <= Z_NEAR) continue;
-
-      const yawRad = ((placed.yaw || 0) * Math.PI) / 180;
-      const cosYaw = Math.cos(yawRad);
-      const sinYaw = Math.sin(yawRad);
-      const mScale = (placed.scale || 1.0) * (voxelModel.scale || 1.0);
-
-      for (const pt of voxelModel.voxels) {
-        const rx = (pt.x * cosYaw - pt.y * sinYaw) * mScale;
-        const ry = (pt.x * sinYaw + pt.y * cosYaw) * mScale;
-        const rz = pt.z * mScale;
-
-        const wx = placed.x + rx;
-        const wy = placed.y + ry;
-        const wz = placed.z + rz;
-
-        const pdx = wx - cam.x;
-        const pdy = wy - cam.y;
-        const ptx = -pdx * sinA + pdy * cosA;
-        const ptz = pdx * cosA + pdy * sinA;
-
-        if (ptz <= Z_NEAR) continue;
-
-        const screenX = Math.floor(halfW + (ptx * focalLength) / ptz);
-        if (screenX < 0 || screenX >= screenWidth) continue;
-
-        if (ptz > zBuffer[screenX] + 0.05) continue;
-
-        const screenY = Math.floor(horizonY - (wz - cam.z) * (focalLength / ptz));
-        const cubeSize = Math.max(2, Math.floor((focalLength / ptz) * 0.045 * mScale));
-
-        ctx.fillStyle = pt.color;
-        ctx.fillRect(
-          screenX - Math.floor(cubeSize / 2),
-          screenY - Math.floor(cubeSize / 2),
-          cubeSize,
-          cubeSize
-        );
-      }
-    }
-  }
-
-  // 5. Render Entities / Sprites (Imps, Demons, Pickups, Barrels)
-  const sortedEntities = [...entities].sort((a, b) => {
-    const da = Math.hypot(a.x / 64 - cam.x, a.y / 64 - cam.y);
-    const db = Math.hypot(b.x / 64 - cam.x, b.y / 64 - cam.y);
-    return db - da;
-  });
-
   for (const ent of sortedEntities) {
-    const edx = ent.x / 64 - cam.x;
-    const edy = ent.y / 64 - cam.y;
+    const wx = ent.x / 64;
+    const wy = ent.y / 64;
+    const edx = wx - viewCam.x;
+    const edy = wy - viewCam.y;
     const etz = edx * cosA + edy * sinA;
     if (etz <= Z_NEAR) continue;
 
     const etx = -edx * sinA + edy * cosA;
-    const esx = halfW + (etx * focalLength) / etz;
+    const bufX = rw * 0.5 + (etx * focalLength) / etz;
+    const esx = bufX * scaleX;
     if (esx < -50 || esx > screenWidth + 50) continue;
 
-    const screenCol = Math.floor(esx);
-    if (screenCol >= 0 && screenCol < screenWidth && etz > zBuffer[screenCol]) {
-      continue;
-    }
+    const entFloorZ = ent.z !== undefined ? ent.z : (findSectorFloorHeightAt(wx, wy, sectors, linedefs) ?? 0);
+    const footBufY = horizonY - ((entFloorZ - viewCam.z) * focalLength) / etz;
+    const headBufY = horizonY - ((entFloorZ + 0.65 - viewCam.z) * focalLength) / etz;
+    const checkCol = Math.min(rw - 1, Math.max(0, Math.floor(bufX)));
+    const checkRow = Math.min(rh - 1, Math.max(0, Math.floor((footBufY + headBufY) * 0.5)));
+    if (1 / etz < invZ[checkRow * rw + checkCol] * 0.92) continue;
 
-    const spriteScale = (focalLength / etz) * 0.8;
-    const spriteW = Math.max(16, spriteScale);
-    const spriteH = Math.max(16, spriteScale);
-    const spriteY = horizonY - spriteH + (cam.z * focalLength) / etz;
+    const spriteH = Math.max(14, (footBufY - headBufY) * scaleY);
+    const spriteW = spriteH;
+    const spriteY = headBufY * scaleY;
 
     ctx.save();
     const entTypeStr = String(ent.type);
     if (entTypeStr === "monster" || entTypeStr === "imp" || entTypeStr === "demonio_imp") {
-      // Authentic Doom Imp Sprite with Horns, Fiery Eyes & Claws
       const entNumId = typeof ent.id === "number" ? ent.id : parseInt(String(ent.id).replace(/\D/g, "") || "1", 10);
       const bob = Math.sin(now * 6 + entNumId) * 3;
       const bY = spriteY + bob;
 
-      // Imp hunched muscular body
       ctx.fillStyle = "#5c3d28";
       ctx.beginPath();
       ctx.ellipse(esx, bY + spriteH * 0.55, spriteW * 0.28, spriteH * 0.38, 0, 0, Math.PI * 2);
       ctx.fill();
-
-      // Imp Head
       ctx.fillStyle = "#4a2e1b";
       ctx.beginPath();
       ctx.ellipse(esx, bY + spriteH * 0.25, spriteW * 0.2, spriteH * 0.2, 0, 0, Math.PI * 2);
       ctx.fill();
-
-      // Horns
-      ctx.fillStyle = "#29180c";
-      ctx.beginPath();
-      ctx.moveTo(esx - spriteW * 0.15, bY + spriteH * 0.2);
-      ctx.lineTo(esx - spriteW * 0.25, bY + spriteH * 0.05);
-      ctx.lineTo(esx - spriteW * 0.08, bY + spriteH * 0.15);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(esx + spriteW * 0.15, bY + spriteH * 0.2);
-      ctx.lineTo(esx + spriteW * 0.25, bY + spriteH * 0.05);
-      ctx.lineTo(esx + spriteW * 0.08, bY + spriteH * 0.15);
-      ctx.fill();
-
-      // Fiery glowing red/yellow eyes
       ctx.fillStyle = "#facc15";
       ctx.fillRect(esx - spriteW * 0.1, bY + spriteH * 0.22, Math.max(2, spriteW * 0.06), Math.max(2, spriteH * 0.06));
       ctx.fillRect(esx + spriteW * 0.04, bY + spriteH * 0.22, Math.max(2, spriteW * 0.06), Math.max(2, spriteH * 0.06));
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(esx - spriteW * 0.08, bY + spriteH * 0.23, Math.max(1, spriteW * 0.03), Math.max(1, spriteH * 0.04));
-      ctx.fillRect(esx + spriteW * 0.06, bY + spriteH * 0.23, Math.max(1, spriteW * 0.03), Math.max(1, spriteH * 0.04));
-
-      // Claws & arms
-      ctx.fillStyle = "#3d2415";
-      ctx.fillRect(esx - spriteW * 0.35, bY + spriteH * 0.45, spriteW * 0.12, spriteH * 0.3);
-      ctx.fillRect(esx + spriteW * 0.23, bY + spriteH * 0.45, spriteW * 0.12, spriteH * 0.3);
-      ctx.fillStyle = "#dc2626";
-      ctx.fillRect(esx - spriteW * 0.38, bY + spriteH * 0.72, spriteW * 0.14, 3);
-      ctx.fillRect(esx + spriteW * 0.24, bY + spriteH * 0.72, spriteW * 0.14, 3);
     } else if (ent.type === "barrel") {
-      // Authentic Doom Green Radioactive Hazard Barrel
-      const barW = spriteW * 0.42;
-      const barH = spriteH * 0.75;
+      const barW = spriteW * 0.44;
+      const barH = spriteH * 0.72;
       const bX = esx - barW / 2;
-      const bY = spriteY + spriteH * 0.25;
-
+      const bY = spriteY + spriteH * 0.28;
       ctx.fillStyle = "#15803d";
       ctx.fillRect(bX, bY, barW, barH);
       ctx.fillStyle = "#166534";
       ctx.fillRect(bX, bY, barW, 4);
       ctx.fillRect(bX, bY + barH - 4, barW, 4);
-      ctx.fillRect(bX, bY + barH * 0.5 - 2, barW, 4);
-
-      // Yellow hazard trefoil symbol
       ctx.fillStyle = "#eab308";
       ctx.beginPath();
-      ctx.arc(esx, bY + barH * 0.5, barW * 0.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#15803d";
-      ctx.beginPath();
-      ctx.arc(esx, bY + barH * 0.5, barW * 0.1, 0, Math.PI * 2);
+      ctx.arc(esx, bY + barH * 0.5, barW * 0.24, 0, Math.PI * 2);
       ctx.fill();
     } else if (ent.type === "medikit") {
-      // Classic Doom Medikit box with Red Cross
       const boxW = spriteW * 0.45;
       const boxH = spriteH * 0.35;
       const bX = esx - boxW / 2;
       const bY = spriteY + spriteH * 0.65;
-
       ctx.fillStyle = "#f8fafc";
       ctx.fillRect(bX, bY, boxW, boxH);
-      ctx.strokeStyle = "#94a3b8";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bX, bY, boxW, boxH);
-
-      // Red Cross
       ctx.fillStyle = "#dc2626";
       ctx.fillRect(esx - boxW * 0.1, bY + boxH * 0.18, boxW * 0.2, boxH * 0.64);
       ctx.fillRect(esx - boxW * 0.32, bY + boxH * 0.38, boxW * 0.64, boxH * 0.24);
     } else if (ent.type === "ammo") {
-      // Classic Golden Brass Shotgun Shells Box
       const boxW = spriteW * 0.4;
       const boxH = spriteH * 0.32;
       const bX = esx - boxW / 2;
       const bY = spriteY + spriteH * 0.68;
-
       ctx.fillStyle = "#854d0e";
       ctx.fillRect(bX, bY, boxW, boxH);
       ctx.fillStyle = "#eab308";
       ctx.fillRect(bX + 2, bY + 2, boxW - 4, boxH * 0.4);
-      ctx.fillStyle = "#ca8a04";
-      ctx.font = "bold 8px monospace";
-      ctx.fillText("SHELLS", bX + 3, bY + boxH - 3);
     } else if (ent.type === "key") {
-      // Glowing Security Keycard
       const keyW = spriteW * 0.3;
       const keyH = spriteH * 0.42;
       const bX = esx - keyW / 2;
       const bY = spriteY + spriteH * 0.58 + Math.sin(now * 4) * 4;
-
       ctx.fillStyle = "#0284c7";
       ctx.fillRect(bX, bY, keyW, keyH);
       ctx.fillStyle = "#38bdf8";
       ctx.fillRect(bX + 2, bY + 2, keyW - 4, keyH * 0.4);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fillRect(bX + 3, bY + keyH * 0.6, keyW - 6, 3);
     } else {
       ctx.fillStyle = "#38bdf8";
       ctx.fillRect(esx - spriteW / 4, spriteY + spriteH / 4, spriteW / 2, spriteH / 2);
@@ -2163,21 +2488,52 @@ export function renderDoom2PolygonWorld(
     ctx.restore();
   }
 
-  // 6. Render First-Person Weapon with Muzzle Flash
-  const activeWeapon = weaponModel || "shotgun3d";
-  renderFirstPersonWeapon3D(
-    ctx,
-    activeWeapon,
-    weaponAttackTime,
-    walkCycle,
-    screenWidth,
-    screenHeight
-  );
+  // 5B. Floating Enemy Health Bars & Goal/Checkpoint Tags
+  ctx.save();
+  for (const ov of overlays) {
+    const ox = ov.sx * scaleX;
+    const oy = ov.sy * scaleY;
+    if (ov.role === "enemy" && ov.hp !== undefined && ov.maxHp && ov.maxHp > 0) {
+      const barW = Math.max(28, Math.min(54, 160 / Math.max(1, ov.depth)));
+      const barH = 5;
+      const bx = ox - barW / 2;
+      const by = oy - 10;
+      const pct = Math.max(0, Math.min(1, ov.hp / ov.maxHp));
+      ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+      ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+      ctx.fillStyle = pct > 0.5 ? "#ef4444" : "#f97316";
+      ctx.fillRect(bx, by, barW * pct, barH);
+    } else if (ov.role === "goal") {
+      ctx.font = "bold 10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#fef08a";
+      ctx.fillText("★ META", ox, oy - 6);
+    } else if (ov.role === "checkpoint") {
+      ctx.font = "bold 9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#67e8f9";
+      ctx.fillText("CHECKPOINT", ox, oy - 6);
+    }
+  }
+  ctx.restore();
+
+  // 6. Render First-Person Weapon with Muzzle Flash (only in FPS mode)
+  if (cameraMode === "fps") {
+    const activeWeapon = weaponModel || "shotgun3d";
+    renderFirstPersonWeapon3D(
+      ctx,
+      activeWeapon,
+      weaponAttackTime,
+      walkCycle,
+      screenWidth,
+      screenHeight
+    );
+  }
 
   // Muzzle flash screen overlay
   if (doomWorldState.muzzleFlashFrames > 0) {
     ctx.save();
-    const grad = ctx.createRadialGradient(halfW, screenHeight - 60, 20, halfW, screenHeight - 60, halfW);
+    const grad = ctx.createRadialGradient(screenWidth * 0.5, screenHeight - 60, 20, screenWidth * 0.5, screenHeight - 60, screenWidth * 0.5);
     grad.addColorStop(0, "rgba(254, 240, 138, 0.45)");
     grad.addColorStop(0.5, "rgba(249, 115, 22, 0.2)");
     grad.addColorStop(1, "rgba(0, 0, 0, 0)");
@@ -2213,7 +2569,7 @@ export function renderDoom2PolygonWorld(
 
   // 8. Render Doom Automap
   if (options?.showAutomap) {
-    renderDoomAutomap(ctx, screenWidth, screenHeight, cam, linedefs, sectors);
+    renderDoomAutomap(ctx, screenWidth, screenHeight, { x: baseCamX, y: baseCamY, angle: baseCamAngle }, linedefs, sectors);
   }
 }
 

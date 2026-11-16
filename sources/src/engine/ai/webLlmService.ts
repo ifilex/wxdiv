@@ -8,6 +8,7 @@
 import { CreateMLCEngine, MLCEngine, InitProgressReport, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { getAiConfig, saveAiConfig } from "../../services/aiConfig";
 import { generatePrecodeNeuralCode, buildPrecodeOptimizedPrompt } from "./precodeEngine";
+import { Mode8SceneContext } from "./mode8WorkBlocks";
 
 export interface WebLlmModelInfo {
   id: string;
@@ -81,7 +82,7 @@ export const AVAILABLE_WEBLLM_MODELS: WebLlmModelInfo[] = [
 
 export type WebLlmStatus = "unsupported" | "idle" | "loading" | "ready" | "generating" | "error";
 export type SemaphoreHealth = "green" | "yellow" | "red";
-export type WebLlmEngineType = "webgpu" | "universal" | "cloud";
+export type WebLlmEngineType = "webgpu" | "universal";
 
 export interface WebLlmDiagnostics {
   status: WebLlmStatus;
@@ -535,22 +536,10 @@ class WebLlmService {
   }
 
   /**
-   * Activa Gemini Cloud como alternativa inmediata
+   * Redirige cualquier fallback anterior al motor local instantáneo en CPU
    */
   public activateCloudFallback(): void {
-    const cfg = getAiConfig();
-    saveAiConfig({
-      ...cfg,
-      engineMode: "gemini",
-      isActive: true,
-    });
-    this.engineType = "cloud";
-    this.status = "idle";
-    this.progress = {
-      progress: 100,
-      text: "Motor Gemini Cloud activado. Respuestas inmediatas sin descarga de pesos.",
-    };
-    this.notify();
+    this.activatePrecodeFallback();
   }
 
   /**
@@ -581,7 +570,8 @@ class WebLlmService {
     onChunk: (text: string) => void,
     externalSignal?: AbortSignal,
     rawPrompt?: string,
-    existingCode?: string
+    existingCode?: string,
+    contextOptions?: { activeTab?: string; mode8Context?: Mode8SceneContext }
   ): Promise<string> {
     if (this.status !== "ready") {
       const ok = await this.loadModel(this.currentModelId);
@@ -642,8 +632,12 @@ class WebLlmService {
         }
       } else {
         // 2. Inferencia en Motor Universal Local con streaming palabra por palabra
-        const neuralResult = generatePrecodeNeuralCode(rawPrompt || prompt, existingCode || "");
-        const targetResponse = `// Modelo Local Activo: ${this.currentModelId.split("-")[0]}\n// Motor: Almacenamiento Local (Universal CPU / Wasm)\n\n\`\`\`div\n${neuralResult.code}\n\`\`\`\n\n${neuralResult.explanation}`;
+        const neuralResult = generatePrecodeNeuralCode(rawPrompt || prompt, existingCode || "", contextOptions);
+        const actionsBlock =
+          neuralResult.mode8Actions && neuralResult.mode8Actions.length > 0
+            ? `\n\n\`\`\`mode8-actions\n${JSON.stringify(neuralResult.mode8Actions)}\n\`\`\``
+            : "";
+        const targetResponse = `// Modelo Local Activo: ${this.currentModelId.split("-")[0]}\n// Motor: Almacenamiento Local (Universal CPU / Wasm)\n\n\`\`\`div\n${neuralResult.code}\n\`\`\`${actionsBlock}\n\n${neuralResult.explanation}`;
 
         // Dividir en fragmentos naturales de 2-4 palabras para streaming fluido
         const words = targetResponse.split(" ");

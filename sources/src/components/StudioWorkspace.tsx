@@ -6,11 +6,11 @@ import {
   Blocks,
   Play,
   Square,
+  RotateCcw,
   Sparkles,
   Wrench,
   MoreVertical,
   FolderPlus,
-  Download,
   BookOpen,
   Cloud,
   Settings,
@@ -31,13 +31,20 @@ import {
   Trash2,
   Monitor,
   Sliders,
-  Layers,
   Check,
   ChevronRight,
   HelpCircle,
   Globe,
+  Mic,
+  GraduationCap,
+  Brain,
+  Maximize2,
+  Minimize2,
+  Upload,
 } from "lucide-react";
 import { WindowId } from "./WindowManager/types";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { useFullscreen } from "../hooks/useFullscreen";
 import { CodeEditor } from "./CodeEditor";
 import { GameStage } from "./GameStage";
 import { SpriteEditor } from "./SpriteEditor";
@@ -62,12 +69,27 @@ import { SpriteGenerator } from "./SpriteGenerator";
 import { ParsedMD2Model } from "../engine/md2Parser";
 import { DivLexiconModal } from "./DivLexiconModal";
 import { WelcomeGuideModal, WELCOME_HIDE_STORAGE_KEY } from "./WelcomeGuideModal";
+import { LocalAiOnboardingModal } from "./LocalAiOnboardingDeck";
+import { LocalAiTutorialView } from "./LocalAiTutorialView";
+import { WineboxEcosystemModal } from "./WineboxEcosystemModal";
 import { WebWizardModal } from "./WebWizardModal";
+import { PWAInstallButton } from "./PWAInstallButton";
+import { AssetManagerModal, SelectedStudioAsset } from "./AssetManagerPanel";
+import { AssetBrowser } from "./AssetBrowser";
+import {
+  CustomModel3DAsset,
+  CustomTextureAsset,
+  listCustomModels3D,
+  listCustomTextures,
+  subscribeAssetLibrary,
+} from "../engine/assetLibrary";
+import { Mode8AiAction, Mode8SceneContext } from "../engine/ai/mode8WorkBlocks";
 import { DivRuntime } from "../engine/runtime";
+import { setupRuntimeFromDivCode } from "../engine/divCodeRunner";
 import { DivGraphic, DivProcess } from "../types";
 import { GamePreset, PRESETS } from "../engine/presets";
 
-export type StudioTab = "design" | "logic" | "play" | "studio";
+export type StudioTab = "mode8" | "design" | "logic" | "play" | "studio";
 export type DesignMode = "mobile" | "form";
 export type LogicMode = "blocks" | "code";
 export type StudioToolId =
@@ -109,6 +131,24 @@ interface StudioWorkspaceProps {
   onQuickExportZip?: () => void;
   onOpenCloudSync?: () => void;
   openWebWizardTrigger?: number;
+  syncedSnapshot?: {
+    syncVersion: number;
+    forms?: VB3Form[];
+    activeFormId?: string;
+    activeTab?: StudioTab;
+    designMode?: DesignMode;
+    logicMode?: LogicMode;
+    activeStudioTool?: StudioToolId | null;
+  };
+  onWorkspaceSnapshotChange?: (snapshot: {
+    forms: VB3Form[];
+    activeFormId: string;
+    activeTab: StudioTab;
+    designMode: DesignMode;
+    logicMode: LogicMode;
+    activeStudioTool: StudioToolId | null;
+  }) => void;
+  onFpgPackagesChanged?: () => void;
 }
 
 const STUDIO_TOOLS: Array<{
@@ -163,14 +203,14 @@ const STUDIO_TOOLS: Array<{
   {
     id: "mode8",
     title: "Niveles 3D Modo 8",
-    subtitle: "Editor de sectores, paredes y texturas 3D",
+    subtitle: "Construye mundos 3D con sectores, modelos MD2/MD3 y texturas",
     category: "3D y Niveles",
     icon: Compass,
   },
   {
     id: "md2viewer",
-    title: "Visor 3D MD2",
-    subtitle: "Inspecciona mallas poligonales y animaciones",
+    title: "Visor 3D MD2 / MD3",
+    subtitle: "Inspecciona, texturiza y guarda mallas poligonales",
     category: "3D y Niveles",
     icon: Box,
   },
@@ -197,6 +237,35 @@ const STUDIO_TOOLS: Array<{
   },
 ];
 
+interface WorkspaceCardProps {
+  title: string;
+  subtitle?: string;
+  headerRight?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}
+
+const WorkspaceCard: React.FC<WorkspaceCardProps> = ({
+  title,
+  subtitle,
+  headerRight,
+  className = "",
+  children,
+}) => (
+  <section
+    className={`bg-white border border-[#E2E8F0] rounded-xl flex flex-col overflow-hidden min-h-0 ${className}`}
+  >
+    <header className="px-3.5 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
+      <div className="min-w-0">
+        <h2 className="text-xs font-bold text-[#111827] tracking-tight truncate">{title}</h2>
+        {subtitle && <p className="text-[11px] text-[#6B7280] truncate">{subtitle}</p>}
+      </div>
+      {headerRight && <div className="flex items-center gap-1.5 flex-shrink-0">{headerRight}</div>}
+    </header>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{children}</div>
+  </section>
+);
+
 export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   runtime,
   code,
@@ -221,17 +290,50 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   onOpenExport,
   onOpenCloudSync,
   openWebWizardTrigger,
+  syncedSnapshot,
+  onWorkspaceSnapshotChange,
+  onFpgPackagesChanged,
 }) => {
-  const [activeTab, setActiveTab] = useState<StudioTab>("design");
+  const [activeTab, setActiveTab] = useState<StudioTab>("mode8");
   const [designMode, setDesignMode] = useState<DesignMode>("mobile");
-  const [logicMode, setLogicMode] = useState<LogicMode>("blocks");
+  const [logicMode, setLogicMode] = useState<LogicMode>("code");
   const [activeStudioTool, setActiveStudioTool] = useState<StudioToolId | null>(null);
+
+  const [assetCategory, setAssetCategory] = useState<"model3d" | "texture" | "fpg" | "map">("model3d");
+  const [selectedAsset, setSelectedAsset] = useState<SelectedStudioAsset | null>(null);
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [assetModalTab, setAssetModalTab] = useState<"model3d" | "texture" | "fpg" | "map">("model3d");
+  const [requestedMode8ModelId, setRequestedMode8ModelId] = useState<string | null>(null);
+  const [requestedMode8TextureName, setRequestedMode8TextureName] = useState<string | null>(null);
+  const [inspectorFeedback, setInspectorFeedback] = useState<string | null>(null);
+
+  // 3D Mode8 <-> Local AI Work Blocks Bridge
+  const [mode8SceneContext, setMode8SceneContext] = useState<Mode8SceneContext | undefined>(undefined);
+  const [pendingMode8AiBatch, setPendingMode8AiBatch] = useState<{
+    batchId: number;
+    actions: Mode8AiAction[];
+  } | null>(null);
+
+  // Shared custom asset state
+  const [customModels, setCustomModels] = useState<CustomModel3DAsset[]>(() => listCustomModels3D());
+  const [customTextures, setCustomTextures] = useState<CustomTextureAsset[]>(() => listCustomTextures());
+
+  useEffect(() => {
+    return subscribeAssetLibrary(() => {
+      setCustomModels(listCustomModels3D());
+      setCustomTextures(listCustomTextures());
+    });
+  }, []);
 
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isPresetsDrawerOpen, setIsPresetsDrawerOpen] = useState(false);
   const [isLexiconOpen, setIsLexiconOpen] = useState(false);
+  const [isAiOnboardingOpen, setIsAiOnboardingOpen] = useState(false);
+  const [isAiTutorialOpen, setIsAiTutorialOpen] = useState(false);
+  const [isWineboxOpen, setIsWineboxOpen] = useState(false);
   const [isWebWizardOpen, setIsWebWizardOpen] = useState(false);
+  const [voiceTriggerCount, setVoiceTriggerCount] = useState(0);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem(WELCOME_HIDE_STORAGE_KEY) !== "true";
@@ -242,6 +344,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   const [pendingAiPrompt, setPendingAiPrompt] = useState<string | undefined>(undefined);
   const [pendingRunCode, setPendingRunCode] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [launchedFromMode8, setLaunchedFromMode8] = useState(false);
+  const workspaceRootRef = useRef<HTMLDivElement>(null);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   useEffect(() => {
     if (openWebWizardTrigger && openWebWizardTrigger > 0) {
@@ -257,6 +362,11 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
 
   // Model passed from MD2Viewer to SpriteGenerator
   const [generatorModel, setGeneratorModel] = useState<ParsedMD2Model | undefined>(undefined);
+
+  const flashFeedback = useCallback((msg: string) => {
+    setInspectorFeedback(msg);
+    window.setTimeout(() => setInspectorFeedback(null), 2800);
+  }, []);
 
   // Sync code to runtime for breakpoint debugging
   useEffect(() => {
@@ -304,8 +414,64 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
     timestamp: number;
   } | null>(null);
 
+  const skipNextFormResetRef = useRef<boolean>(false);
+  const lastSyncVersionRef = useRef<number>(0);
+
+  // Hydrate restored UI state and VB3 forms from IndexedDB startup sync
+  useEffect(() => {
+    if (!syncedSnapshot || syncedSnapshot.syncVersion <= lastSyncVersionRef.current) return;
+    lastSyncVersionRef.current = syncedSnapshot.syncVersion;
+
+    if (syncedSnapshot.forms && syncedSnapshot.forms.length > 0) {
+      skipNextFormResetRef.current = true;
+      setForms(syncedSnapshot.forms);
+      setActiveFormId(syncedSnapshot.activeFormId || syncedSnapshot.forms[0].id);
+      setSelectedControlId(null);
+    }
+    if (syncedSnapshot.designMode === "mobile" || syncedSnapshot.designMode === "form") {
+      setDesignMode(syncedSnapshot.designMode);
+    }
+    if (syncedSnapshot.logicMode === "blocks" || syncedSnapshot.logicMode === "code") {
+      setLogicMode(syncedSnapshot.logicMode);
+    }
+    if (
+      syncedSnapshot.activeStudioTool === null ||
+      (typeof syncedSnapshot.activeStudioTool === "string" &&
+        STUDIO_TOOLS.some((t) => t.id === syncedSnapshot.activeStudioTool))
+    ) {
+      setActiveStudioTool(syncedSnapshot.activeStudioTool ?? null);
+    }
+    if (
+      syncedSnapshot.activeTab === "mode8" ||
+      syncedSnapshot.activeTab === "design" ||
+      syncedSnapshot.activeTab === "logic" ||
+      syncedSnapshot.activeTab === "studio"
+    ) {
+      setActiveTab(syncedSnapshot.activeTab);
+    } else if ((syncedSnapshot.activeTab as string | undefined) === "modular") {
+      setActiveTab("mode8");
+    }
+  }, [syncedSnapshot]);
+
+  // Emit workspace state snapshots to App.tsx for IndexedDB persistence
+  useEffect(() => {
+    onWorkspaceSnapshotChange?.({
+      forms,
+      activeFormId,
+      activeTab,
+      designMode,
+      logicMode,
+      activeStudioTool,
+    });
+  }, [forms, activeFormId, activeTab, designMode, logicMode, activeStudioTool, onWorkspaceSnapshotChange]);
+
   // Reset form/design mode when project changes
   useEffect(() => {
+    setLaunchedFromMode8(false);
+    if (skipNextFormResetRef.current) {
+      skipNextFormResetRef.current = false;
+      return;
+    }
     if (isCurrentPresetFormApp) {
       const f = getPresetFormDefinition(currentPresetId);
       if (f) {
@@ -322,7 +488,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
     }
   }, [currentPresetId, projectResetVersion, isCurrentPresetFormApp]);
 
-  // Handle requestedActiveTool from App.tsx (e.g., when creating/loading presets)
+  // Handle requestedActiveTool from App.tsx
   useEffect(() => {
     if (!requestedActiveTool) return;
     if (requestedActiveTool === "visual") {
@@ -338,6 +504,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
       setActiveTab("play");
     } else if (requestedActiveTool === "ai") {
       setIsAiDrawerOpen(true);
+    } else if (requestedActiveTool === "mode8") {
+      setActiveTab("mode8");
+      setActiveStudioTool(null);
     } else if (
       [
         "sprites",
@@ -346,7 +515,6 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         "fonts",
         "palette",
         "explosions",
-        "mode8",
         "md2viewer",
         "spritegenerator",
         "sound",
@@ -403,7 +571,6 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
     [vb3Form.controls, selectedControlId]
   );
 
-  // Compute responsive auto-fit scale for the Desktop/Android Visual Form Canvas
   useEffect(() => {
     if (activeTab !== "design" || designMode !== "form") return;
     const el = formViewportRef.current;
@@ -558,32 +725,45 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
     [vb3Form.controls, vb3Form.width, vb3Form.height, handleAddControl]
   );
 
-  const handlePlayRun = useCallback(() => {
-    runtime.stop();
-    runtime.reset();
-    runtime.loadFPG(fpg);
-
-    const isLandingOrWeb = Boolean(
-      currentPresetId?.startsWith("web_") ||
-        currentPresetId?.includes("landing") ||
-        code.toLowerCase().includes("draw_landing_page") ||
-        code.toLowerCase().includes("web_page") ||
-        code.toLowerCase().includes("web_hero") ||
-        code.toLowerCase().includes("navbar(")
+  const executeRuntimeOnly = useCallback(() => {
+    const isMode8Project = /\b(start_mode8|m8_set_doom_sector|m8_add_doom_line|m8_engine_mode|m8_add_model|m8_place_voxel)\b/i.test(
+      code || ""
     );
-    const isFormApp = Boolean(!isLandingOrWeb && designMode === "form" && forms.length > 0);
+    setLaunchedFromMode8(activeTab === "mode8" || isMode8Project);
+    try {
+      runtime.stop();
+      runtime.reset();
+      runtime.loadFPG(fpg);
 
-    if (isFormApp && vb3Form) {
-      executeVB3FormInHtml5(runtime, vb3Form);
-    } else {
-      onRunGame();
+      const isLandingOrWeb = Boolean(
+        !isMode8Project &&
+          (currentPresetId?.startsWith("web_") ||
+            currentPresetId?.includes("landing") ||
+            code.toLowerCase().includes("draw_landing_page") ||
+            code.toLowerCase().includes("web_page") ||
+            code.toLowerCase().includes("web_hero") ||
+            code.toLowerCase().includes("navbar("))
+      );
+      const isFormApp = Boolean(!isMode8Project && !isLandingOrWeb && designMode === "form" && forms.length > 0);
+
+      if (isFormApp && vb3Form) {
+        executeVB3FormInHtml5(runtime, vb3Form);
+      } else {
+        onRunGame();
+      }
+      if (!runtime.isHtml5Mode) {
+        runtime.start();
+      }
+      setIsRunning(true);
+    } catch (err) {
+      console.error("[StudioWorkspace] Error iniciando ejecución:", err);
     }
-    if (!runtime.isHtml5Mode) {
-      runtime.start();
-    }
-    setIsRunning(true);
+  }, [activeTab, runtime, fpg, currentPresetId, code, designMode, forms.length, vb3Form, onRunGame]);
+
+  const handlePlayRun = useCallback(() => {
+    executeRuntimeOnly();
     setActiveTab("play");
-  }, [runtime, fpg, currentPresetId, code, designMode, forms.length, vb3Form, onRunGame]);
+  }, [executeRuntimeOnly]);
 
   const handleStopRun = useCallback(() => {
     runtime.stop();
@@ -603,369 +783,562 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
     return p ? p.name : "Proyecto_WXDIV";
   }, [currentPresetId, projectTitle]);
 
+  const mapFiles = useMemo(
+    () => (runtime?.mapFiles ? Array.from(runtime.mapFiles.values()) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runtime, activeTab, isAssetModalOpen, assetCategory]
+  );
+
+  // Auto-select first asset if none selected
+  const resolvedSelectedAsset = useMemo(() => {
+    if (selectedAsset) return selectedAsset;
+    if (customModels.length > 0) return { kind: "model3d" as const, id: customModels[0].id };
+    if (customTextures.length > 0) return { kind: "texture" as const, id: customTextures[0].name };
+    if (fpg.length > 0) return { kind: "fpg" as const, id: fpg[0].id, pkgId: 0 };
+    if (mapFiles.length > 0) return { kind: "map" as const, id: mapFiles[0].id };
+    return null;
+  }, [selectedAsset, customModels, customTextures, fpg, mapFiles]);
+
+  const openAssetImporter = useCallback((tab: "model3d" | "texture" | "fpg" | "map") => {
+    setAssetModalTab(tab);
+    setIsAssetModalOpen(true);
+  }, []);
+
+  const handleApplyMode8Actions = useCallback(
+    (actions: Mode8AiAction[]) => {
+      if (!actions || actions.length === 0) return;
+      setPendingMode8AiBatch({ batchId: Date.now(), actions });
+      setActiveTab("mode8");
+      setActiveStudioTool(null);
+      setIsAiDrawerOpen(false);
+      flashFeedback(`Bloques 3D enviados (${actions.length})`);
+    },
+    [flashFeedback]
+  );
+
   const navItems: Array<{ id: StudioTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+    { id: "mode8", label: "3D", icon: Compass },
     { id: "design", label: "Diseñar", icon: Smartphone },
     { id: "logic", label: "Lógica", icon: Blocks },
     { id: "play", label: "Probar", icon: Play },
     { id: "studio", label: "Estudio", icon: Wrench },
   ];
 
+  const mobileNavItems = navItems.filter((n) => n.id !== "play");
+
   const activeToolMeta = activeStudioTool
     ? STUDIO_TOOLS.find((t) => t.id === activeStudioTool)
     : null;
 
+  // Shared selector for App Móvil / Formulario inside Diseñar
+  const designModeSwitcher = (
+    <div className="inline-flex bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0] shrink-0">
+      <button
+        type="button"
+        onClick={() => setDesignMode("mobile")}
+        className={`min-h-[36px] px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+          designMode === "mobile"
+            ? "bg-white text-[#7C2D48] shadow-2xs"
+            : "text-[#4B5563] hover:text-[#111827]"
+        }`}
+      >
+        <Smartphone className="w-3.5 h-3.5 shrink-0" />
+        <span>App Móvil</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (forms.length === 0) {
+            const fallbackForm: VB3Form = {
+              id: "form1",
+              name: "Form1",
+              caption: currentProjectName || "Mi App",
+              backColor: "#f8fafc",
+              width: 480,
+              height: 420,
+              controls: [],
+            };
+            setForms([fallbackForm]);
+            setActiveFormId("form1");
+          }
+          setDesignMode("form");
+        }}
+        className={`min-h-[36px] px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+          designMode === "form"
+            ? "bg-white text-[#7C2D48] shadow-2xs"
+            : "text-[#4B5563] hover:text-[#111827]"
+        }`}
+      >
+        <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+        <span>Formulario</span>
+      </button>
+    </div>
+  );
+
+  const designQuickActions = (
+    <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+      <button
+        type="button"
+        onClick={() => setIsWebWizardOpen(true)}
+        className="min-h-[36px] px-2.5 py-1 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+        title="Asistente de Páginas Web"
+      >
+        <Globe className="w-3.5 h-3.5 shrink-0" />
+        <span>Web</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setActiveTab("logic")}
+        className="min-h-[36px] px-2.5 py-1 rounded-lg bg-[#EEF6F1] hover:bg-[#DCEEE3] text-[#2F6F4E] border border-[#CFE4D7] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+        title="Editar lógica de bloques o código DIV"
+      >
+        <Blocks className="w-3.5 h-3.5 shrink-0" />
+        <span>Lógica</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setIsAiDrawerOpen(true)}
+        className="min-h-[36px] px-2.5 py-1 rounded-lg bg-[#F1F5F9] hover:bg-slate-200 text-[#111827] border border-[#E2E8F0] text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+        title="Abrir AURA IA local"
+      >
+        <Sparkles className="w-3.5 h-3.5 text-[#7C2D48] shrink-0" />
+        <span>IA</span>
+      </button>
+    </div>
+  );
+  // Kept minimal helper spacing without taller brick clutter
+
   return (
-    <div className="flex flex-col w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] overflow-hidden select-none">
+    <div
+      ref={workspaceRootRef}
+      className={`flex flex-col w-full h-full min-h-0 bg-[#E9EEF4] text-[#111827] overflow-hidden select-none pl-safe pr-safe ${
+        isFullscreen ? "fixed inset-0 z-40 h-[100dvh] w-screen pt-safe" : ""
+      }`}
+    >
       {/* ===================================================================== */}
-      {/* TOP BAR (WineBOX Clinic calm clinical header, <= 52px on mobile)      */}
+      {/* TOP BAR (Minimal, calm, mobile-first header)                          */}
       {/* ===================================================================== */}
-      <header className="h-12 md:h-14 px-3 md:px-5 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0 z-30">
-        {/* Left: Brand & Project Selector */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-[#7C2D48] text-white flex items-center justify-center font-extrabold text-sm tracking-tight flex-shrink-0 shadow-xs">
-            W
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsPresetsDrawerOpen(true)}
-            className="min-w-0 text-left group flex items-center gap-1.5 py-1 px-1.5 -ml-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Cambiar plantilla o proyecto"
-          >
-            <div className="min-w-0">
-              <div className="text-xs md:text-sm font-bold text-[#111827] truncate max-w-[140px] sm:max-w-[220px]">
-                {currentProjectName}
-              </div>
-              <div className="hidden sm:block text-[11px] text-[#6B7280] leading-none">
-                WXDIV Studio · Toca para cambiar plantilla
-              </div>
+      {!(isFullscreen && activeTab === "play") && (
+        <header className="h-12 md:h-13 px-2.5 sm:px-4 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0 z-30">
+          {/* Left: Brand & Project Selector */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-[#7C2D48] text-white flex items-center justify-center font-bold text-sm tracking-tight flex-shrink-0">
+              W
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#7C2D48] flex-shrink-0" />
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setIsPresetsDrawerOpen(true)}
+              className="min-w-0 min-h-[40px] text-left group flex items-center gap-1 py-1 px-1.5 -ml-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Cambiar plantilla o proyecto"
+            >
+              <span className="text-xs sm:text-sm font-bold text-[#111827] truncate max-w-[105px] sm:max-w-[170px] lg:max-w-[210px]">
+                {currentProjectName}
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#7C2D48] flex-shrink-0" />
+            </button>
+          </div>
 
-        {/* Center: Desktop Primary Navigation (4 integrated spaces) */}
-        <nav className="hidden md:flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-xl border border-[#E2E8F0]">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeTab === item.id;
-            return (
+          {/* Center: Desktop/Tablet Primary Navigation */}
+          <nav className="hidden md:flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-xl border border-[#E2E8F0] flex-shrink-0">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    active
+                      ? "bg-white text-[#7C2D48] shadow-2xs"
+                      : "text-[#4B5563] hover:text-[#111827]"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Right: Activos + Probar + AURA IA + Mic + More Menu */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 relative">
+            <button
+              type="button"
+              onClick={() => openAssetImporter(assetCategory)}
+              className="min-h-[38px] px-2.5 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] border border-[#BFDBFE] font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Cargar o crear Objetos MD2/MD3, Texturas, FPG y MAP"
+            >
+              <Upload className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden lg:inline">Activos</span>
+            </button>
+
+            {isRunning ? (
               <button
-                key={item.id}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  active
-                    ? "bg-white text-[#7C2D48] shadow-xs border border-[#E2E8F0]"
-                    : "text-[#4B5563] hover:text-[#111827]"
-                }`}
+                onClick={handleStopRun}
+                className="min-h-[38px] px-2.5 lg:px-3 rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Detener</span>
               </button>
-            );
-          })}
-        </nav>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePlayRun}
+                className="min-h-[38px] px-2.5 lg:px-3 rounded-lg bg-[#7C2D48] hover:bg-[#642239] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span className="hidden sm:inline">Probar</span>
+              </button>
+            )}
 
-        {/* Right: Primary Run CTA + AURA AI + More Menu */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 relative">
-          {isRunning ? (
             <button
               type="button"
-              onClick={handleStopRun}
-              className="h-9 md:h-9 px-3 rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => onOpenExport?.()}
+              className="hidden md:flex min-h-[38px] px-2.5 lg:px-3 rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Exportar o compilar tu proyecto"
             >
-              <Square className="w-3.5 h-3.5 fill-current" />
-              <span className="hidden sm:inline">Detener</span>
+              <Cloud className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden lg:inline">Publicar</span>
             </button>
-          ) : (
+
             <button
               type="button"
-              onClick={handlePlayRun}
-              className="h-9 md:h-9 px-3 rounded-lg bg-[#7C2D48] hover:bg-[#642239] text-white font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => setIsAiDrawerOpen(true)}
+              className="min-h-[38px] px-2.5 lg:px-3 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Abrir Asistente Local AURA IA"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Probar</span>
+              <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>IA</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => setIsAiDrawerOpen(true)}
-            className="h-9 px-2.5 md:px-3 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Abrir Asistente AURA IA"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">AURA IA</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAiDrawerOpen(true);
+                setVoiceTriggerCount((c) => c + 1);
+              }}
+              className="min-h-[38px] min-w-[38px] px-2 rounded-lg bg-[#EEF6F1] hover:bg-[#E2EFE8] text-[#2F6F4E] border border-[#CFE4D7] font-semibold text-xs flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              title="Dictar comando por voz a AURA IA"
+              aria-label="Dictar comando por voz a AURA IA"
+            >
+              <Mic className="w-4 h-4 flex-shrink-0" />
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setIsWelcomeOpen(true)}
-            className="h-9 px-2.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#4B5563] hover:text-[#7C2D48] font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Guía paso a paso para empezar"
-            aria-label="Guía paso a paso"
-          >
-            <HelpCircle className="w-4 h-4" />
-            <span className="hidden lg:inline">Guía</span>
-          </button>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <PWAInstallButton variant="header" />
+              <button
+                type="button"
+                onClick={() => toggleFullscreen(workspaceRootRef.current)}
+                className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 ${
+                  isFullscreen
+                    ? "bg-[#7C2D48] text-white border-[#7C2D48]"
+                    : "border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#4B5563]"
+                }`}
+                title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+                aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => setIsMoreMenuOpen((v) => !v)}
-            className="w-9 h-9 rounded-lg border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#4B5563] flex items-center justify-center transition-colors cursor-pointer"
-            title="Más opciones"
-            aria-label="Más opciones"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsMoreMenuOpen((v) => !v)}
+              className="w-9 h-9 rounded-lg border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#4B5563] flex items-center justify-center transition-colors cursor-pointer flex-shrink-0"
+              title="Más opciones"
+              aria-label="Más opciones"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
 
-          {isMoreMenuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setIsMoreMenuOpen(false)}
-              />
-              <div className="absolute right-0 top-11 w-60 bg-white border border-[#E2E8F0] rounded-xl shadow-xl py-1.5 z-50 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    setIsWelcomeOpen(true);
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#FDF2F5] flex items-center gap-2.5 font-semibold text-[#7C2D48] cursor-pointer"
-                >
-                  <HelpCircle className="w-4 h-4 text-[#7C2D48]" />
-                  <span>Guía de Bienvenida (Paso a paso)</span>
-                </button>
-                <div className="my-1 border-t border-[#E2E8F0]" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onOpenNewProject?.();
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
-                >
-                  <FolderPlus className="w-4 h-4 text-[#7C2D48]" />
-                  <span>Nuevo proyecto o plantilla</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    setIsWebWizardOpen(true);
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#FDF2F5] flex items-center gap-2.5 font-semibold text-[#7C2D48] cursor-pointer"
-                >
-                  <Globe className="w-4 h-4 text-[#7C2D48]" />
-                  <span>Asistente de Páginas Web / Tienda</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onOpenExport?.();
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
-                >
-                  <Download className="w-4 h-4 text-[#2F6F4E]" />
-                  <span>Exportar Web / Android</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    setIsLexiconOpen(true);
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
-                >
-                  <BookOpen className="w-4 h-4 text-[#4B5563]" />
-                  <span>Manual DIV Games</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onOpenCloudSync?.();
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
-                >
-                  <Cloud className="w-4 h-4 text-[#4B5563]" />
-                  <span>Sincronización Nube</span>
-                </button>
-                <div className="my-1 border-t border-[#E2E8F0]" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onOpenAiSettings();
-                  }}
-                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 text-[#4B5563]" />
-                  <span>Ajustes de IA</span>
-                </button>
-                {onChangeResolution && (
-                  <div className="px-3.5 py-2 border-t border-[#E2E8F0] mt-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] mb-1.5">
-                      Resolución de pantalla
+            {isMoreMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsMoreMenuOpen(false)} />
+                <div className="absolute right-0 top-11 w-64 bg-white border border-[#CBD5E1] rounded-xl shadow-xl py-1.5 z-50 text-xs max-h-[80dvh] overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      onOpenExport?.();
+                    }}
+                    className="md:hidden w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#EEF6F1] flex items-center gap-2.5 font-semibold text-[#2F6F4E] cursor-pointer"
+                  >
+                    <Cloud className="w-4 h-4 text-[#2F6F4E] flex-shrink-0" />
+                    <span>Publicar o Exportar App</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      openAssetImporter("model3d");
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#EFF6FF] flex items-center gap-2.5 font-semibold text-[#1D4ED8] cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4 text-[#1D4ED8] flex-shrink-0" />
+                    <span>Importar Objetos MD2/MD3 y Texturas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsWelcomeOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#FDF2F5] flex items-center gap-2.5 font-semibold text-[#7C2D48] cursor-pointer"
+                  >
+                    <HelpCircle className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />
+                    <span>Guía de Bienvenida</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsAiOnboardingOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#EEF6F1] flex items-center gap-2.5 font-semibold text-[#2F6F4E] cursor-pointer"
+                  >
+                    <Cpu className="w-4 h-4 text-[#2F6F4E] flex-shrink-0" />
+                    <span>Cómo funciona la IA Local</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsAiTutorialOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#FDF2F5] flex items-center gap-2.5 font-semibold text-[#7C2D48] cursor-pointer"
+                  >
+                    <GraduationCap className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />
+                    <span>Tutorial IA → Sintaxis DIV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsWineboxOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#EEF6F1] flex items-center gap-2.5 font-semibold text-[#2F6F4E] cursor-pointer"
+                  >
+                    <Brain className="w-4 h-4 text-[#2F6F4E] flex-shrink-0" />
+                    <span>Winebox Clinic y Consola</span>
+                  </button>
+                  <PWAInstallButton variant="menu" onActionComplete={() => setIsMoreMenuOpen(false)} />
+                  <div className="my-1 border-t border-[#E2E8F0]" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      onOpenNewProject?.();
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
+                  >
+                    <FolderPlus className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />
+                    <span>Nuevo proyecto o plantilla</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsWebWizardOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#FDF2F5] flex items-center gap-2.5 font-semibold text-[#7C2D48] cursor-pointer"
+                  >
+                    <Globe className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />
+                    <span>Asistente de Páginas Web</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIsLexiconOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
+                  >
+                    <BookOpen className="w-4 h-4 text-[#4B5563] flex-shrink-0" />
+                    <span>Manual DIV Games</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      onOpenCloudSync?.();
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
+                  >
+                    <Cloud className="w-4 h-4 text-[#4B5563] flex-shrink-0" />
+                    <span>Sincronización Nube</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      onOpenAiSettings();
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 text-left hover:bg-[#F7F8FA] flex items-center gap-2.5 font-medium text-[#111827] cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4 text-[#4B5563] flex-shrink-0" />
+                    <span>Ajustes de IA</span>
+                  </button>
+                  {onChangeResolution && (
+                    <div className="px-3.5 py-2 border-t border-[#E2E8F0] mt-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6B7280] mb-1.5">
+                        Resolución
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["320x200", "640x480", "800x600"] as const).map((res) => (
+                          <button
+                            key={res}
+                            type="button"
+                            onClick={() => {
+                              onChangeResolution(res);
+                              setIsMoreMenuOpen(false);
+                            }}
+                            className={`py-1.5 rounded text-[10px] font-mono font-semibold border cursor-pointer ${
+                              resolution === res
+                                ? "bg-[#7C2D48] text-white border-[#7C2D48]"
+                                : "bg-[#F7F8FA] text-[#4B5563] border-[#E2E8F0]"
+                            }`}
+                          >
+                            {res.split("x")[0]}p
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(["320x200", "640x480", "800x600"] as const).map((res) => (
-                        <button
-                          key={res}
-                          type="button"
-                          onClick={() => {
-                            onChangeResolution(res);
-                            setIsMoreMenuOpen(false);
-                          }}
-                          className={`py-1.5 rounded text-[10px] font-mono font-semibold border cursor-pointer ${
-                            resolution === res
-                              ? "bg-[#7C2D48] text-white border-[#7C2D48]"
-                              : "bg-[#F7F8FA] text-[#4B5563] border-[#E2E8F0]"
-                          }`}
-                        >
-                          {res.split("x")[0]}p
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </header>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </header>
+      )}
 
       {/* ===================================================================== */}
       {/* MAIN INTEGRATED WORKSPACE BODY                                        */}
       {/* ===================================================================== */}
-      <div className="flex-1 flex-grow min-h-0 w-full flex flex-col overflow-hidden relative">
-        {/* 1. DISEÑAR (Mobile App Designer OR Classic Form Designer) */}
+      <div className="flex-1 flex-grow min-h-0 w-full flex flex-col overflow-hidden relative bg-[#F7F8FA]">
+        {inspectorFeedback && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-3.5 py-2 rounded-xl bg-[#111827] text-white text-xs font-semibold shadow-lg pointer-events-none">
+            {inspectorFeedback}
+          </div>
+        )}
+
+        {/* 0. CONSTRUCTOR 3D MODO 8 (Inicio predeterminado) */}
+        {activeTab === "mode8" && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <ErrorBoundary sectionName="Constructor 3D">
+              <Mode8LevelEditor
+                key={projectResetVersion}
+                runtime={runtime}
+                fpg={fpg}
+                onUpdateFpg={onUpdateFpg}
+                onFpgPackagesChanged={onFpgPackagesChanged}
+                onInsertCode={onInsertCode}
+                onApplyFullCode={onApplyFullCode}
+                onOpenAssetImporter={(tab) => openAssetImporter(tab)}
+                requestedModelId={requestedMode8ModelId}
+                requestedTextureName={requestedMode8TextureName}
+                onConsumeRequestedAsset={() => {
+                  setRequestedMode8ModelId(null);
+                  setRequestedMode8TextureName(null);
+                }}
+                onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
+                pendingAiActionBatch={pendingMode8AiBatch}
+                onConsumeAiActionBatch={() => setPendingMode8AiBatch(null)}
+                onSceneContextChange={setMode8SceneContext}
+                onLaunchGameCode={(fullCode, customTitle) => {
+                  try {
+                    onApplyFullCode(fullCode, customTitle);
+                    runtime.stop();
+                    runtime.reset();
+                    runtime.loadFPG(fpg);
+                    setupRuntimeFromDivCode(runtime, fullCode, customTitle);
+                    if (!runtime.isHtml5Mode) {
+                      runtime.start();
+                    }
+                    setIsRunning(!runtime.isHtml5Mode);
+                    setLaunchedFromMode8(true);
+                    setActiveTab("play");
+                  } catch (err) {
+                    console.error("[Mode8] Error al iniciar el juego 3D:", err);
+                  }
+                }}
+                onApplyToRuntime={() => {
+                  try {
+                    onRunGame();
+                    setLaunchedFromMode8(true);
+                    setActiveTab("play");
+                  } catch (err) {
+                    console.error("[Mode8] Error aplicando al runtime:", err);
+                  }
+                }}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {/* 1. DISEÑAR (App Móvil y Formulario unificados en una sola línea) */}
         {activeTab === "design" && (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Subheader mode switch */}
-            <div className="px-3 py-2 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
-              <div className="inline-flex bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0]">
-                <button
-                  type="button"
-                  onClick={() => setDesignMode("mobile")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] ${
-                    designMode === "mobile"
-                      ? "bg-white text-[#7C2D48] shadow-2xs"
-                      : "text-[#4B5563] hover:text-[#111827]"
-                  }`}
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>App Móvil</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (forms.length === 0) {
-                      const fallbackForm: VB3Form = {
-                        id: "form1",
-                        name: "Form1",
-                        caption: currentProjectName || "Mi App",
-                        backColor: "#f8fafc",
-                        width: 480,
-                        height: 420,
-                        controls: [],
-                      };
-                      setForms([fallbackForm]);
-                      setActiveFormId("form1");
-                    }
-                    setDesignMode("form");
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] ${
-                    designMode === "form"
-                      ? "bg-white text-[#7C2D48] shadow-2xs"
-                      : "text-[#4B5563] hover:text-[#111827]"
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>Formulario</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsWebWizardOpen(true)}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] whitespace-nowrap"
-                  title="Crear página web, tienda o landing paso a paso"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span className="sm:hidden">Web</span>
-                  <span className="hidden sm:inline">Asistente Web</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("logic")}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#EEF6F1] hover:bg-[#DCEEE3] text-[#2F6F4E] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] whitespace-nowrap"
-                >
-                  <Blocks className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Editar Lógica</span>
-                  <span className="sm:hidden">Lógica</span>
-                </button>
-              </div>
-            </div>
-
             {designMode === "mobile" ? (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <AppInventorWorkspace
-                  initialCode={code}
-                  projectName={currentProjectName}
-                  onChangeCode={onChangeCode}
-                  onRunGame={handlePlayRun}
-                  onSwitchToCodeEditor={() => {
-                    setActiveTab("logic");
-                    setLogicMode("code");
-                  }}
-                  initialMode="designer"
-                  embeddedMode={true}
-                />
+                <ErrorBoundary sectionName="Diseñador Visual">
+                  <AppInventorWorkspace
+                    initialCode={code}
+                    projectName={currentProjectName}
+                    onChangeCode={onChangeCode}
+                    onRunGame={handlePlayRun}
+                    onSwitchToCodeEditor={() => {
+                      setActiveTab("logic");
+                      setLogicMode("code");
+                    }}
+                    initialMode="designer"
+                    embeddedMode={true}
+                    designerLeftSlot={designModeSwitcher}
+                    designerRightSlot={designQuickActions}
+                    onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
+                  />
+                </ErrorBoundary>
               </div>
             ) : (
-              /* Integrated VB3 Form Designer (Zero floating windows!) */
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#F7F8FA]">
-                {/* Mobile panel switcher for Form Mode */}
-                <div className="flex lg:hidden border-b border-[#E2E8F0] bg-white px-2 py-1.5 gap-1 flex-shrink-0">
-                  {[
-                    { id: "canvas", label: "Lienzo", icon: Monitor },
-                    { id: "toolbox", label: "Controles", icon: Plus },
-                    { id: "properties", label: "Propiedades", icon: Sliders },
-                  ].map((p) => {
-                    const Icon = p.icon;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setVb3MobilePanel(p.id as any)}
-                        className={`flex-1 min-h-[40px] rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
-                          vb3MobilePanel === p.id
-                            ? "bg-[#7C2D48] text-white"
-                            : "bg-[#F1F5F9] text-[#4B5563]"
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{p.label}</span>
-                      </button>
-                    );
-                  })}
+                {/* Single-row unified bar for Form mode */}
+                <div className="flex items-center justify-between gap-2 px-2.5 sm:px-3 py-1.5 bg-white border-b border-[#E2E8F0] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-nowrap flex-shrink-0 min-h-[48px]">
+                  <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+                    {designModeSwitcher}
+
+                    <div className="flex lg:hidden bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0] shrink-0">
+                      {[
+                        { id: "canvas", label: "Lienzo", icon: Monitor },
+                        { id: "toolbox", label: "Controles", icon: Plus },
+                        { id: "properties", label: "Ajustes", icon: Sliders },
+                      ].map((p) => {
+                        const Icon = p.icon;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setVb3MobilePanel(p.id as any)}
+                            className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 ${
+                              vb3MobilePanel === p.id ? "bg-white text-[#7C2D48] shadow-2xs" : "text-[#4B5563]"
+                            }`}
+                          >
+                            <Icon className="w-3.5 h-3.5 shrink-0" />
+                            <span>{p.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {designQuickActions}
                 </div>
 
-                <div className="flex-1 min-h-0 flex overflow-hidden">
-                  {/* Left: Controles (Toolbox) */}
-                  <div
-                    className={`${
-                      vb3MobilePanel === "toolbox" ? "flex w-full" : "hidden"
-                    } lg:flex lg:w-44 flex-col border-r border-[#E2E8F0] bg-white overflow-y-auto flex-shrink-0`}
+                <div className="flex-1 min-h-0 p-2 sm:p-3 grid grid-cols-1 lg:grid-cols-12 gap-2.5 overflow-hidden">
+                  <WorkspaceCard
+                    title="Controles"
+                    className={`${vb3MobilePanel === "toolbox" ? "flex" : "hidden lg:flex"} lg:col-span-2`}
                   >
-                    <div className="px-2.5 py-2 border-b border-[#E2E8F0] text-[11px] font-bold text-[#4B5563] uppercase tracking-wider truncate">
-                      Controles
-                    </div>
                     <div className="p-2 flex-1 min-h-0 overflow-y-auto">
                       <ToolboxWindow
                         activeTool={activeTool}
@@ -976,72 +1349,21 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                         onDoubleClickTool={handleDoubleClickTool}
                       />
                     </div>
-                  </div>
+                  </WorkspaceCard>
 
-                  {/* Center: Form Canvas */}
-                  <div
-                    ref={formViewportRef}
-                    className={`${
-                      vb3MobilePanel === "canvas" ? "flex" : "hidden"
-                    } lg:flex flex-1 min-w-0 min-h-0 flex-col items-center justify-start p-3 sm:p-5 overflow-auto bg-[#F7F8FA]`}
-                  >
-                    <div className="w-full max-w-full flex flex-wrap items-center justify-between gap-2 mb-2.5 text-xs text-[#4B5563]">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="font-semibold truncate">
-                          {activeTool === "pointer"
-                            ? "Toca un control para moverlo o editarlo"
-                            : `Toca el lienzo para colocar: ${activeTool}`}
-                        </span>
-                        {activeTool !== "pointer" && (
-                          <button
-                            type="button"
-                            onClick={() => handleDoubleClickTool(activeTool)}
-                            className="px-2.5 py-1 rounded-md bg-[#7C2D48] text-white font-semibold text-[11px] whitespace-nowrap cursor-pointer"
-                          >
-                            + Colocar en el centro
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Quick form dimension presets */}
-                        <div className="inline-flex bg-white border border-[#E2E8F0] rounded-lg p-0.5 text-[11px]">
-                          {[
-                            { label: "Móvil", w: 360, h: 520 },
-                            { label: "Escritorio", w: 540, h: 440 },
-                            { label: "Amplio", w: 720, h: 500 },
-                          ].map((preset) => {
-                            const active = vb3Form.width === preset.w && vb3Form.height === preset.h;
-                            return (
-                              <button
-                                key={preset.label}
-                                type="button"
-                                onClick={() =>
-                                  setVb3Form((prev) => ({
-                                    ...prev,
-                                    width: preset.w,
-                                    height: preset.h,
-                                  }))
-                                }
-                                className={`px-2 py-0.5 rounded-md font-semibold transition-colors cursor-pointer ${
-                                  active ? "bg-[#7C2D48] text-white" : "text-[#4B5563] hover:bg-slate-100"
-                                }`}
-                              >
-                                {preset.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
+                  <WorkspaceCard
+                    title={vb3Form.caption || vb3Form.name}
+                    subtitle={`${vb3Form.width}×${vb3Form.height} · ${vb3Form.controls.length} controles`}
+                    className={`${vb3MobilePanel === "canvas" ? "flex" : "hidden lg:flex"} lg:col-span-7`}
+                    headerRight={
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setFormAutoFit((v) => !v)}
-                          className="px-2 py-1 rounded-md bg-white border border-[#E2E8F0] hover:bg-slate-50 text-[11px] font-semibold text-[#374151] cursor-pointer whitespace-nowrap"
-                          title="Alternar entre ajustar a la pantalla o tamaño real 100%"
+                          className="min-h-[32px] px-2.5 rounded-md bg-white border border-[#E2E8F0] text-xs font-semibold cursor-pointer"
                         >
-                          {formAutoFit ? `Zoom ${Math.round(formCanvasScale * 100)}%` : "100% Real"}
+                          {formAutoFit ? `${Math.round(formCanvasScale * 100)}%` : "100%"}
                         </button>
-
                         {selectedControl && (
                           <button
                             type="button"
@@ -1052,50 +1374,38 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                               }));
                               setSelectedControlId(null);
                             }}
-                            className="px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                            className="min-h-[32px] px-2.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            <span>Eliminar</span>
+                            <span>Quitar</span>
                           </button>
                         )}
                       </div>
-                    </div>
-
-                    <div className="bg-white rounded-xl border border-[#CBD5E1] shadow-sm overflow-auto max-w-full">
-                      <div className="px-3 py-2 bg-[#7C2D48] text-white text-xs font-semibold flex items-center justify-between gap-2 min-w-0">
-                        <span className="truncate min-w-0">{vb3Form.caption || vb3Form.name}</span>
-                        <span className="text-[11px] opacity-85 font-mono flex-shrink-0 whitespace-nowrap">
-                          {vb3Form.width}×{vb3Form.height} · {vb3Form.controls.length} ctrl
-                        </span>
-                      </div>
-                      <div className="p-2 bg-[#E2E8F0]/50 flex justify-center overflow-auto">
-                        <FormCanvas
-                          form={vb3Form}
-                          selectedControlId={selectedControlId}
-                          activeTool={activeTool}
-                          scale={formAutoFit ? formCanvasScale : 1}
-                          onSelectControl={setSelectedControlId}
-                          onUpdateControlBounds={handleUpdateControlBounds}
-                          onAddControl={handleAddControl}
-                          onDoubleClickControl={handleDoubleClickControl}
-                          onResetTool={() => setActiveTool("pointer")}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: Properties */}
-                  <div
-                    className={`${
-                      vb3MobilePanel === "properties" ? "flex w-full" : "hidden"
-                    } lg:flex lg:w-72 flex-col border-l border-[#E2E8F0] bg-white overflow-hidden flex-shrink-0`}
+                    }
                   >
-                    <div className="px-3 py-2 border-b border-[#E2E8F0] text-[11px] font-bold text-[#4B5563] uppercase tracking-wider flex items-center justify-between gap-2 min-w-0">
-                      <span className="flex-shrink-0">Propiedades</span>
-                      <span className="text-[11px] font-mono text-[#7C2D48] truncate min-w-0">
-                        {selectedControl ? selectedControl.name : vb3Form.name}
-                      </span>
+                    <div
+                      ref={formViewportRef}
+                      className="flex-1 min-h-0 flex flex-col items-center justify-start p-2 sm:p-3 overflow-auto bg-[#F8FAFC]"
+                    >
+                      <FormCanvas
+                        form={vb3Form}
+                        selectedControlId={selectedControlId}
+                        activeTool={activeTool}
+                        scale={formAutoFit ? formCanvasScale : 1}
+                        onSelectControl={setSelectedControlId}
+                        onUpdateControlBounds={handleUpdateControlBounds}
+                        onAddControl={handleAddControl}
+                        onDoubleClickControl={handleDoubleClickControl}
+                        onResetTool={() => setActiveTool("pointer")}
+                      />
                     </div>
+                  </WorkspaceCard>
+
+                  <WorkspaceCard
+                    title="Propiedades"
+                    subtitle={selectedControl ? selectedControl.name : vb3Form.name}
+                    className={`${vb3MobilePanel === "properties" ? "flex" : "hidden lg:flex"} lg:col-span-3`}
+                  >
                     <div className="flex-1 min-h-0 overflow-hidden">
                       <PropertiesWindow
                         form={vb3Form}
@@ -1104,7 +1414,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                         onUpdateProperty={handleUpdateProperty}
                       />
                     </div>
-                  </div>
+                  </WorkspaceCard>
                 </div>
               </div>
             )}
@@ -1114,72 +1424,88 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         {/* 2. LÓGICA (Visual Blocks OR DIV Code Editor) */}
         {activeTab === "logic" && (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Unified Logic Mode Switcher */}
-            <div className="px-3 py-2 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
-              <div className="inline-flex bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0]">
+            <div className="px-2.5 sm:px-3 py-1.5 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-nowrap flex-shrink-0 min-h-[48px]">
+              <div className="inline-flex bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0] shrink-0">
                 <button
                   type="button"
                   onClick={() => setLogicMode("blocks")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] ${
+                  className={`min-h-[36px] px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     logicMode === "blocks"
                       ? "bg-white text-[#7C2D48] shadow-2xs"
                       : "text-[#4B5563] hover:text-[#111827]"
                   }`}
                 >
-                  <Blocks className="w-3.5 h-3.5" />
-                  <span>Bloques Visuales</span>
+                  <Blocks className="w-3.5 h-3.5 shrink-0" />
+                  <span>Bloques</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setLogicMode("code")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer min-h-[36px] ${
+                  className={`min-h-[36px] px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     logicMode === "code"
                       ? "bg-white text-[#7C2D48] shadow-2xs"
                       : "text-[#4B5563] hover:text-[#111827]"
                   }`}
                 >
-                  <Code2 className="w-3.5 h-3.5" />
+                  <Code2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Código DIV</span>
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsLexiconOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-[#F7F8FA] hover:bg-slate-100 text-[#4B5563] border border-[#E2E8F0] text-xs font-semibold flex items-center gap-1.5 cursor-pointer min-h-[36px]"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Manual DIV</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsLexiconOpen(true)}
+                  className="min-h-[36px] px-2.5 sm:px-3 py-1 rounded-lg bg-[#F7F8FA] hover:bg-slate-100 text-[#111827] border border-[#E2E8F0] text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-[#7C2D48] shrink-0" />
+                  <span className="hidden sm:inline">Manual DIV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiDrawerOpen(true)}
+                  className="min-h-[36px] px-2.5 sm:px-3 py-1 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span>AURA IA</span>
+                </button>
+              </div>
             </div>
 
             {logicMode === "blocks" ? (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <AppInventorWorkspace
-                  initialCode={code}
-                  projectName={currentProjectName}
-                  onChangeCode={onChangeCode}
-                  onRunGame={handlePlayRun}
-                  onSwitchToCodeEditor={() => setLogicMode("code")}
-                  initialMode="blocks"
-                  embeddedMode={true}
-                />
+                <ErrorBoundary sectionName="Bloques Visuales">
+                  <AppInventorWorkspace
+                    initialCode={code}
+                    projectName={currentProjectName}
+                    onChangeCode={onChangeCode}
+                    onRunGame={handlePlayRun}
+                    onSwitchToCodeEditor={() => setLogicMode("code")}
+                    initialMode="blocks"
+                    embeddedMode={true}
+                    onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
+                  />
+                </ErrorBoundary>
               </div>
             ) : (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-0 sm:p-2 bg-[#F7F8FA]">
-                <CodeEditor
-                  code={code}
-                  onChange={onChangeCode}
-                  runtime={runtime}
-                  fileName={`${currentProjectName}.prg`}
-                  targetSymbol={codeTargetSymbol}
-                  onOpenLexicon={() => setIsLexiconOpen(true)}
-                  onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
-                  onRun={handlePlayRun}
-                  initialViewMode="code"
-                  hideBlockToggle={true}
-                  onAskAiFix={() => setIsAiDrawerOpen(true)}
-                />
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden sm:p-2">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden sm:border sm:border-[#E2E8F0] sm:rounded-xl bg-white">
+                  <ErrorBoundary sectionName="Editor de Código DIV">
+                    <CodeEditor
+                      code={code}
+                      onChange={onChangeCode}
+                      runtime={runtime}
+                      fileName={`${currentProjectName}.prg`}
+                      targetSymbol={codeTargetSymbol}
+                      onOpenLexicon={() => setIsLexiconOpen(true)}
+                      onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
+                      onRun={handlePlayRun}
+                      initialViewMode="code"
+                      hideBlockToggle={true}
+                      onAskAiFix={() => setIsAiDrawerOpen(true)}
+                    />
+                  </ErrorBoundary>
+                </div>
               </div>
             )}
           </div>
@@ -1187,109 +1513,197 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
 
         {/* 3. PROBAR (Full Responsive Game / HTML5 Stage) */}
         {activeTab === "play" && (
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden sm:p-2 bg-[#F7F8FA]">
-            <GameStage runtime={runtime} onRestart={onRestartGame} />
+          <div className={`flex-1 min-h-0 flex flex-col overflow-hidden ${isFullscreen ? "p-0" : "sm:p-2"} bg-[#0b101d]`}>
+            <div className="px-2.5 py-1.5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(launchedFromMode8 ? "mode8" : "logic");
+                    setLaunchedFromMode8(false);
+                  }}
+                  className="min-h-[36px] px-2.5 py-1 rounded-lg bg-[#7C2D48] hover:bg-[#9E3F5E] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>{launchedFromMode8 ? "Volver a 3D" : "Volver a Lógica"}</span>
+                </button>
+                <span className="text-xs text-slate-300 font-medium truncate">
+                  {launchedFromMode8 ? "Prueba 3D" : currentProjectName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleFullscreen(workspaceRootRef.current)}
+                className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                <span>{isFullscreen ? "Salir" : "Pantalla completa"}</span>
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <ErrorBoundary
+                sectionName="Ejecución de Juego"
+                onResetSection={() => {
+                  runtime.stop();
+                  setActiveTab(launchedFromMode8 ? "mode8" : "logic");
+                  setLaunchedFromMode8(false);
+                }}
+              >
+                <GameStage runtime={runtime} onRestart={onRestartGame} />
+              </ErrorBoundary>
+            </div>
           </div>
         )}
 
-        {/* 4. ESTUDIO (Integrated Resource & Tool Hub replacing 11 floating windows) */}
+        {/* 4. ESTUDIO (Integrated Resource & Tool Hub) */}
         {activeTab === "studio" && (
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#F7F8FA]">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#E9EEF4]">
             {activeStudioTool && activeToolMeta ? (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <div className="px-3 py-2 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
+                <div className="px-2.5 sm:px-3 py-1.5 bg-white border-b border-[#CBD5E1] flex items-center justify-between gap-2 flex-shrink-0">
                   <button
                     type="button"
                     onClick={() => setActiveStudioTool(null)}
-                    className="min-h-[40px] px-3 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-slate-200 text-[#111827] text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-slate-200 text-[#111827] text-xs font-semibold flex items-center gap-1.5 cursor-pointer flex-shrink-0 whitespace-nowrap"
                   >
                     <ArrowLeft className="w-4 h-4" />
-                    <span>Volver al Estudio</span>
+                    <span>Estudio</span>
                   </button>
-                  <div className="text-right min-w-0">
-                    <div className="text-xs font-bold text-[#111827] truncate">
-                      {activeToolMeta.title}
-                    </div>
-                    <div className="text-[11px] text-[#6B7280] truncate hidden sm:block">
-                      {activeToolMeta.subtitle}
-                    </div>
+
+                  <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                    <select
+                      aria-label="Cambiar herramienta de estudio"
+                      value={activeStudioTool}
+                      onChange={(e) => setActiveStudioTool(e.target.value as StudioToolId)}
+                      className="min-h-[40px] max-w-[220px] px-2.5 py-1.5 rounded-lg bg-[#F7F8FA] border border-[#CBD5E1] text-xs font-semibold text-[#111827] focus:outline-none focus:border-[#7C2D48] truncate cursor-pointer"
+                    >
+                      {STUDIO_TOOLS.map((tool) => (
+                        <option key={tool.id} value={tool.id}>
+                          {tool.title}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 flex flex-col overflow-auto">
-                  {activeStudioTool === "sprites" && (
-                    <SpriteEditor fpg={fpg} onUpdateFpg={onUpdateFpg} />
-                  )}
-                  {activeStudioTool === "fpg" && (
-                    <FpgEditor fpg={fpg} onUpdateFpg={onUpdateFpg} />
-                  )}
-                  {activeStudioTool === "map" && (
-                    <MapEditor fpg={fpg} onUpdateFpg={onUpdateFpg} />
-                  )}
-                  {activeStudioTool === "fonts" && (
-                    <FontEditor onInsertCode={onInsertCode} />
-                  )}
-                  {activeStudioTool === "palette" && (
-                    <PaletteEditor onInsertCode={onInsertCode} />
-                  )}
-                  {activeStudioTool === "explosions" && (
-                    <ExplosionCreator onAddExplosionFrames={onAddExplosionFrames} />
-                  )}
-                  {activeStudioTool === "mode8" && (
-                    <Mode8LevelEditor onInsertCode={onInsertCode} />
-                  )}
-                  {activeStudioTool === "md2viewer" && (
-                    <MD2Viewer
-                      onInsertCode={onInsertCode}
-                      onOpenInSpriteGenerator={(model) => {
-                        setGeneratorModel(model);
-                        setActiveStudioTool("spritegenerator");
-                      }}
-                    />
-                  )}
-                  {activeStudioTool === "spritegenerator" && (
-                    <SpriteGenerator
-                      initialModel={generatorModel}
-                      fpg={fpg}
-                      onUpdateFpg={onUpdateFpg}
-                      onInsertCode={onInsertCode}
-                    />
-                  )}
-                  {activeStudioTool === "sound" && (
-                    <SoundEditor onInsertCode={onInsertCode} />
-                  )}
-                  {activeStudioTool === "processes" && (
-                    <ProcessInspector runtime={runtime} />
-                  )}
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <ErrorBoundary
+                    sectionName={activeToolMeta.title}
+                    onResetSection={() => setActiveStudioTool(null)}
+                  >
+                    {activeStudioTool === "sprites" && <SpriteEditor fpg={fpg} onUpdateFpg={onUpdateFpg} />}
+                    {activeStudioTool === "fpg" && (
+                      <FpgEditor
+                        runtime={runtime}
+                        onInsertCode={onInsertCode}
+                        onOpenSpriteEditor={() => setActiveStudioTool("sprites")}
+                        onUpdateMainFpg={onUpdateFpg}
+                        onPackagesChanged={onFpgPackagesChanged}
+                      />
+                    )}
+                    {activeStudioTool === "map" && <MapEditor runtime={runtime} onInsertCode={onInsertCode} />}
+                    {activeStudioTool === "fonts" && <FontEditor runtime={runtime} onInsertCode={onInsertCode} />}
+                    {activeStudioTool === "palette" && <PaletteEditor runtime={runtime} onInsertCode={onInsertCode} />}
+                    {activeStudioTool === "explosions" && (
+                      <ExplosionCreator fpg={fpg} onAddFramesToFpg={onAddExplosionFrames} onInsertCode={onInsertCode} />
+                    )}
+                    {activeStudioTool === "mode8" && (
+                      <Mode8LevelEditor
+                        runtime={runtime}
+                        fpg={fpg}
+                        onUpdateFpg={onUpdateFpg}
+                        onFpgPackagesChanged={onFpgPackagesChanged}
+                        onInsertCode={onInsertCode}
+                        onApplyFullCode={onApplyFullCode}
+                        onOpenAssetImporter={(tab) => openAssetImporter(tab)}
+                        onOpenAiAssistant={() => setIsAiDrawerOpen(true)}
+                        pendingAiActionBatch={pendingMode8AiBatch}
+                        onConsumeAiActionBatch={() => setPendingMode8AiBatch(null)}
+                        onSceneContextChange={setMode8SceneContext}
+                        onLaunchGameCode={(fullCode, customTitle) => {
+                          onApplyFullCode(fullCode, customTitle);
+                          runtime.stop();
+                          runtime.reset();
+                          runtime.loadFPG(fpg);
+                          setupRuntimeFromDivCode(runtime, fullCode, customTitle);
+                          if (!runtime.isHtml5Mode) runtime.start();
+                          setIsRunning(!runtime.isHtml5Mode);
+                          setLaunchedFromMode8(true);
+                          setActiveTab("play");
+                        }}
+                        onApplyToRuntime={() => {
+                          onRunGame();
+                          setLaunchedFromMode8(true);
+                          setActiveTab("play");
+                        }}
+                      />
+                    )}
+                    {activeStudioTool === "md2viewer" && (
+                      <MD2Viewer
+                        onInsertCode={onInsertCode}
+                        onOpenSpriteGenerator={(model) => {
+                          setGeneratorModel(model);
+                          setActiveStudioTool("spritegenerator");
+                        }}
+                      />
+                    )}
+                    {activeStudioTool === "spritegenerator" && (
+                      <SpriteGenerator
+                        initialModel={generatorModel}
+                        fpg={fpg}
+                        onUpdateFpg={onUpdateFpg}
+                        onInsertCode={onInsertCode}
+                      />
+                    )}
+                    {activeStudioTool === "sound" && <SoundEditor onInsertCode={onInsertCode} />}
+                    {activeStudioTool === "processes" && <ProcessInspector runtime={runtime} />}
+                  </ErrorBoundary>
                 </div>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-                <div className="max-w-5xl mx-auto space-y-6 pb-8">
-                  <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h2 className="text-base sm:text-lg font-bold text-[#111827]">
-                        Estudio de Recursos y Herramientas
-                      </h2>
-                      <p className="text-xs sm:text-sm text-[#4B5563] mt-0.5">
-                        Todo integrado en un solo lugar, sin ventanas flotantes. Elige una herramienta para editar tus gráficos, audio o niveles 3D.
-                      </p>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+                <div className="max-w-5xl mx-auto space-y-5 pb-8">
+                  <WorkspaceCard
+                    title="Biblioteca Visual de Activos"
+                    subtitle="Carga, previsualiza en 3D y usa modelos .md2/.md3, texturas y paquetes FPG"
+                    headerRight={
+                      <button
+                        type="button"
+                        onClick={() => openAssetImporter("model3d")}
+                        className="min-h-[38px] px-3.5 rounded-xl bg-[#7C2D48] hover:bg-[#642239] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Importar / Crear</span>
+                      </button>
+                    }
+                  >
+                    <div className="p-3 sm:p-4">
+                      <AssetBrowser
+                        layout="full"
+                        runtime={runtime}
+                        fpg={fpg}
+                        onUpdateFpg={onUpdateFpg}
+                        onPackagesChanged={onFpgPackagesChanged}
+                        selectedAsset={resolvedSelectedAsset}
+                        onSelectAsset={(asset) => setSelectedAsset(asset)}
+                        onOpenImporter={(tab) => openAssetImporter(tab)}
+                        onUseModelInMode8={(modelId) => {
+                          setRequestedMode8ModelId(modelId);
+                          setActiveTab("mode8");
+                        }}
+                        onUseTextureInMode8={(textureName) => {
+                          setRequestedMode8TextureName(textureName);
+                          setActiveTab("mode8");
+                        }}
+                        onOpenFpgEditor={() => setActiveStudioTool("fpg")}
+                        onFeedback={flashFeedback}
+                      />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsAiDrawerOpen(true)}
-                      className="min-h-[44px] px-4 py-2 rounded-xl bg-[#7C2D48] hover:bg-[#642239] text-white text-xs font-semibold flex items-center justify-center gap-2 flex-shrink-0 cursor-pointer"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Pedir ayuda a AURA IA</span>
-                    </button>
-                  </div>
+                  </WorkspaceCard>
 
                   {(["Gráficos", "3D y Niveles", "Audio y Sistema"] as const).map((cat) => (
-                    <section key={cat} className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#6B7280] px-1">
-                        {cat}
-                      </h3>
+                    <section key={cat} className="space-y-2.5">
+                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4B5563] px-1">{cat}</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {STUDIO_TOOLS.filter((t) => t.category === cat).map((tool) => {
                           const Icon = tool.icon;
@@ -1297,8 +1711,15 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                             <button
                               key={tool.id}
                               type="button"
-                              onClick={() => setActiveStudioTool(tool.id)}
-                              className="min-h-[76px] p-4 rounded-2xl bg-white border border-[#E2E8F0] hover:border-[#7C2D48]/50 hover:shadow-sm text-left flex items-start gap-3.5 transition-all cursor-pointer group"
+                              onClick={() => {
+                                if (tool.id === "mode8") {
+                                  setActiveStudioTool(null);
+                                  setActiveTab("mode8");
+                                } else {
+                                  setActiveStudioTool(tool.id);
+                                }
+                              }}
+                              className="min-h-[78px] p-4 rounded-2xl bg-white border border-[#CBD5E1] shadow-[0_3px_0_0_#CBD5E1] hover:border-[#7C2D48] text-left flex items-start gap-3.5 transition-all cursor-pointer group"
                             >
                               <div className="w-10 h-10 rounded-xl bg-[#FDF2F5] text-[#7C2D48] group-hover:bg-[#7C2D48] group-hover:text-white flex items-center justify-center flex-shrink-0 transition-colors">
                                 <Icon className="w-5 h-5" />
@@ -1308,9 +1729,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                                   <span className="truncate">{tool.title}</span>
                                   <ChevronRight className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#7C2D48] flex-shrink-0" />
                                 </div>
-                                <p className="text-xs text-[#4B5563] mt-0.5 line-clamp-2">
-                                  {tool.subtitle}
-                                </p>
+                                <p className="text-xs text-[#4B5563] mt-0.5 line-clamp-2">{tool.subtitle}</p>
                               </div>
                             </button>
                           );
@@ -1325,68 +1744,102 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         )}
       </div>
 
-      {/* ===================================================================== */}
-      {/* MOBILE FIXED BOTTOM NAVIGATION BAR (<= 56px + safe area)              */}
-      {/* ===================================================================== */}
-      <nav className="md:hidden bg-white border-t border-[#E2E8F0] grid grid-cols-4 h-14 pb-safe flex-shrink-0 z-30">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setActiveTab(item.id)}
-              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
-                active
-                  ? "text-[#7C2D48] bg-[#FDF2F5]/60"
-                  : "text-[#6B7280] hover:text-[#111827]"
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${active ? "stroke-[2.4]" : ""}`} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {/* MOBILE BOTTOM NAVIGATION (4 clean, large touch targets) */}
+      {!(isFullscreen && activeTab === "play") && (
+        <nav className="md:hidden bg-white border-t border-[#E2E8F0] grid grid-cols-4 h-14 pb-safe flex-shrink-0 z-30">
+          {mobileNavItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  active ? "text-[#7C2D48] bg-[#FDF2F5]/70" : "text-[#6B7280] hover:text-[#111827]"
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${active ? "stroke-[2.4]" : ""}`} />
+                <span className="truncate max-w-full px-1">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
-      {/* ===================================================================== */}
-      {/* SLIDE-OVER AURA IA DRAWER                                             */}
-      {/* ===================================================================== */}
+      {/* ASSET MANAGER MODAL (CREATE / IMPORT MD2, MD3, TEXTURAS, FPG, MAP) */}
+      <AssetManagerModal
+        isOpen={isAssetModalOpen}
+        initialTab={assetModalTab}
+        onClose={() => setIsAssetModalOpen(false)}
+        runtime={runtime}
+        fpg={fpg}
+        onUpdateFpg={onUpdateFpg}
+        onPackagesChanged={onFpgPackagesChanged}
+        onInsertCode={onInsertCode}
+        onSelectAsset={(asset) => {
+          setSelectedAsset(asset);
+          setAssetCategory(asset.kind);
+        }}
+        onOpenInMode8={(opts) => {
+          if (opts?.modelId) setRequestedMode8ModelId(opts.modelId);
+          if (opts?.textureName) setRequestedMode8TextureName(opts.textureName);
+          setActiveTab("mode8");
+        }}
+        onOpenStudioTool={(tool) => {
+          setActiveTab("studio");
+          setActiveStudioTool(tool);
+        }}
+      />
+
+      {/* SLIDE-OVER AURA IA DRAWER */}
       {isAiDrawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/35 backdrop-blur-[2px]">
-          <div
-            className="flex-1 hidden sm:block"
-            onClick={() => setIsAiDrawerOpen(false)}
-          />
-          <div className="w-full sm:w-[440px] h-full bg-white border-l border-[#E2E8F0] shadow-2xl flex flex-col overflow-hidden">
-            <div className="px-4 py-3 bg-white border-b border-[#E2E8F0] flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#FDF2F5] text-[#7C2D48] flex items-center justify-center">
+          <div className="flex-1 hidden sm:block" onClick={() => setIsAiDrawerOpen(false)} />
+          <div className="w-full sm:w-[440px] h-full bg-white border-l border-[#CBD5E1] shadow-2xl flex flex-col overflow-hidden">
+            <div className="px-4 py-3 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[#FDF2F5] text-[#7C2D48] flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#111827]">Asistente AURA IA</h3>
-                  <p className="text-[11px] text-[#6B7280]">Genera juegos, apps o corrige tu código DIV</p>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-[#111827] truncate">Asistente AURA IA</h3>
+                  <p className="text-[11px] text-[#6B7280] truncate">Genera juegos, apps o corrige tu código DIV</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsAiDrawerOpen(false)}
-                className="w-10 h-10 rounded-lg hover:bg-slate-100 text-[#4B5563] flex items-center justify-center cursor-pointer"
-                aria-label="Cerrar asistente IA"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsAiTutorialOpen(true)}
+                  className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] border border-[#F3D0DC] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">Tutorial</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiOnboardingOpen(true)}
+                  className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#EEF6F1] hover:bg-[#E2EFE8] text-[#2F6F4E] border border-[#CFE4D7] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Cpu className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">GPU/CPU</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiDrawerOpen(false)}
+                  className="w-10 h-10 rounded-lg hover:bg-slate-100 text-[#4B5563] flex items-center justify-center cursor-pointer"
+                  aria-label="Cerrar asistente IA"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <AiCopilot
                 currentCode={code}
                 fpg={fpg}
                 onInsertCode={onInsertCode}
-                onApplyCode={(newCode) => {
-                  onApplyFullCode(newCode);
-                }}
+                onApplyCode={(newCode) => onApplyFullCode(newCode)}
                 onSwitchToEditor={() => {
                   setIsAiDrawerOpen(false);
                   setActiveTab("logic");
@@ -1396,29 +1849,28 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                   setIsAiDrawerOpen(false);
                   handlePlayRun();
                 }}
+                onStopGame={handleStopRun}
                 onOpenAiSettings={onOpenAiSettings}
                 initialPrompt={pendingAiPrompt}
                 onConsumeInitialPrompt={() => setPendingAiPrompt(undefined)}
+                autoStartVoiceTrigger={voiceTriggerCount}
+                activeWorkspaceTab={activeTab}
+                mode8SceneContext={mode8SceneContext}
+                onApplyMode8Actions={handleApplyMode8Actions}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* QUICK PRESETS / PROJECT SWITCHER DRAWER                               */}
-      {/* ===================================================================== */}
+      {/* QUICK PRESETS / PROJECT SWITCHER DRAWER */}
       {isPresetsDrawerOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-[2px] p-0 sm:p-4">
-          <div className="w-full sm:max-w-2xl max-h-[88dvh] bg-white rounded-t-2xl sm:rounded-2xl border border-[#E2E8F0] shadow-2xl flex flex-col overflow-hidden">
+          <div className="w-full sm:max-w-2xl max-h-[88dvh] bg-white rounded-t-2xl sm:rounded-2xl border border-[#CBD5E1] shadow-2xl flex flex-col overflow-hidden">
             <div className="px-4 py-3.5 border-b border-[#E2E8F0] flex items-center justify-between">
               <div>
-                <h3 className="text-sm sm:text-base font-bold text-[#111827]">
-                  Cambiar Plantilla o Crear Proyecto
-                </h3>
-                <p className="text-xs text-[#6B7280]">
-                  Elige un proyecto listo para probar o empieza uno desde cero
-                </p>
+                <h3 className="text-sm sm:text-base font-bold text-[#111827]">Cambiar Plantilla o Crear Proyecto</h3>
+                <p className="text-xs text-[#6B7280]">Elige un proyecto listo para probar o empieza uno desde cero</p>
               </div>
               <button
                 type="button"
@@ -1468,23 +1920,17 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                         onSelectPreset?.(preset);
                       }}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                        selected
-                          ? "border-[#7C2D48] bg-[#FDF2F5]"
-                          : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
+                        selected ? "border-[#7C2D48] bg-[#FDF2F5]" : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-[#111827] truncate">
-                          {preset.name}
-                        </span>
+                        <span className="text-xs font-bold text-[#111827] truncate">{preset.name}</span>
                         {selected && <Check className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />}
                       </div>
                       <div className="text-[11px] text-[#7C2D48] font-medium mt-0.5">
                         {preset.genre} · {preset.resolution}
                       </div>
-                      <p className="text-xs text-[#4B5563] mt-1 line-clamp-2">
-                        {preset.description}
-                      </p>
+                      <p className="text-xs text-[#4B5563] mt-1 line-clamp-2">{preset.description}</p>
                     </button>
                   );
                 })}
@@ -1494,43 +1940,29 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         </div>
       )}
 
-      {/* DIV Games Lexicon Modal */}
+      {/* MODALS */}
       <DivLexiconModal
         isOpen={isLexiconOpen}
         onClose={() => setIsLexiconOpen(false)}
-        onInsertSnippet={(snippet) => {
+        onInsertCode={(snippet) => {
           onInsertCode(snippet);
           setIsLexiconOpen(false);
           setActiveTab("logic");
           setLogicMode("code");
         }}
+        onOpenGuide={() => {
+          setIsLexiconOpen(false);
+          setIsWelcomeOpen(true);
+        }}
       />
 
-      {/* Interactive Beginner Welcome Guide */}
       <WelcomeGuideModal
         isOpen={isWelcomeOpen}
         onClose={() => setIsWelcomeOpen(false)}
         onNavigateTab={(tab, options) => {
           setActiveTab(tab);
-          if (options?.designMode) {
-            if (options.designMode === "form" && forms.length === 0) {
-              const fallbackForm: VB3Form = {
-                id: "form1",
-                name: "Form1",
-                caption: currentProjectName || "Mi App",
-                backColor: "#f8fafc",
-                width: 480,
-                height: 420,
-                controls: [],
-              };
-              setForms([fallbackForm]);
-              setActiveFormId("form1");
-            }
-            setDesignMode(options.designMode);
-          }
-          if (options?.logicMode) {
-            setLogicMode(options.logicMode);
-          }
+          if (options?.designMode) setDesignMode(options.designMode);
+          if (options?.logicMode) setLogicMode(options.logicMode);
         }}
         onOpenPresets={() => setIsPresetsDrawerOpen(true)}
         onOpenAiWithPrompt={(prompt) => {
@@ -1541,6 +1973,23 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         onOpenWebWizard={() => {
           setIsWelcomeOpen(false);
           setIsWebWizardOpen(true);
+        }}
+        onOpenLexicon={() => {
+          setIsWelcomeOpen(false);
+          setIsLexiconOpen(true);
+        }}
+        onOpenAiTutorial={() => {
+          setIsWelcomeOpen(false);
+          setIsAiTutorialOpen(true);
+        }}
+        onOpenWinebox={() => {
+          setIsWelcomeOpen(false);
+          setIsWineboxOpen(true);
+        }}
+        onOpenMode8Editor={() => {
+          setIsWelcomeOpen(false);
+          setActiveStudioTool(null);
+          setActiveTab("mode8");
         }}
         onLoadBeginnerCode={(sampleCode, runImmediately) => {
           setDesignMode("mobile");
@@ -1554,7 +2003,6 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         }}
       />
 
-      {/* Dedicated Website, Store & Landing Page Wizard */}
       <WebWizardModal
         isOpen={isWebWizardOpen}
         onClose={() => setIsWebWizardOpen(false)}
@@ -1567,6 +2015,71 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
           }
           if (options.runImmediately) {
             setPendingRunCode(webCode);
+          } else {
+            setActiveTab("logic");
+            setLogicMode("code");
+          }
+        }}
+      />
+
+      <LocalAiOnboardingModal
+        isOpen={isAiOnboardingOpen}
+        onClose={() => setIsAiOnboardingOpen(false)}
+        onOpenAiWithPrompt={(prompt) => {
+          if (prompt) setPendingAiPrompt(prompt);
+          setIsAiDrawerOpen(true);
+        }}
+        onOpenAiSettings={onOpenAiSettings}
+        onOpenTutorial={() => {
+          setIsAiOnboardingOpen(false);
+          setIsAiTutorialOpen(true);
+        }}
+        onLoadCode={(sampleCode, runImmediately) => {
+          setDesignMode("mobile");
+          onApplyFullCode(sampleCode);
+          if (runImmediately) {
+            setPendingRunCode(sampleCode);
+          } else {
+            setActiveTab("logic");
+            setLogicMode("code");
+          }
+        }}
+      />
+
+      {isAiTutorialOpen && (
+        <LocalAiTutorialView
+          onClose={() => setIsAiTutorialOpen(false)}
+          onOpenAiSettings={onOpenAiSettings}
+          onOpenAiWithPrompt={(prompt) => {
+            if (prompt) setPendingAiPrompt(prompt);
+            setIsAiDrawerOpen(true);
+          }}
+          onLoadCode={(sampleCode, runImmediately) => {
+            setDesignMode("mobile");
+            onApplyFullCode(sampleCode);
+            if (runImmediately) {
+              setPendingRunCode(sampleCode);
+            } else {
+              setActiveTab("logic");
+              setLogicMode("code");
+            }
+          }}
+        />
+      )}
+
+      <WineboxEcosystemModal
+        isOpen={isWineboxOpen}
+        onClose={() => setIsWineboxOpen(false)}
+        onOpenExport={onOpenExport}
+        onOpenAiWithPrompt={(prompt) => {
+          if (prompt) setPendingAiPrompt(prompt);
+          setIsAiDrawerOpen(true);
+        }}
+        onLoadCode={(sampleCode, runImmediately, title) => {
+          setDesignMode("mobile");
+          onApplyFullCode(sampleCode, title);
+          if (runImmediately) {
+            setPendingRunCode(sampleCode);
           } else {
             setActiveTab("logic");
             setLogicMode("code");

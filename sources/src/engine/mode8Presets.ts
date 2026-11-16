@@ -5,15 +5,23 @@ import {
   DivMode8Light,
   DivMode8PlacedModel,
   DivMode8PlacedVoxel,
+  Mode8CameraMode,
 } from "../types";
+import { saveMode8UserLevelsToIndexedDB } from "./indexedDbPersistence";
 
 export interface Mode8LevelData {
   id: string;
   name: string;
   author?: string;
   description: string;
-  theme?: "doom" | "gothic" | "tech" | "lava" | "cyber" | string;
+  theme?: "doom" | "gothic" | "tech" | "lava" | "cyber" | "roblox" | string;
   engineMode?: string;
+  recommendedCamera?: Mode8CameraMode;
+  recommendedSky?: string;
+  recommendedWeapon?: "shotgun" | "pistol" | "sword3d" | "staff3d";
+  recommendedTheme?: "winebox_clean" | "doom_dark" | "cyber_neon" | "medieval_gold";
+  recommendedGameMode?: "shooter" | "exploration" | "survival";
+  recommendedPlayerModel?: string;
   sectors: DivDoomSector[];
   linedefs: DivDoomLinedef[];
   entities: DivMode8Entity[];
@@ -23,283 +31,467 @@ export interface Mode8LevelData {
   updatedAt?: string;
 }
 
+function makeOuterRoomLines(
+  prefix: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  sectorId: number,
+  texNorth: string,
+  texEast: string = texNorth,
+  texSouth: string = texNorth,
+  texWest: string = texEast
+): DivDoomLinedef[] {
+  return [
+    { id: `${prefix}_n`, x1, y1, x2, y2: y1, frontSectorId: sectorId, isTwoSided: false, middleTexture: texNorth, blocking: true },
+    { id: `${prefix}_e`, x1: x2, y1, x2, y2, frontSectorId: sectorId, isTwoSided: false, middleTexture: texEast, blocking: true },
+    { id: `${prefix}_s`, x1: x2, y1: y2, x2: x1, y2, frontSectorId: sectorId, isTwoSided: false, middleTexture: texSouth, blocking: true },
+    { id: `${prefix}_w`, x1, y1: y2, x2: x1, y2: y1, frontSectorId: sectorId, isTwoSided: false, middleTexture: texWest, blocking: true },
+  ];
+}
+
+function makeNestedPlatformLines(
+  prefix: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  outerSectorId: number,
+  innerSectorId: number,
+  lowerTexture: string
+): DivDoomLinedef[] {
+  return [
+    { id: `${prefix}_n`, x1, y1, x2, y2: y1, frontSectorId: outerSectorId, backSectorId: innerSectorId, isTwoSided: true, lowerTexture, blocking: false },
+    { id: `${prefix}_e`, x1: x2, y1, x2, y2, frontSectorId: outerSectorId, backSectorId: innerSectorId, isTwoSided: true, lowerTexture, blocking: false },
+    { id: `${prefix}_s`, x1: x2, y1: y2, x2: x1, y2, frontSectorId: outerSectorId, backSectorId: innerSectorId, isTwoSided: true, lowerTexture, blocking: false },
+    { id: `${prefix}_w`, x1, y1: y2, x2: x1, y2: y1, frontSectorId: outerSectorId, backSectorId: innerSectorId, isTwoSided: true, lowerTexture, blocking: false },
+  ];
+}
+
 // -----------------------------------------------------------------------------
-// PRESET 1: E1M1 - Hangar Doom 2 Completo (Salón, Escaleras, Foso Tóxico y Vóxels)
+// PRESET 1 (FLAGSHIP): Roblox Obby Tower 3D
+// -----------------------------------------------------------------------------
+export const PRESET_ROBLOX_OBBY: Mode8LevelData = {
+  id: "preset_roblox_obby",
+  name: "Roblox Obby Tower 3D",
+  author: "WXDIV Studio",
+  description:
+    "Circuito Obby estilo Roblox Studs bajo cielo soleado: plataformas ascendentes sin superposiciones, piscina de neón, monedas, checkpoints, enemigos IA activos y estrella final.",
+  theme: "roblox",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_ROBLOX",
+  recommendedWeapon: "sword3d",
+  recommendedTheme: "winebox_clean",
+  recommendedGameMode: "exploration",
+  recommendedPlayerModel: "blox_hero",
+  sectors: [
+    { id: 0, floorHeight: 0.0, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_BLUE", ceilTexture: "SKY_ROBLOX", lightLevel: 245 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 2, floorHeight: 0.70, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 3, floorHeight: 1.05, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_RED", ceilTexture: "SKY_ROBLOX", lightLevel: 255 },
+    { id: 4, floorHeight: 1.35, ceilHeight: 7.5, floorTexture: "MARBLE_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 255 },
+    { id: 5, floorHeight: -0.25, ceilHeight: 7.5, floorTexture: "WATER", ceilTexture: "SKY_ROBLOX", lightLevel: 235 },
+  ],
+  linedefs: [
+    ...makeOuterRoomLines("ob_out", 2, 2, 28, 16, 0, "STUD_WALL_BLUE", "STUD_WALL_GREEN", "STUD_WALL_BLUE", "STUD_WALL_GOLD"),
+    ...makeNestedPlatformLines("ob_p1", 7, 5, 11, 13, 0, 1, "STUD_GREEN"),
+    ...makeNestedPlatformLines("ob_p2", 12.5, 4, 16.5, 12, 0, 2, "STUD_GOLD"),
+    ...makeNestedPlatformLines("ob_p3", 18, 5, 22, 13, 0, 3, "STUD_RED"),
+    ...makeNestedPlatformLines("ob_p4", 23.5, 6, 26.8, 12, 0, 4, "MARBLE_GOLD"),
+    ...makeNestedPlatformLines("ob_pool", 3, 11.5, 6, 14.5, 0, 5, "NEON_GRID"),
+  ],
+  entities: [
+    { id: "p1", type: "player", x: 4.5 * 64, y: 7.5 * 64, graph: 1, name: "Blox Runner" },
+  ],
+  placedModels: [
+    { id: "ob_imp1", modelId: "doom_imp", x: 14.5, y: 13.8, z: 0.0, yaw: 180, scale: 0.95, animation: "walk", role: "enemy", hp: 60, maxHp: 60, speed: 1.75, damage: 8, patrolRadius: 2.2, name: "Imp Guardián" },
+    { id: "ob_knight", modelId: "blox_knight", x: 20.0, y: 9.0, z: 1.05, scale: 1.0, yaw: 180, animation: "walk", role: "enemy", hp: 85, maxHp: 85, speed: 1.6, damage: 12, patrolRadius: 1.8, name: "Caballero Obby" },
+    { id: "ob_goal", modelId: "trophy_star", x: 25.2, y: 9.0, z: 1.35, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Estrella Obby" },
+  ],
+  placedVoxels: [
+    { id: "ov_c1", voxelId: "voxel_coin", x: 9.0, y: 7.0, z: 0.35, yaw: 0, scale: 1.0 },
+    { id: "ov_c2", voxelId: "voxel_coin", x: 9.0, y: 11.0, z: 0.35, yaw: 45, scale: 1.0 },
+    { id: "ov_chk1", voxelId: "voxel_checkpoint", x: 14.5, y: 8.0, z: 0.70, yaw: 0, scale: 1.0 },
+    { id: "ov_c3", voxelId: "voxel_coin", x: 20.0, y: 6.8, z: 1.05, yaw: 90, scale: 1.0 },
+    { id: "ov_med", voxelId: "voxel_medikit", x: 14.5, y: 5.5, z: 0.70, yaw: 0, scale: 1.0 },
+    { id: "ov_ch", voxelId: "voxel_chest", x: 25.2, y: 7.0, z: 1.35, yaw: 270, scale: 1.0 },
+  ],
+  lights: [
+    { id: "l_ob1", x: 9.0, y: 9.0, z: 3.5, radius: 14.0, r: 255, g: 250, b: 235, flicker: false },
+    { id: "l_ob2", x: 22.0, y: 9.0, z: 3.5, radius: 14.0, r: 255, g: 235, b: 170, flicker: false },
+  ],
+};
+
+// -----------------------------------------------------------------------------
+// PRESET 2: Roblox Martial Dojo 3D
+// -----------------------------------------------------------------------------
+export const PRESET_ROBLOX_DOJO: Mode8LevelData = {
+  id: "preset_roblox_dojo",
+  name: "Roblox Dojo de Pelea 3D",
+  author: "WXDIV Studio",
+  description:
+    "Arena Dojo estilo Roblox con suelo de madera y tatami dorado en dos niveles, pilares espaciados, botiquín y duelistas Samurái IA que patrullan y combaten.",
+  theme: "roblox",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_ROBLOX",
+  recommendedWeapon: "sword3d",
+  recommendedTheme: "medieval_gold",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
+  sectors: [
+    { id: 0, floorHeight: 0.0, ceilHeight: 6.5, floorTexture: "DOJO_WOOD", ceilTexture: "SKY_ROBLOX", lightLevel: 240 },
+    { id: 1, floorHeight: 0.30, ceilHeight: 6.5, floorTexture: "DOJO_TATAMI", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 2, floorHeight: 0.60, ceilHeight: 6.5, floorTexture: "MARBLE_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 255 },
+  ],
+  linedefs: [
+    ...makeOuterRoomLines("dj_out", 2, 2, 24, 18, 0, "DOJO_WALL", "DOJO_WOOD", "DOJO_WALL", "DOJO_WOOD"),
+    ...makeNestedPlatformLines("dj_t1", 7, 5, 19, 15, 0, 1, "STUD_RED"),
+    ...makeNestedPlatformLines("dj_t2", 10.5, 7.5, 15.5, 12.5, 1, 2, "STUD_GOLD"),
+  ],
+  entities: [
+    { id: "p1", type: "player", x: 4.5 * 64, y: 10.0 * 64, graph: 1, name: "Aprendiz Blox" },
+  ],
+  placedModels: [
+    { id: "dj_samurai", modelId: "samurai_fighter", x: 13.0, y: 10.0, z: 0.60, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 100, maxHp: 100, speed: 1.95, damage: 14, patrolRadius: 2.0, name: "Maestro Samurái" },
+    { id: "dj_knight", modelId: "blox_knight", x: 8.8, y: 6.8, z: 0.30, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 75, maxHp: 75, speed: 1.75, damage: 10, patrolRadius: 1.8, name: "Guardián Dojo" },
+    { id: "dj_trophy", modelId: "trophy_star", x: 21.5, y: 10.0, z: 0.0, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Copa Dojo" },
+  ],
+  placedVoxels: [
+    { id: "dv_p1", voxelId: "voxel_torch", x: 5.0, y: 4.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "dv_p2", voxelId: "voxel_torch", x: 5.0, y: 15.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "dv_p3", voxelId: "voxel_torch", x: 21.0, y: 4.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "dv_p4", voxelId: "voxel_torch", x: 21.0, y: 15.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "dv_med", voxelId: "voxel_medikit", x: 13.0, y: 16.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "dv_c1", voxelId: "voxel_coin", x: 8.8, y: 13.2, z: 0.30, yaw: 0, scale: 1.0 },
+    { id: "dv_c2", voxelId: "voxel_coin", x: 17.2, y: 10.0, z: 0.30, yaw: 0, scale: 1.0 },
+  ],
+  lights: [
+    { id: "l_dj1", x: 13.0, y: 10.0, z: 3.2, radius: 14.0, r: 255, g: 225, b: 175, flicker: false },
+  ],
+};
+
+// -----------------------------------------------------------------------------
+// PRESET 3: Roblox Cyber Base 3D
+// -----------------------------------------------------------------------------
+export const PRESET_ROBLOX_CYBER_TYCOON: Mode8LevelData = {
+  id: "preset_roblox_cyber_tycoon",
+  name: "Roblox Cyber Base 3D",
+  author: "WXDIV Studio",
+  description:
+    "Base futurista estilo Roblox Cyber Neón con cubierta de reactor en dos niveles, terminales digitales, cristales de energía y Cyber Mechs patrullando.",
+  theme: "cyber",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_CYBER",
+  recommendedWeapon: "pistol",
+  recommendedTheme: "cyber_neon",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
+  sectors: [
+    { id: 0, floorHeight: 0.0, ceilHeight: 6.5, floorTexture: "NEON_GRID", ceilTexture: "SKY_CYBER", lightLevel: 230 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_BLUE", ceilTexture: "SKY_CYBER", lightLevel: 245 },
+    { id: 2, floorHeight: 0.75, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GOLD", ceilTexture: "SKY_CYBER", lightLevel: 255 },
+    { id: 3, floorHeight: 0.30, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_CYBER", lightLevel: 240 },
+  ],
+  linedefs: [
+    ...makeOuterRoomLines("cb_out", 2, 2, 26, 18, 0, "METAL1", "CYBER_GLASS", "METAL1", "NEON_GRID"),
+    ...makeNestedPlatformLines("cb_p1", 14, 5, 23, 13, 0, 1, "CYBER_GLASS"),
+    ...makeNestedPlatformLines("cb_p2", 16.5, 7, 20.5, 11, 1, 2, "STUD_GOLD"),
+    ...makeNestedPlatformLines("cb_p3", 6, 3.5, 11, 8, 0, 3, "STUD_GREEN"),
+  ],
+  entities: [
+    { id: "p1", type: "player", x: 4.5 * 64, y: 12.0 * 64, graph: 1, name: "Agente Cyber" },
+  ],
+  placedModels: [
+    { id: "cb_mech1", modelId: "cyber_mech", x: 12.0, y: 11.5, z: 0.0, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 115, maxHp: 115, speed: 1.65, damage: 15, patrolRadius: 2.2, name: "Cyber Mech" },
+    { id: "cb_drone", modelId: "md2_gargoyle", x: 16.0, y: 15.0, z: 0.0, yaw: 180, scale: 0.95, animation: "walk", role: "enemy", hp: 75, maxHp: 75, speed: 2.0, damage: 10, patrolRadius: 2.4, name: "Dron Neón" },
+    { id: "cb_goal", modelId: "portal_crystal", x: 18.5, y: 9.0, z: 0.75, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Núcleo Cyber" },
+  ],
+  placedVoxels: [
+    { id: "cv_t1", voxelId: "voxel_computer", x: 7.5, y: 5.0, z: 0.30, yaw: 180, scale: 1.0 },
+    { id: "cv_t2", voxelId: "voxel_computer", x: 9.5, y: 5.0, z: 0.30, yaw: 180, scale: 1.0 },
+    { id: "cv_c1", voxelId: "voxel_coin", x: 15.2, y: 9.0, z: 0.35, yaw: 0, scale: 1.0 },
+    { id: "cv_c2", voxelId: "voxel_coin", x: 21.8, y: 9.0, z: 0.35, yaw: 90, scale: 1.0 },
+    { id: "cv_med", voxelId: "voxel_medikit", x: 8.5, y: 14.5, z: 0.0, yaw: 0, scale: 1.0 },
+  ],
+  lights: [
+    { id: "l_cb1", x: 18.5, y: 9.0, z: 3.0, radius: 14.0, r: 56, g: 189, b: 248, flicker: false },
+    { id: "l_cb2", x: 8.5, y: 5.8, z: 2.5, radius: 10.0, r: 34, g: 197, b: 94, flicker: false },
+  ],
+};
+
+// -----------------------------------------------------------------------------
+// PRESET 4: Roblox Sky Citadel 3D
+// -----------------------------------------------------------------------------
+export const PRESET_ROBLOX_SKY_CITADEL: Mode8LevelData = {
+  id: "preset_roblox_sky_citadel",
+  name: "Roblox Sky Citadel 3D",
+  author: "WXDIV Studio",
+  description:
+    "Ciudadela celestial de mármol y oro estilo Roblox con terrazas escalonadas, cofres del tesoro, guardias Redcliff, jefe Titán y estrella celestial.",
+  theme: "roblox",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_ROBLOX",
+  recommendedWeapon: "sword3d",
+  recommendedTheme: "medieval_gold",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
+  sectors: [
+    { id: 0, floorHeight: 0.0, ceilHeight: 7.5, floorTexture: "MARBLE_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 245 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_BLUE", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 2, floorHeight: 0.70, ceilHeight: 7.5, floorTexture: "STUD_FLOOR_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 255 },
+  ],
+  linedefs: [
+    ...makeOuterRoomLines("sc_out", 2, 2, 26, 18, 0, "STUD_GRAY", "MARBLE_GOLD", "STUD_GRAY", "MARBLE_GOLD"),
+    ...makeNestedPlatformLines("sc_t1", 8, 4, 22, 16, 0, 1, "MARBLE_GOLD"),
+    ...makeNestedPlatformLines("sc_t2", 13, 6, 20, 14, 1, 2, "STUD_GOLD"),
+  ],
+  entities: [
+    { id: "p1", type: "player", x: 4.8 * 64, y: 10.0 * 64, graph: 1, name: "Héroe Celestial" },
+  ],
+  placedModels: [
+    { id: "sc_guard", modelId: "blox_knight", x: 10.5, y: 10.0, z: 0.35, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 85, maxHp: 85, speed: 1.7, damage: 11, patrolRadius: 2.0, name: "Escolta Real" },
+    { id: "sc_boss", modelId: "demon_brute", x: 16.0, y: 10.0, z: 0.70, yaw: 180, scale: 1.05, animation: "walk", role: "enemy", hp: 140, maxHp: 140, speed: 1.5, damage: 16, patrolRadius: 1.8, name: "Titán Dorado" },
+    { id: "sc_star", modelId: "trophy_star", x: 18.5, y: 10.0, z: 0.70, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Estrella Celestial" },
+  ],
+  placedVoxels: [
+    { id: "sv_c1", voxelId: "voxel_coin", x: 6.5, y: 10.0, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "sv_c2", voxelId: "voxel_coin", x: 11.5, y: 6.0, z: 0.35, yaw: 45, scale: 1.0 },
+    { id: "sv_c3", voxelId: "voxel_coin", x: 11.5, y: 14.0, z: 0.35, yaw: 90, scale: 1.0 },
+    { id: "sv_ch1", voxelId: "voxel_chest", x: 17.5, y: 7.5, z: 0.70, yaw: 270, scale: 1.0 },
+    { id: "sv_med", voxelId: "voxel_medikit", x: 9.5, y: 14.5, z: 0.35, yaw: 0, scale: 1.0 },
+  ],
+  lights: [
+    { id: "l_sc1", x: 14.0, y: 10.0, z: 3.5, radius: 16.0, r: 255, g: 245, b: 200, flicker: false },
+  ],
+};
+
+// -----------------------------------------------------------------------------
+// PRESET 5: Base Espacial Blox E1M1 (Escalera Roblox 4 Peldaños)
 // -----------------------------------------------------------------------------
 export const PRESET_E1M1_HANGAR: Mode8LevelData = {
   id: "preset_e1m1",
-  name: "E1M1: Hangar Doom 2 Completo",
-  author: "ReDoomEd Studio",
-  description: "Entrada del Hangar con suelo de hormigón, foso de residuo radiactivo, escalera de 4 peldaños y plataforma de control elevada.",
-  theme: "doom",
+  name: "Base Espacial Blox E1M1 (Roblox)",
+  author: "WXDIV Studio",
+  description:
+    "Patio modular estilo Roblox con cielo soleado, escalera de 4 peldaños hacia cubierta dorada de mando, foso de energía y enemigos activos.",
+  theme: "roblox",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_ROBLOX",
+  recommendedWeapon: "shotgun",
+  recommendedTheme: "cyber_neon",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
   sectors: [
-    { id: 0, floorHeight: 0, ceilHeight: 1.2, floorTexture: "FLOOR4_8", ceilTexture: "CEIL3_5", lightLevel: 190 },
-    { id: 1, floorHeight: 0.2, ceilHeight: 1.4, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 195 },
-    { id: 2, floorHeight: 0.4, ceilHeight: 1.4, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 200 },
-    { id: 3, floorHeight: 0.6, ceilHeight: 1.4, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 205 },
-    { id: 4, floorHeight: 0.8, ceilHeight: 1.4, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 210 },
-    { id: 10, floorHeight: 1.0, ceilHeight: 1.8, floorTexture: "CRATOP2", ceilTexture: "TLITE6_5", lightLevel: 220 },
-    { id: 20, floorHeight: -0.4, ceilHeight: 1.2, floorTexture: "NUKAGE", ceilTexture: "CEIL3_5", lightLevel: 240, special: 7 },
+    { id: 0, floorHeight: 0.0, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_BLUE", ceilTexture: "SKY_ROBLOX", lightLevel: 240 },
+    { id: 1, floorHeight: 0.20, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_ROBLOX", lightLevel: 245 },
+    { id: 2, floorHeight: 0.40, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_ROBLOX", lightLevel: 245 },
+    { id: 3, floorHeight: 0.60, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 4, floorHeight: 0.80, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GREEN", ceilTexture: "SKY_ROBLOX", lightLevel: 250 },
+    { id: 10, floorHeight: 1.0, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_GOLD", ceilTexture: "SKY_ROBLOX", lightLevel: 255 },
+    { id: 20, floorHeight: -0.25, ceilHeight: 6.5, floorTexture: "NUKAGE", ceilTexture: "SKY_ROBLOX", lightLevel: 245, special: 7 },
   ],
   linedefs: [
-    // Main Hangar Perimeter (Sector 0)
-    { id: "w1", x1: 2, y1: 2, x2: 12, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "w2", x1: 12, y1: 2, x2: 12, y2: 6, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    // Staircase Steps (Sectors 1..4)
-    { id: "s1", x1: 12, y1: 6, x2: 12, y2: 8, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "s2", x1: 13, y1: 6, x2: 13, y2: 8, frontSectorId: 1, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "s3", x1: 14, y1: 6, x2: 14, y2: 8, frontSectorId: 2, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "s4", x1: 15, y1: 6, x2: 15, y2: 8, frontSectorId: 3, backSectorId: 4, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "s5", x1: 16, y1: 6, x2: 16, y2: 8, frontSectorId: 4, backSectorId: 10, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    // Stair flanks
-    { id: "sw_top", x1: 12, y1: 6, x2: 16, y2: 6, frontSectorId: 0, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
-    { id: "sw_bot", x1: 12, y1: 8, x2: 16, y2: 8, frontSectorId: 0, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
-    // Elevated Deck Perimeter (Sector 10)
-    { id: "d1", x1: 16, y1: 4, x2: 20, y2: 4, frontSectorId: 10, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "d2", x1: 20, y1: 4, x2: 20, y2: 10, frontSectorId: 10, isTwoSided: false, middleTexture: "COMP2", blocking: true },
-    { id: "d3", x1: 20, y1: 10, x2: 16, y2: 10, frontSectorId: 10, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "d4", x1: 16, y1: 10, x2: 16, y2: 8, frontSectorId: 10, isTwoSided: false, middleTexture: "SHAWN2", blocking: true },
-    { id: "d5", x1: 16, y1: 6, x2: 16, y2: 4, frontSectorId: 10, isTwoSided: false, middleTexture: "SHAWN2", blocking: true },
-    // Hangar Lower Section
-    { id: "w3", x1: 12, y1: 8, x2: 12, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "STARTAN3", blocking: true },
-    { id: "w4", x1: 12, y1: 14, x2: 2, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "BROWN144", blocking: true },
-    // Nukage Trench Portal (Sector 20)
-    { id: "np1", x1: 4, y1: 9, x2: 8, y2: 9, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "np2", x1: 8, y1: 9, x2: 8, y2: 13, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "np3", x1: 8, y1: 13, x2: 4, y2: 13, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "np4", x1: 4, y1: 13, x2: 4, y2: 9, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    // Left Hangar Wall
-    { id: "w5", x1: 2, y1: 14, x2: 2, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "BRICK1", blocking: true },
+    ...makeOuterRoomLines("e1_out", 2, 2, 24, 16, 0, "STUD_WALL_BLUE", "STUD_GRAY", "STUD_WALL_BLUE", "STUD_GRAY"),
+    // Escalera continua de 4 peldaños (x: 10..14, y: 6..10) unida a cubierta x: 14..21, y: 4..12
+    { id: "s1_w", x1: 10, y1: 6, x2: 10, y2: 10, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s1_n", x1: 10, y1: 6, x2: 11, y2: 6, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s1_s", x1: 11, y1: 10, x2: 10, y2: 10, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+
+    { id: "s2_w", x1: 11, y1: 6, x2: 11, y2: 10, frontSectorId: 1, backSectorId: 2, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s2_n", x1: 11, y1: 6, x2: 12, y2: 6, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s2_s", x1: 12, y1: 10, x2: 11, y2: 10, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+
+    { id: "s3_w", x1: 12, y1: 6, x2: 12, y2: 10, frontSectorId: 2, backSectorId: 3, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s3_n", x1: 12, y1: 6, x2: 13, y2: 6, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s3_s", x1: 13, y1: 10, x2: 12, y2: 10, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+
+    { id: "s4_w", x1: 13, y1: 6, x2: 13, y2: 10, frontSectorId: 3, backSectorId: 4, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s4_n", x1: 13, y1: 6, x2: 14, y2: 6, frontSectorId: 0, backSectorId: 4, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+    { id: "s4_s", x1: 14, y1: 10, x2: 13, y2: 10, frontSectorId: 0, backSectorId: 4, isTwoSided: true, lowerTexture: "STUD_GREEN", blocking: false },
+
+    { id: "dk_in", x1: 14, y1: 6, x2: 14, y2: 10, frontSectorId: 4, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+    { id: "dk_wn", x1: 14, y1: 4, x2: 14, y2: 6, frontSectorId: 0, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+    { id: "dk_n", x1: 14, y1: 4, x2: 21, y2: 4, frontSectorId: 0, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+    { id: "dk_e", x1: 21, y1: 4, x2: 21, y2: 12, frontSectorId: 0, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+    { id: "dk_s", x1: 21, y1: 12, x2: 14, y2: 12, frontSectorId: 0, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+    { id: "dk_ws", x1: 14, y1: 10, x2: 14, y2: 12, frontSectorId: 0, backSectorId: 10, isTwoSided: true, lowerTexture: "STUD_GOLD", blocking: false },
+
+    ...makeNestedPlatformLines("e1_pool", 4, 11, 8, 14, 0, 20, "NEON_GRID"),
   ],
   entities: [
-    { id: "p1", type: "player", x: 3.5 * 64, y: 5.5 * 64, graph: 1, name: "Marine Inicio" },
-    { id: "m1", type: "monster", x: 9.5 * 64, y: 4.5 * 64, graph: 27, name: "Imp Demoníaco" },
-    { id: "w_shotgun", type: "treasure", x: 5.5 * 64, y: 4.5 * 64, graph: 29, name: "Escopeta" },
+    { id: "p1", type: "player", x: 4.5 * 64, y: 7.5 * 64, graph: 1, name: "Blox Marine" },
   ],
   placedModels: [
-    { id: "mod_demon", modelId: "demon_brute", x: 18.0, y: 7.0, z: 1.0, yaw: 180, scale: 1.2, animation: "idle", name: "Demon Brute 3D" },
-    { id: "mod_knight", modelId: "md2_knight", x: 7.5, y: 4.5, z: 0.0, yaw: 45, scale: 1.0, animation: "walk", name: "Knight MD2" },
+    { id: "m_imp1", modelId: "doom_imp", x: 8.2, y: 7.0, z: 0.0, yaw: 180, scale: 0.95, animation: "walk", role: "enemy", hp: 70, maxHp: 70, speed: 1.75, damage: 10, patrolRadius: 2.0, name: "Imp Blox" },
+    { id: "m_mech", modelId: "cyber_mech", x: 17.5, y: 8.0, z: 1.0, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 130, maxHp: 130, speed: 1.5, damage: 14, patrolRadius: 1.8, name: "Jefe Mech" },
+    { id: "m_goal", modelId: "trophy_star", x: 19.6, y: 8.0, z: 1.0, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Estrella Base" },
   ],
   placedVoxels: [
-    // Toxic Barrels near the nukage pit
-    { id: "vox_b1", voxelId: "voxel_barrel", x: 4.5, y: 10.0, z: -0.4, yaw: 0, scale: 1.1 },
-    { id: "vox_b2", voxelId: "voxel_barrel", x: 7.2, y: 12.0, z: -0.4, yaw: 35, scale: 1.1 },
-    // Flanking Torches
-    { id: "vox_t1", voxelId: "voxel_torch", x: 2.3, y: 3.5, z: 0.2, yaw: 90, scale: 1.0 },
-    { id: "vox_t2", voxelId: "voxel_torch", x: 2.3, y: 12.5, z: 0.2, yaw: 90, scale: 1.0 },
-    // Gothic Pillars framing the staircase
-    { id: "vox_p1", voxelId: "voxel_pillar", x: 11.8, y: 5.5, z: 0.0, yaw: 0, scale: 1.15 },
-    { id: "vox_p2", voxelId: "voxel_pillar", x: 11.8, y: 8.5, z: 0.0, yaw: 0, scale: 1.15 },
-    // Sci-Fi Terminal & Supply Crate on the elevated deck
-    { id: "vox_term", voxelId: "voxel_terminal", x: 19.2, y: 8.5, z: 1.0, yaw: 270, scale: 1.2 },
-    { id: "vox_crate", voxelId: "voxel_crate", x: 19.0, y: 5.0, z: 1.0, yaw: 15, scale: 1.1 },
-    // Key at top of staircase & Medikit in safe zone
-    { id: "vox_key", voxelId: "voxel_key", x: 16.5, y: 7.0, z: 1.0, yaw: 0, scale: 1.2 },
-    { id: "vox_med", voxelId: "voxel_medikit", x: 3.5, y: 2.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "vx_coin1", voxelId: "voxel_coin", x: 11.5, y: 8.0, z: 0.4, yaw: 0, scale: 1.0 },
+    { id: "vx_coin2", voxelId: "voxel_coin", x: 15.5, y: 5.5, z: 1.0, yaw: 0, scale: 1.0 },
+    { id: "vx_term", voxelId: "voxel_computer", x: 19.6, y: 5.2, z: 1.0, yaw: 270, scale: 1.0 },
+    { id: "vx_crate", voxelId: "voxel_crate", x: 3.5, y: 3.8, z: 0.0, yaw: 15, scale: 1.0 },
+    { id: "vx_med", voxelId: "voxel_medikit", x: 15.5, y: 10.5, z: 1.0, yaw: 0, scale: 1.0 },
   ],
   lights: [
-    { id: "l1", x: 6.0, y: 6.0, z: 1.0, radius: 8.0, r: 255, g: 180, b: 60, flicker: true },
-    { id: "l2", x: 18.0, y: 7.0, z: 1.6, radius: 7.0, r: 80, g: 180, b: 255, flicker: false },
-    { id: "l_nukage", x: 6.0, y: 11.0, z: -0.2, radius: 5.0, r: 74, g: 222, b: 128, flicker: true },
+    { id: "l1", x: 8.0, y: 7.5, z: 2.5, radius: 13.0, r: 255, g: 245, b: 220, flicker: false },
+    { id: "l2", x: 17.5, y: 8.0, z: 2.8, radius: 12.0, r: 250, g: 204, b: 21, flicker: false },
   ],
 };
 
 // -----------------------------------------------------------------------------
-// PRESET 2: Mazmorra Vóxel & Cripta Maldita (Altar, Columnas, Cráneos y Antorchas)
+// PRESET 6: Fortaleza Blox Medieval 3D
 // -----------------------------------------------------------------------------
 export const PRESET_GOTHIC_CRYPT: Mode8LevelData = {
-  id: "preset_crypt",
-  name: "Mazmorra Vóxel & Cripta Maldita",
-  author: "ReDoomEd Studio",
-  description: "Templo gótico con muros de piedra medieval, pórtico de gárgolas, altar ceremonial elevado con cráneos, columnas y cofres con reliquias.",
-  theme: "gothic",
+  id: "preset_gothic_crypt",
+  name: "Fortaleza Blox Medieval 3D",
+  author: "WXDIV Studio",
+  description:
+    "Patio medieval estilo Roblox Castle con altar elevado de piedra y oro, antorchas, caballeros Redcliff, gárgola guardiana y Cáliz Reliquia.",
+  theme: "roblox",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY2",
+  recommendedWeapon: "sword3d",
+  recommendedTheme: "medieval_gold",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
   sectors: [
-    { id: 0, floorHeight: 0, ceilHeight: 1.5, floorTexture: "FLOOR4_8", ceilTexture: "CEIL3_5", lightLevel: 160 },
-    { id: 1, floorHeight: 0.25, ceilHeight: 1.5, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 175 },
-    { id: 2, floorHeight: 0.5, ceilHeight: 1.8, floorTexture: "FLAT10", ceilTexture: "CEIL3_5", lightLevel: 220 }, // Altar
-    { id: 3, floorHeight: -0.2, ceilHeight: 1.3, floorTexture: "BLOOD1", ceilTexture: "CEIL3_5", lightLevel: 150, special: 7 }, // Estanque ceremonial
+    { id: 0, floorHeight: 0.0, ceilHeight: 6.5, floorTexture: "STUD_GRAY", ceilTexture: "SKY2", lightLevel: 230 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 6.5, floorTexture: "MARBLE_GOLD", ceilTexture: "SKY2", lightLevel: 245 },
+    { id: 2, floorHeight: 0.70, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_RED", ceilTexture: "SKY2", lightLevel: 255 },
   ],
   linedefs: [
-    // Outer Chamber Walls
-    { id: "cw1", x1: 2, y1: 2, x2: 18, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "BRICK1", blocking: true },
-    { id: "cw2", x1: 18, y1: 2, x2: 18, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    { id: "cw3", x1: 18, y1: 14, x2: 2, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "BRICK1", blocking: true },
-    { id: "cw4", x1: 2, y1: 14, x2: 2, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "MARBFAC", blocking: true },
-    // Altar Steps & Platform (Sector 1 & 2)
-    { id: "as1", x1: 12, y1: 6, x2: 12, y2: 10, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "as2", x1: 13, y1: 6, x2: 13, y2: 10, frontSectorId: 1, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "aw_top", x1: 12, y1: 6, x2: 17, y2: 6, frontSectorId: 2, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    { id: "aw_back", x1: 17, y1: 6, x2: 17, y2: 10, frontSectorId: 2, isTwoSided: false, middleTexture: "MARBFAC", blocking: true },
-    { id: "aw_bot", x1: 17, y1: 10, x2: 12, y2: 10, frontSectorId: 2, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    // Blood Pool (Sector 3)
-    { id: "bp1", x1: 5, y1: 9, x2: 9, y2: 9, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "bp2", x1: 9, y1: 9, x2: 9, y2: 12, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "bp3", x1: 9, y1: 12, x2: 5, y2: 12, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "bp4", x1: 5, y1: 12, x2: 5, y2: 9, frontSectorId: 0, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
+    ...makeOuterRoomLines("gt_out", 2, 2, 24, 18, 0, "STONE2", "REDWALL", "STONE2", "REDWALL"),
+    ...makeNestedPlatformLines("gt_p1", 11, 5, 20, 15, 0, 1, "STONE2"),
+    ...makeNestedPlatformLines("gt_p2", 14, 7.5, 18.5, 12.5, 1, 2, "MARBLE_GOLD"),
   ],
   entities: [
-    { id: "p1", type: "player", x: 4.0 * 64, y: 5.5 * 64, graph: 1, name: "Invocador" },
-    { id: "m1", type: "monster", x: 15.0 * 64, y: 8.0 * 64, graph: 27, name: "Guardián de la Cripta" },
-    { id: "w1", type: "treasure", x: 6.0 * 64, y: 4.5 * 64, graph: 29, name: "Escopeta Bendecida" },
+    { id: "p1", type: "player", x: 4.5 * 64, y: 10.0 * 64, graph: 1, name: "Paladín Blox" },
   ],
   placedModels: [
-    { id: "mod_garg", modelId: "md2_gargoyle", x: 15.0, y: 8.0, z: 0.5, yaw: 180, scale: 1.1, animation: "fly", name: "Gárgola Alada" },
-    { id: "mod_knight", modelId: "md2_knight", x: 8.0, y: 8.0, z: 0.0, yaw: 90, scale: 1.0, animation: "idle", name: "Centinela" },
+    { id: "gt_k1", modelId: "blox_knight", x: 8.5, y: 7.5, z: 0.0, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 90, maxHp: 90, speed: 1.7, damage: 11, patrolRadius: 2.0, name: "Caballero Oscuro" },
+    { id: "gt_garg", modelId: "md2_gargoyle", x: 12.5, y: 12.5, z: 0.35, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 95, maxHp: 95, speed: 1.85, damage: 13, patrolRadius: 1.8, name: "Gárgola Torre" },
+    { id: "gt_goal", modelId: "relic_caliz", x: 16.5, y: 10.0, z: 0.70, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Cáliz Real" },
   ],
   placedVoxels: [
-    // Altar Artifacts
-    { id: "v_skull", voxelId: "voxel_skull", x: 16.0, y: 8.0, z: 0.5, yaw: 180, scale: 1.3 },
-    { id: "v_chest", voxelId: "voxel_chest", x: 16.0, y: 9.2, z: 0.5, yaw: 270, scale: 1.1 },
-    { id: "v_potion1", voxelId: "voxel_potion", x: 16.0, y: 6.8, z: 0.5, yaw: 0, scale: 1.0 },
-    // Colonnade Pillars
-    { id: "v_pil1", voxelId: "voxel_pillar", x: 6.0, y: 4.0, z: 0.0, yaw: 0, scale: 1.2 },
-    { id: "v_pil2", voxelId: "voxel_pillar", x: 10.0, y: 4.0, z: 0.0, yaw: 0, scale: 1.2 },
-    { id: "v_pil3", voxelId: "voxel_pillar", x: 6.0, y: 12.0, z: 0.0, yaw: 0, scale: 1.2 },
-    { id: "v_pil4", voxelId: "voxel_pillar", x: 10.0, y: 12.0, z: 0.0, yaw: 0, scale: 1.2 },
-    // Sconce Torches
-    { id: "v_t1", voxelId: "voxel_torch", x: 2.3, y: 4.0, z: 0.3, yaw: 90, scale: 1.0 },
-    { id: "v_t2", voxelId: "voxel_torch", x: 2.3, y: 12.0, z: 0.3, yaw: 90, scale: 1.0 },
-    { id: "v_t3", voxelId: "voxel_torch", x: 12.0, y: 5.8, z: 0.0, yaw: 0, scale: 1.1 },
-    { id: "v_t4", voxelId: "voxel_torch", x: 12.0, y: 10.2, z: 0.0, yaw: 0, scale: 1.1 },
+    { id: "gv_t1", voxelId: "voxel_torch", x: 4.0, y: 4.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "gv_t2", voxelId: "voxel_torch", x: 4.0, y: 15.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "gv_c1", voxelId: "voxel_coin", x: 12.5, y: 7.0, z: 0.35, yaw: 0, scale: 1.0 },
+    { id: "gv_ch", voxelId: "voxel_chest", x: 16.5, y: 8.2, z: 0.70, yaw: 270, scale: 1.0 },
+    { id: "gv_pot", voxelId: "voxel_potion", x: 8.5, y: 14.0, z: 0.0, yaw: 0, scale: 1.0 },
   ],
   lights: [
-    { id: "l_altar", x: 15.0, y: 8.0, z: 1.2, radius: 9.0, r: 245, g: 158, b: 11, flicker: true },
-    { id: "l_blood", x: 7.0, y: 10.5, z: 0.2, radius: 5.0, r: 185, g: 28, b: 28, flicker: true },
-    { id: "l_hall", x: 5.0, y: 5.0, z: 0.8, radius: 7.0, r: 234, g: 88, b: 12, flicker: true },
+    { id: "l_gt1", x: 15.0, y: 10.0, z: 3.0, radius: 14.0, r: 255, g: 210, b: 140, flicker: true },
   ],
 };
 
 // -----------------------------------------------------------------------------
-// PRESET 3: Techbase UAC Sci-Fi (Terminales, Cajas, Botiquines y Luces Halógenas)
+// PRESET 7: Laboratorio Cyber Blox 3D
 // -----------------------------------------------------------------------------
 export const PRESET_TECHBASE_LAB: Mode8LevelData = {
-  id: "preset_techbase",
-  name: "Techbase UAC Sci-Fi",
-  author: "ReDoomEd Studio",
-  description: "Centro de cómputo y laboratorio UAC con pantallas de datos en tiempo real, consolas holográficas, almacén de cajas y módulos de auxilio médico.",
-  theme: "tech",
+  id: "preset_techbase_lab",
+  name: "Laboratorio Cyber Blox 3D",
+  author: "WXDIV Studio",
+  description:
+    "Laboratorio tecnológico estilo Roblox Sci-Fi con cubiertas elevadas de cristal neón, consolas holográficas, Cyber Mechs activos y núcleo de energía.",
+  theme: "cyber",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY_CYBER",
+  recommendedWeapon: "shotgun",
+  recommendedTheme: "cyber_neon",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
   sectors: [
-    { id: 0, floorHeight: 0, ceilHeight: 1.4, floorTexture: "CRATOP2", ceilTexture: "TLITE6_5", lightLevel: 220 },
-    { id: 1, floorHeight: 0.3, ceilHeight: 1.6, floorTexture: "FLOOR4_8", ceilTexture: "TLITE6_5", lightLevel: 240 },
-    { id: 2, floorHeight: -0.3, ceilHeight: 1.4, floorTexture: "NUKAGE", ceilTexture: "CEIL3_5", lightLevel: 255, special: 7 },
+    { id: 0, floorHeight: 0.0, ceilHeight: 6.5, floorTexture: "STUD_GRAY", ceilTexture: "SKY_CYBER", lightLevel: 230 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 6.5, floorTexture: "NEON_GRID", ceilTexture: "SKY_CYBER", lightLevel: 245 },
+    { id: 2, floorHeight: 0.70, ceilHeight: 6.5, floorTexture: "STUD_FLOOR_BLUE", ceilTexture: "SKY_CYBER", lightLevel: 255 },
   ],
   linedefs: [
-    // Main Lab Perimeter
-    { id: "tw1", x1: 2, y1: 2, x2: 16, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "COMP2", blocking: true },
-    { id: "tw2", x1: 16, y1: 2, x2: 16, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "SHAWN2", blocking: true },
-    { id: "tw3", x1: 16, y1: 14, x2: 2, y2: 14, frontSectorId: 0, isTwoSided: false, middleTexture: "TEKGREN2", blocking: true },
-    { id: "tw4", x1: 2, y1: 14, x2: 2, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "DOOR3", blocking: true },
-    // Command Deck Step
-    { id: "ts1", x1: 11, y1: 4, x2: 11, y2: 12, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    // Coolant Sink
-    { id: "tp1", x1: 4, y1: 8, x2: 8, y2: 8, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "tp2", x1: 8, y1: 8, x2: 8, y2: 12, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "tp3", x1: 8, y1: 12, x2: 4, y2: 12, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "tp4", x1: 4, y1: 12, x2: 4, y2: 8, frontSectorId: 0, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
+    ...makeOuterRoomLines("tb_out", 2, 2, 24, 18, 0, "METAL1", "CYBER_GLASS", "METAL1", "CYBER_GLASS"),
+    ...makeNestedPlatformLines("tb_p1", 10, 5, 20, 15, 0, 1, "CYBER_GLASS"),
+    ...makeNestedPlatformLines("tb_p2", 13.5, 7.5, 18.5, 12.5, 1, 2, "NEON_GRID"),
   ],
   entities: [
-    { id: "p1", type: "player", x: 4.0 * 64, y: 4.5 * 64, graph: 1, name: "Operador UAC" },
-    { id: "m1", type: "monster", x: 13.5 * 64, y: 8.0 * 64, graph: 27, name: "Entidad Ciber" },
+    { id: "p1", type: "player", x: 4.5 * 64, y: 10.0 * 64, graph: 1, name: "Científico Blox" },
   ],
   placedModels: [
-    { id: "mod_robot", modelId: "md2_knight", x: 13.5, y: 8.0, z: 0.3, yaw: 180, scale: 1.1, animation: "idle", name: "Androide UAC" },
+    { id: "tb_mech", modelId: "cyber_mech", x: 11.5, y: 10.0, z: 0.35, yaw: 180, scale: 1.0, animation: "walk", role: "enemy", hp: 120, maxHp: 120, speed: 1.65, damage: 15, patrolRadius: 2.0, name: "Centinela Lab" },
+    { id: "tb_imp", modelId: "doom_imp", x: 7.5, y: 14.0, z: 0.0, yaw: 180, scale: 0.95, animation: "walk", role: "enemy", hp: 70, maxHp: 70, speed: 1.9, damage: 10, patrolRadius: 2.0, name: "Mutante Blox" },
+    { id: "tb_goal", modelId: "portal_crystal", x: 16.0, y: 10.0, z: 0.70, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Cristal Lab" },
   ],
   placedVoxels: [
-    // Terminales de Computación
-    { id: "v_term1", voxelId: "voxel_terminal", x: 14.5, y: 5.5, z: 0.3, yaw: 270, scale: 1.2 },
-    { id: "v_term2", voxelId: "voxel_terminal", x: 14.5, y: 10.5, z: 0.3, yaw: 270, scale: 1.2 },
-    // Cajas de Suministros
-    { id: "v_crate1", voxelId: "voxel_crate", x: 3.5, y: 3.5, z: 0.0, yaw: 0, scale: 1.1 },
-    { id: "v_crate2", voxelId: "voxel_crate", x: 4.8, y: 3.5, z: 0.0, yaw: 20, scale: 1.1 },
-    // Botiquines
-    { id: "v_med1", voxelId: "voxel_medikit", x: 14.5, y: 8.0, z: 0.3, yaw: 0, scale: 1.1 },
-    { id: "v_med2", voxelId: "voxel_medikit", x: 3.2, y: 6.0, z: 0.0, yaw: 90, scale: 1.0 },
-    // Barriles
-    { id: "v_bar1", voxelId: "voxel_barrel", x: 5.0, y: 9.5, z: -0.3, yaw: 0, scale: 1.0 },
-    { id: "v_bar2", voxelId: "voxel_barrel", x: 7.0, y: 10.5, z: -0.3, yaw: 45, scale: 1.0 },
-    // Llave de Acceso Dorada
-    { id: "v_key", voxelId: "voxel_key", x: 13.5, y: 4.5, z: 0.3, yaw: 0, scale: 1.2 },
+    { id: "tv_c1", voxelId: "voxel_computer", x: 5.0, y: 4.5, z: 0.0, yaw: 90, scale: 1.0 },
+    { id: "tv_c2", voxelId: "voxel_computer", x: 21.5, y: 4.5, z: 0.0, yaw: 270, scale: 1.0 },
+    { id: "tv_med", voxelId: "voxel_medikit", x: 7.5, y: 5.5, z: 0.0, yaw: 0, scale: 1.0 },
+    { id: "tv_cn1", voxelId: "voxel_coin", x: 11.5, y: 6.5, z: 0.35, yaw: 0, scale: 1.0 },
+    { id: "tv_cn2", voxelId: "voxel_coin", x: 11.5, y: 13.5, z: 0.35, yaw: 90, scale: 1.0 },
   ],
   lights: [
-    { id: "l_lab1", x: 8.0, y: 6.0, z: 1.2, radius: 9.0, r: 56, g: 189, b: 248, flicker: false },
-    { id: "l_lab2", x: 13.5, y: 8.0, z: 1.4, radius: 8.0, r: 226, g: 232, b: 240, flicker: false },
+    { id: "l_tb1", x: 16.0, y: 10.0, z: 3.0, radius: 14.0, r: 56, g: 189, b: 248, flicker: false },
   ],
 };
 
 // -----------------------------------------------------------------------------
-// PRESET 4: Templo de Lava & Escaleras Colosales (Magma, 5 Peldaños y Vóxels)
+// PRESET 8: Volcán Obby Blox 3D (Sin superposiciones)
 // -----------------------------------------------------------------------------
 export const PRESET_LAVA_TEMPLE: Mode8LevelData = {
-  id: "preset_lava",
-  name: "Templo de Lava & Escaleras Colosales",
-  author: "ReDoomEd Studio",
-  description: "Foso masivo de magma hirviente con pasarelas de roca volcánica, escalera helicoidal de 5 escalones y terraza superior de sacrificio.",
+  id: "preset_lava_temple",
+  name: "Volcán Obby Blox 3D",
+  author: "WXDIV Studio",
+  description:
+    "Templo volcánico estilo Roblox Obby con foso de lava brillante, islas de piedra escalonadas sin superposiciones, monedas de oro y Titán de Fuego.",
   theme: "lava",
+  recommendedCamera: "third_person",
+  recommendedSky: "SKY3",
+  recommendedWeapon: "staff3d",
+  recommendedTheme: "doom_dark",
+  recommendedGameMode: "shooter",
+  recommendedPlayerModel: "blox_hero",
   sectors: [
-    { id: 0, floorHeight: 0, ceilHeight: 1.6, floorTexture: "RROCK01", ceilTexture: "CEIL3_5", lightLevel: 170 },
-    { id: 1, floorHeight: 0.25, ceilHeight: 1.6, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 180 },
-    { id: 2, floorHeight: 0.5, ceilHeight: 1.6, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 190 },
-    { id: 3, floorHeight: 0.75, ceilHeight: 1.6, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 200 },
-    { id: 4, floorHeight: 1.0, ceilHeight: 1.6, floorTexture: "STEP", ceilTexture: "CEIL3_5", lightLevel: 210 },
-    { id: 10, floorHeight: 1.25, ceilHeight: 2.0, floorTexture: "FLAT10", ceilTexture: "CEIL3_5", lightLevel: 230 }, // Terraza
-    { id: 20, floorHeight: -0.5, ceilHeight: 1.6, floorTexture: "LAVA", ceilTexture: "CEIL3_5", lightLevel: 255, special: 7 }, // Magma
+    { id: 0, floorHeight: 0.0, ceilHeight: 7.0, floorTexture: "LAVA", ceilTexture: "SKY3", lightLevel: 240 },
+    { id: 1, floorHeight: 0.35, ceilHeight: 7.0, floorTexture: "STUD_GRAY", ceilTexture: "SKY3", lightLevel: 245 },
+    { id: 2, floorHeight: 0.55, ceilHeight: 7.0, floorTexture: "STUD_FLOOR_RED", ceilTexture: "SKY3", lightLevel: 250 },
+    { id: 3, floorHeight: 0.75, ceilHeight: 7.0, floorTexture: "STUD_FLOOR_GOLD", ceilTexture: "SKY3", lightLevel: 255 },
   ],
   linedefs: [
-    // Outer Cavern Walls
-    { id: "lw1", x1: 2, y1: 2, x2: 18, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "BRICK1", blocking: true },
-    { id: "lw2", x1: 18, y1: 2, x2: 18, y2: 16, frontSectorId: 0, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    { id: "lw3", x1: 18, y1: 16, x2: 2, y2: 16, frontSectorId: 0, isTwoSided: false, middleTexture: "BRICK1", blocking: true },
-    { id: "lw4", x1: 2, y1: 16, x2: 2, y2: 2, frontSectorId: 0, isTwoSided: false, middleTexture: "MARBFAC", blocking: true },
-    // Escalera de 5 escalones hacia la terraza
-    { id: "ls1", x1: 11, y1: 6, x2: 11, y2: 10, frontSectorId: 0, backSectorId: 1, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "ls2", x1: 12, y1: 6, x2: 12, y2: 10, frontSectorId: 1, backSectorId: 2, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "ls3", x1: 13, y1: 6, x2: 13, y2: 10, frontSectorId: 2, backSectorId: 3, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "ls4", x1: 14, y1: 6, x2: 14, y2: 10, frontSectorId: 3, backSectorId: 4, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    { id: "ls5", x1: 15, y1: 6, x2: 15, y2: 10, frontSectorId: 4, backSectorId: 10, isTwoSided: true, lowerTexture: "STEP1", blocking: false },
-    // Terraza Linedefs
-    { id: "lt_top", x1: 15, y1: 6, x2: 17, y2: 6, frontSectorId: 10, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    { id: "lt_back", x1: 17, y1: 6, x2: 17, y2: 10, frontSectorId: 10, isTwoSided: false, middleTexture: "MARBFAC", blocking: true },
-    { id: "lt_bot", x1: 17, y1: 10, x2: 15, y2: 10, frontSectorId: 10, isTwoSided: false, middleTexture: "STONE2", blocking: true },
-    // Gran Foso de Lava Subterránea
-    { id: "lp1", x1: 4, y1: 5, x2: 9, y2: 5, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "lp2", x1: 9, y1: 5, x2: 9, y2: 13, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "lp3", x1: 9, y1: 13, x2: 4, y2: 13, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
-    { id: "lp4", x1: 4, y1: 13, x2: 4, y2: 5, frontSectorId: 0, backSectorId: 20, isTwoSided: true, lowerTexture: "STEP2", blocking: false },
+    ...makeOuterRoomLines("lv_out", 2, 2, 26, 16, 0, "REDWALL", "STONE2", "REDWALL", "STONE2"),
+    // Tres islas limpiamente separadas sobre la lava (CERO superposición)
+    ...makeNestedPlatformLines("lv_i1", 3.2, 5, 8.2, 13, 0, 1, "STONE2"),
+    ...makeNestedPlatformLines("lv_i2", 10.5, 4.5, 16.5, 13.5, 0, 2, "STUD_RED"),
+    ...makeNestedPlatformLines("lv_i3", 19.0, 5, 24.5, 13, 0, 3, "STUD_GOLD"),
   ],
   entities: [
-    { id: "p1", type: "player", x: 3.5 * 64, y: 3.5 * 64, graph: 1, name: "Guerrero Igneo" },
+    { id: "p1", type: "player", x: 5.5 * 64, y: 9.0 * 64, graph: 1, name: "Explorador Volcán" },
   ],
   placedModels: [
-    { id: "mod_titan", modelId: "demon_brute", x: 16.0, y: 8.0, z: 1.25, yaw: 180, scale: 1.3, animation: "attack", name: "Titán de Lava" },
+    { id: "lv_imp", modelId: "doom_imp", x: 13.5, y: 11.0, z: 0.55, yaw: 180, scale: 0.95, animation: "walk", role: "enemy", hp: 80, maxHp: 80, speed: 1.8, damage: 12, patrolRadius: 1.6, name: "Imp Ígneo" },
+    { id: "lv_boss", modelId: "demon_brute", x: 21.0, y: 9.0, z: 0.75, yaw: 180, scale: 1.05, animation: "walk", role: "enemy", hp: 145, maxHp: 145, speed: 1.5, damage: 16, patrolRadius: 1.6, name: "Titán Volcán" },
+    { id: "lv_goal", modelId: "trophy_star", x: 23.0, y: 9.0, z: 0.75, yaw: 0, scale: 1.05, animation: "spin", role: "goal", name: "Trofeo Volcán" },
   ],
   placedVoxels: [
-    // Antorchas que bordean la lava
-    { id: "v_lt1", voxelId: "voxel_torch", x: 3.8, y: 4.8, z: 0.0, yaw: 0, scale: 1.1 },
-    { id: "v_lt2", voxelId: "voxel_torch", x: 9.2, y: 4.8, z: 0.0, yaw: 0, scale: 1.1 },
-    { id: "v_lt3", voxelId: "voxel_torch", x: 3.8, y: 13.2, z: 0.0, yaw: 0, scale: 1.1 },
-    { id: "v_lt4", voxelId: "voxel_torch", x: 9.2, y: 13.2, z: 0.0, yaw: 0, scale: 1.1 },
-    // Columnas monumentales
-    { id: "v_col1", voxelId: "voxel_pillar", x: 10.8, y: 5.0, z: 0.0, yaw: 0, scale: 1.3 },
-    { id: "v_col2", voxelId: "voxel_pillar", x: 10.8, y: 11.0, z: 0.0, yaw: 0, scale: 1.3 },
-    // Reliquias en la terraza
-    { id: "v_chest", voxelId: "voxel_chest", x: 16.2, y: 9.0, z: 1.25, yaw: 270, scale: 1.1 },
-    { id: "v_skull", voxelId: "voxel_skull", x: 16.2, y: 7.0, z: 1.25, yaw: 90, scale: 1.2 },
+    { id: "lv_c1", voxelId: "voxel_coin", x: 13.5, y: 6.5, z: 0.55, yaw: 0, scale: 1.0 },
+    { id: "lv_chk", voxelId: "voxel_checkpoint", x: 13.5, y: 9.0, z: 0.55, yaw: 0, scale: 1.0 },
+    { id: "lv_med", voxelId: "voxel_medikit", x: 7.0, y: 11.5, z: 0.35, yaw: 0, scale: 1.0 },
+    { id: "lv_c2", voxelId: "voxel_coin", x: 21.8, y: 6.5, z: 0.75, yaw: 90, scale: 1.0 },
   ],
   lights: [
-    { id: "l_lava", x: 6.5, y: 9.0, z: 0.0, radius: 10.0, r: 249, g: 115, b: 22, flicker: true },
-    { id: "l_altar", x: 16.0, y: 8.0, z: 1.8, radius: 8.0, r: 239, g: 68, b: 68, flicker: true },
+    { id: "l_lv1", x: 13.5, y: 9.0, z: 3.0, radius: 15.0, r: 255, g: 160, b: 80, flicker: true },
   ],
 };
 
-// Catalogo completo de niveles predefinidos
+// Catálogo completo de niveles predefinidos (Todos estilo Roblox-First y sin superposiciones)
 export const BUILTIN_LEVEL_PRESETS: Mode8LevelData[] = [
+  PRESET_ROBLOX_OBBY,
+  PRESET_ROBLOX_DOJO,
+  PRESET_ROBLOX_CYBER_TYCOON,
+  PRESET_ROBLOX_SKY_CITADEL,
   PRESET_E1M1_HANGAR,
   PRESET_GOTHIC_CRYPT,
   PRESET_TECHBASE_LAB,
   PRESET_LAVA_TEMPLE,
 ];
 
-// LocalStorage key for user saved levels
 export const STORAGE_KEY_USER_LEVELS = "div_redoomed_user_levels_v1";
 
 export function loadSavedUserLevels(): Mode8LevelData[] {
@@ -319,9 +511,10 @@ export function saveUserLevel(level: Mode8LevelData): void {
     const existing = loadSavedUserLevels();
     const filtered = existing.filter((l) => l.id !== level.id);
     const updated = [{ ...level, updatedAt: new Date().toISOString() }, ...filtered];
+    void saveMode8UserLevelsToIndexedDB(updated);
     localStorage.setItem(STORAGE_KEY_USER_LEVELS, JSON.stringify(updated));
   } catch (err) {
-    console.error("Error saving user level to localStorage", err);
+    console.error("Error saving user level to storage", err);
   }
 }
 
@@ -329,6 +522,7 @@ export function deleteSavedUserLevel(levelId: string): void {
   try {
     const existing = loadSavedUserLevels();
     const updated = existing.filter((l) => l.id !== levelId);
+    void saveMode8UserLevelsToIndexedDB(updated);
     localStorage.setItem(STORAGE_KEY_USER_LEVELS, JSON.stringify(updated));
   } catch (err) {
     console.error("Error deleting user level", err);

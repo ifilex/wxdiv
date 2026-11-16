@@ -14,17 +14,22 @@ class AudioEngine {
   }
 
   private initContext() {
-    if (!this.ctx) {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
-        this.ctx = new AudioContextClass();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
-        this.masterGain.connect(this.ctx.destination);
+    try {
+      if (!this.ctx && typeof window !== "undefined") {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          this.ctx = new AudioContextClass();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+        }
       }
-    }
-    if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume();
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      this.ctx = null;
+      this.masterGain = null;
     }
   }
 
@@ -44,6 +49,7 @@ class AudioEngine {
 
     // Transient Noise Punch
     const noiseBuffer = this.createNoiseBuffer(0.12);
+    if (!noiseBuffer) return;
     const noiseSource = this.ctx.createBufferSource();
     noiseSource.buffer = noiseBuffer;
 
@@ -99,6 +105,7 @@ class AudioEngine {
 
     // Explosive Noise
     const noiseBuffer = this.createNoiseBuffer(0.35);
+    if (!noiseBuffer) return;
     const noiseSource = this.ctx.createBufferSource();
     noiseSource.buffer = noiseBuffer;
 
@@ -163,8 +170,10 @@ class AudioEngine {
     osc.connect(gain);
     gain.connect(this.masterGain);
 
+    const noiseBuf = this.createNoiseBuffer(0.06);
+    if (!noiseBuf) return;
     const noiseSource = this.ctx.createBufferSource();
-    noiseSource.buffer = this.createNoiseBuffer(0.06);
+    noiseSource.buffer = noiseBuf;
 
     const noiseGain = this.ctx.createGain();
     noiseGain.gain.setValueAtTime(0.4, now);
@@ -408,18 +417,22 @@ class AudioEngine {
     });
   }
 
-  private createNoiseBuffer(duration: number): AudioBuffer {
+  private createNoiseBuffer(duration: number): AudioBuffer | null {
     if (!this.ctx) {
-      throw new Error("Context not ready");
+      return null;
     }
-    const sampleRate = this.ctx.sampleRate;
-    const bufferSize = Math.floor(sampleRate * duration);
-    const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+    try {
+      const sampleRate = Math.max(8000, this.ctx.sampleRate || 44100);
+      const bufferSize = Math.max(1, Math.floor(sampleRate * duration));
+      const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+    } catch {
+      return null;
     }
-    return buffer;
   }
 }
 

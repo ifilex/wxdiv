@@ -1,8 +1,9 @@
 /**
- * WXDIV 3.0 - AI Engine Configuration Service
- * Allows users to configure, store locally, and test custom AI API Keys
- * (e.g. Gemini API Key) without having to modify the .env file.
+ * WXDIV 3.0 - Configuración de Motor de IA Local
+ * Funciona 100% en tu dispositivo (CPU Instantáneo o WebLLM GPU), sin claves ni nube.
  */
+
+export type LocalAiEngineMode = "precode_neural" | "webllm";
 
 export interface AiConfig {
   apiKey: string;
@@ -10,7 +11,7 @@ export interface AiConfig {
   isActive: boolean;
   useCustomKey: boolean;
   customEndpoint?: string;
-  engineMode?: "webllm" | "gemini" | "precode_neural";
+  engineMode?: LocalAiEngineMode;
   webLlmModel?: string;
 }
 
@@ -18,19 +19,16 @@ const STORAGE_KEY = "wxdiv_ai_config_v1";
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
   apiKey: "",
-  model: "gemini-3.8-flash",
+  model: "precode-local-v3",
   isActive: true,
   useCustomKey: false,
-  engineMode: "webllm",
-  webLlmModel: "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+  engineMode: "precode_neural",
+  webLlmModel: "SmolLM2-360M-Instruct-q4f16_1-MLC",
 };
 
-export const AVAILABLE_MODELS = [
-  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", desc: "Recomendado: ultra-rápido y especializado en código DIV" },
-  { id: "gemini-flash-latest", name: "Gemini Flash (Latest)", desc: "Óptimo para balance general de generación y lógica" },
-  { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", desc: "Baja latencia y respuestas ligeras" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", desc: "Razonamiento profundo para arquitecturas de juegos complejas" },
-];
+function sanitizeEngineMode(mode: unknown): LocalAiEngineMode {
+  return mode === "webllm" ? "webllm" : "precode_neural";
+}
 
 export function getAiConfig(): AiConfig {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -41,12 +39,12 @@ export function getAiConfig(): AiConfig {
     if (!raw) return { ...DEFAULT_AI_CONFIG };
     const parsed = JSON.parse(raw);
     return {
-      apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey.trim() : "",
-      model: typeof parsed.model === "string" ? parsed.model : DEFAULT_AI_CONFIG.model,
+      apiKey: "",
+      model: DEFAULT_AI_CONFIG.model,
       isActive: typeof parsed.isActive === "boolean" ? parsed.isActive : true,
-      useCustomKey: typeof parsed.useCustomKey === "boolean" ? parsed.useCustomKey : Boolean(parsed.apiKey),
-      customEndpoint: parsed.customEndpoint,
-      engineMode: parsed.engineMode || DEFAULT_AI_CONFIG.engineMode,
+      useCustomKey: false,
+      customEndpoint: undefined,
+      engineMode: sanitizeEngineMode(parsed.engineMode),
       webLlmModel: parsed.webLlmModel || DEFAULT_AI_CONFIG.webLlmModel,
     };
   } catch {
@@ -57,60 +55,25 @@ export function getAiConfig(): AiConfig {
 export function saveAiConfig(config: AiConfig): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-    window.dispatchEvent(new CustomEvent("wxdiv_aiconfig_changed", { detail: config }));
+    const safeConfig: AiConfig = {
+      ...config,
+      apiKey: "",
+      useCustomKey: false,
+      engineMode: sanitizeEngineMode(config.engineMode),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeConfig));
+    window.dispatchEvent(new CustomEvent("wxdiv_aiconfig_changed", { detail: safeConfig }));
   } catch (err) {
     console.error("Error saving AI config to localStorage:", err);
   }
 }
 
 export function getEffectiveApiKey(): string {
-  const cfg = getAiConfig();
-  if (cfg.isActive && cfg.useCustomKey && cfg.apiKey) {
-    return cfg.apiKey;
-  }
   return "";
 }
 
 export function getAiHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     "Content-Type": "application/json",
   };
-  const key = getEffectiveApiKey();
-  if (key) {
-    headers["x-api-key"] = key;
-  }
-  return headers;
-}
-
-export async function verifyAiApiKey(
-  apiKey: string,
-  model = "gemini-3.8-flash"
-): Promise<{ ok: boolean; message: string; model?: string }> {
-  try {
-    const res = await fetch("/api/gemini/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: apiKey.trim(), model }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return {
-        ok: false,
-        message: data.error || data.message || `Error del servidor (${res.status})`,
-      };
-    }
-
-    return {
-      ok: Boolean(data.success),
-      message: data.message || (data.success ? "Conexión exitosa" : "No se pudo verificar la clave"),
-      model: data.modelUsed || model,
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      message: err?.message || "No se pudo conectar con el endpoint de verificación.",
-    };
-  }
 }

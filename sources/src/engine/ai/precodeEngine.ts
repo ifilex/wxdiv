@@ -2,8 +2,15 @@
  * Teoría de Precódigo y Red Neural de Creación de Código para WXDIV 3.0
  *
  * Sintetizador modular local que funciona 100% offline en CPU (0ms) y optimiza
- * prompts para WebLLM / Gemini reduciendo errores de sintaxis en DIV Games Studio.
+ * prompts para WebLLM reduciendo errores de sintaxis en DIV Games Studio y mapas 3D.
  */
+
+import {
+  Mode8AiAction,
+  Mode8SceneContext,
+  formatMode8ContextForPrompt,
+  inferMode8ActionsFromPrompt,
+} from "./mode8WorkBlocks";
 
 export interface PrecodeBlock {
   id: string;
@@ -238,12 +245,12 @@ write_int(0, 580, 20, 0, &lives);`,
 sound(1, 80, 280); // Disparo / Salto`,
   },
 
-  // Modo 8 / 3D Raycasting
+  // Modo 8 / 3D Raycasting & Bloques de Trabajo 3D
   {
     id: "pre_mode8_cam",
     category: "mode8",
     name: "Controlador Cámara 3D / Modo 8",
-    description: "Cámara en primera persona con giro suave y desplazamiento",
+    description: "Cámara en primera o tercera persona con giro suave y desplazamiento",
     tokenSavings: "380 tokens",
     keywords: ["3d", "modo8", "mode8", "raycaster", "dungeon", "camara", "doom", "wolfenstein"],
     snippet: `// Bloque Precódigo: Controlador Cámara 3D Modo 8
@@ -257,6 +264,27 @@ IF (key(_down) OR key(_s))
   x -= cos(angle) * 4;
   y -= sin(angle) * 4;
 END`,
+  },
+  {
+    id: "pre_mode8_platform",
+    category: "mode8",
+    name: "3D: Plataforma / Sector Elevado",
+    description: "Crea un bloque o sala 3D elevada con textura y altura propia",
+    tokenSavings: "280 tokens",
+    keywords: ["plataforma", "bloque", "sector", "sala", "torre"],
+    snippet: `// Bloque de Trabajo 3D: Plataforma Elevada
+m8_set_doom_sector(10, 0.75, 3.50, "STUD_FLOOR_BLUE", "SKY_ROBLOX", 240, 0, 0);`,
+  },
+  {
+    id: "pre_mode8_collectibles",
+    category: "mode8",
+    name: "3D: Monedas, Meta y Actores MD2/MD3",
+    description: "Añade monedas vóxel, estrella meta o guardianes 3D al mapa",
+    tokenSavings: "310 tokens",
+    keywords: ["moneda", "estrella", "meta", "samurai", "robot", "enemigo", "bandera", "voxel", "modelo"],
+    snippet: `// Bloque de Trabajo 3D: Objetos y Actores
+m8_place_voxel("voxel_coin", 4.50, 5.50, 0.25, 0, 1.00);
+m8_add_model("trophy_star", 6.50, 5.50, 0.20, 0, "idle", 1.10, "goal", 100, 0, 0, "Meta");`,
   },
 
   // Apps visuales / UI de escritorio y móvil
@@ -429,12 +457,17 @@ export function mergeDivSnippetIntoProgram(existingCode: string, newSnippet: str
  * Analiza la petición real del usuario en español/inglés y genera código DIV
  * completo y funcional o el fragmento exacto para insertar en código existente.
  */
-export function generatePrecodeNeuralCode(prompt: string, existingCode: string = ""): {
+export function generatePrecodeNeuralCode(
+  prompt: string,
+  existingCode: string = "",
+  options?: { activeTab?: string; mode8Context?: Mode8SceneContext }
+): {
   code: string;
   matchedBlocks: PrecodeBlock[];
   tokenSavingsTotal: number;
   explanation: string;
   isInsertionSnippet?: boolean;
+  mode8Actions?: Mode8AiAction[];
 } {
   const rawPrompt = (prompt || "").trim();
   const p = rawPrompt
@@ -449,6 +482,43 @@ export function generatePrecodeNeuralCode(prompt: string, existingCode: string =
     if (block.keywords.some((kw) => p.includes(kw))) {
       matchedBlocks.push(block);
       tokenSavingsTotal += parseInt(block.tokenSavings) || 200;
+    }
+  }
+
+  // 0. BLOQUES DE TRABAJO 3D Y MAPAS (cuando estamos en 3D o el usuario pide construir/editar escena 3D)
+  const isMode8Active = options?.activeTab === "mode8" || Boolean(options?.mode8Context && /\b(mapa|sector|escalera|plataforma|cielo|moneda|bandera|samurai|robot|estrella|arena|circuito|laberinto|primera persona|tercera persona|pintar|pinta|bloque)\b/i.test(p));
+  if (isMode8Active && options?.mode8Context) {
+    const inferred = inferMode8ActionsFromPrompt(rawPrompt, options.mode8Context);
+    if (inferred.actions.length > 0) {
+      const snippetLines = inferred.actions.map((act) => {
+        if (act.type === "add_platform") {
+          return `m8_set_doom_sector(${options.mode8Context!.sectorCount + 1}, ${(act.floorHeight ?? 0.75).toFixed(2)}, ${(act.ceilHeight ?? 3.5).toFixed(2)}, "${act.flatTex || "STUD_FLOOR_BLUE"}", "${options.mode8Context!.skyTexture}", 240, 0, 0);`;
+        }
+        if (act.type === "add_voxel") {
+          return `m8_place_voxel("${act.voxelId}", ${(options.mode8Context!.playerPos.x / 64 + 1.5).toFixed(2)}, ${(options.mode8Context!.playerPos.y / 64).toFixed(2)}, 0.25, 0, 1.00);`;
+        }
+        if (act.type === "add_model") {
+          return `m8_add_model("${act.modelId}", ${(options.mode8Context!.playerPos.x / 64 + 2.5).toFixed(2)}, ${(options.mode8Context!.playerPos.y / 64).toFixed(2)}, 0.00, 180, "idle", 1.00, "${act.role || "prop"}", 100, 1.00, 10, "${act.modelId}");`;
+        }
+        if (act.type === "paint_material") {
+          return `// Material actualizado: piso=${act.flatTex}, muro=${act.wallTex}`;
+        }
+        if (act.type === "set_sky_camera") {
+          return `// Atmósfera 3D: cielo=${act.skyTexture || options.mode8Context!.skyTexture}, cámara=${act.cameraMode || options.mode8Context!.cameraMode}`;
+        }
+        if (act.type === "add_stairs") {
+          return `// Escalera 3D de ${act.steps ?? 6} peldaños generada en escena`;
+        }
+        return `// Plantilla 3D generada: ${act.template}`;
+      });
+      return {
+        code: `// Acciones 3D aplicadas al mapa "${options.mode8Context.levelTitle}"\n${snippetLines.join("\n")}`,
+        matchedBlocks: matchedBlocks.length > 0 ? matchedBlocks : [PRECODE_LIBRARY.find((b) => b.id === "pre_mode8_cam")!],
+        tokenSavingsTotal: Math.max(260, tokenSavingsTotal),
+        isInsertionSnippet: true,
+        mode8Actions: inferred.actions,
+        explanation: `${inferred.summary} Pulsa "Aplicar al Mapa 3D" o usa los Bloques de Trabajo 3D.`,
+      };
     }
   }
 
@@ -1340,9 +1410,13 @@ END
 }
 
 /**
- * Prepara un prompt optimizado con precódigo y sintaxis DIV estricta para WebLLM o Gemini.
+ * Prepara un prompt optimizado con precódigo, contexto 3D y sintaxis DIV estricta para WebLLM local.
  */
-export function buildPrecodeOptimizedPrompt(userPrompt: string, currentCode: string): {
+export function buildPrecodeOptimizedPrompt(
+  userPrompt: string,
+  currentCode: string,
+  options?: { activeTab?: string; mode8Context?: Mode8SceneContext }
+): {
   systemPrompt: string;
   userPromptWithPrecode: string;
   matchedBlocks: PrecodeBlock[];
@@ -1360,21 +1434,23 @@ export function buildPrecodeOptimizedPrompt(userPrompt: string, currentCode: str
     .map((b) => `--- BLOQUE PRECÓDIGO (${b.name}) ---\n${b.snippet}`)
     .join("\n\n");
 
-  const systemPrompt = `Eres un experto en DIV Games Studio (WXDIV 3.0). Genera EXCLUSIVAMENTE código DIV válido en español dentro de un bloque \`\`\`div ... \`\`\`.
+  const mode8Summary = formatMode8ContextForPrompt(options?.mode8Context);
+
+  const systemPrompt = `Eres AURA IA, asistente 100% local de WXDIV 3.0. Genera código DIV válido en español dentro de \`\`\`div ... \`\`\`.
 Reglas estrictas de sintaxis DIV:
 - Cabecera: PROGRAM nombre_programa;
 - Variables globales en GLOBAL (SIN END al final de GLOBAL).
 - Bloque principal: BEGIN ... LOOP FRAME; END END
 - Procesos: PROCESS nombre(x, y) PRIVATE ... BEGIN graph = 1; LOOP ... FRAME; END END
 - Todos los IF, LOOP, WHILE, FOR, BEGIN se cierran con END.
-- Juegos y Apps DIV: set_mode(m640x480), set_fps(60), screen_color(rgb(r,g,b)), write(0, x, y, 0, "texto"), write_int(0, x, y, 0, &var), draw_box(x1,y1,x2,y2,color), draw_input(...), draw_button(...), draw_table(...), key(_left/_right/_up/_down/_space/_w/_a/_s/_d), collision(type proceso), sound(1, 80, 300), rand(min, max), signal(id, s_kill).
-- Páginas Web / Landings / Tiendas HTML5 en WXDIV: usa set_html5_mode(1); set_title("Marca"); web_page("Titulo", "Subtitulo", "light|dark"); web_navbar("Marca", "Inicio,Servicios,Precios,Contacto", "CTA", "accion"); web_hero("Titulo", "Subtitulo", "CTA", "accion", "CTA2", "accion2", "Badge"); web_stat("Label", "Valor", "Cambio", true); web_feature("🚀", "Titulo", "Desc"); web_pricing("Plan", "$29", "/mes", "Incluye 1, Incluye 2", true, "Comprar", "accion"); web_testimonial("Cita", "Autor", "Cargo", 5); web_faq("Pregunta", "Respuesta"); web_contact_form("Titulo", "Desc", "Enviar", "accion"); web_cta_banner("Titulo", "Subtitulo", "Boton", "accion", "Badge"); web_footer("Marca", "© 2026", "Links,Contacto");
-- NO uses etiquetas HTML crudas, JavaScript, Python, C# ni llaves { }.
-- Si el usuario pide agregar una sección web o proceso a su código existente, puedes entregar solo las llamadas web_* o el PROCESS nuevo, o el PROGRAM completo actualizado.`;
+- Apps y Juegos DIV: set_mode(m640x480), set_fps(60), screen_color(rgb(r,g,b)), write(0, x, y, 0, "texto"), draw_box(...), draw_input(...), draw_button(...), key(...), collision(type proceso), sound(...), rand(min, max).
+- Páginas Web HTML5 en WXDIV: set_html5_mode(1); web_page(...); web_navbar(...); web_hero(...); web_stat(...); web_feature(...); web_pricing(...); web_contact_form(...); web_footer(...);
+- Si el usuario está editando un mapa 3D Modo 8 y pide añadir plataformas, escaleras, monedas, enemigos o cambiar cielo/material, además puedes incluir un bloque JSON \`\`\`mode8-actions [{"type":"add_platform","floorHeight":0.75}] \`\`\` con acciones para el mapa 3D.
+- NO uses HTML crudo, JavaScript, Python ni llaves { }.`;
 
   const userPromptWithPrecode = `Petición del usuario: ${userPrompt}
 
-${precodeContext ? `Bloques de referencia DIV:\n${precodeContext}\n` : ""}
+${mode8Summary ? `${mode8Summary}\n\n` : ""}${precodeContext ? `Bloques de referencia DIV:\n${precodeContext}\n` : ""}
 ${
   currentCode.trim()
     ? `Código DIV actual en el editor:\n\`\`\`div\n${currentCode.slice(0, 1200)}\n\`\`\``

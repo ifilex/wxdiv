@@ -14,8 +14,6 @@ import {
   Zap,
 } from "lucide-react";
 import { BlockInstance } from "./types";
-import { getAiConfig, getAiHeaders } from "../../services/aiConfig";
-import { webLlmService } from "../../engine/ai/webLlmService";
 
 interface AiBlockAssistantModalProps {
   isOpen: boolean;
@@ -85,7 +83,6 @@ export const AiBlockAssistantModal: React.FC<AiBlockAssistantModalProps> = ({
     setIsGenerating(true);
 
     try {
-      const cfg = getAiConfig();
       const p = textPrompt.toLowerCase();
 
       // Generar pasos personalizados adaptados a la mecánica solicitada
@@ -197,23 +194,6 @@ export const AiBlockAssistantModal: React.FC<AiBlockAssistantModalProps> = ({
           },
         ];
       } else {
-        // Consultar con motor remoto si está disponible o generar pasos dinámicos
-        try {
-          const res = await fetch("/api/gemini/assist", {
-            method: "POST",
-            headers: getAiHeaders(),
-            body: JSON.stringify({
-              prompt: `Explica paso a paso para un usuario sin conocimientos de programación qué bloques de MIT App Inventor (Blockly) debe añadir y conectar para implementar: "${textPrompt}".
-Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del bloque, color de la categoría y qué hace.`,
-              task: "blocks_guidance",
-              model: cfg.model || "gemini-3.8-flash",
-            }),
-          });
-          if (res.ok) {
-            // Pasos estándar
-          }
-        } catch (_) {}
-
         customSteps = [
           {
             stepNumber: 1,
@@ -315,42 +295,51 @@ Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del b
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in">
-      <div className="relative w-full max-w-2xl bg-[#0f172a] border border-emerald-500/40 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header estilo MIT App Inventor */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-[#142316] border-b border-emerald-800/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-lime-500 flex items-center justify-center text-white shadow-md">
+    <div
+      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/45 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full sm:max-w-2xl bg-white border border-[#E2E8F0] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[92dvh] sm:h-auto sm:max-h-[90dvh] text-[#111827]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sm:hidden flex justify-center pt-2 pb-0.5 bg-white flex-shrink-0">
+          <span className="w-10 h-1 rounded-full bg-slate-300" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 bg-white border-b border-[#E2E8F0] flex-shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#7C2D48] flex items-center justify-center text-white flex-shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-emerald-300 flex items-center gap-2">
-                AURA IA • Asistente de Bloques
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-700/60">
-                  Blockly & MIT App Inventor
-                </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-[#111827] truncate">
+                AURA IA · Guía de Bloques
               </h2>
-              <p className="text-xs text-slate-400">
-                Aprende qué bloques necesitas paso a paso sin escribir código tradicional
+              <p className="text-xs text-[#6B7280] truncate">
+                Aprende qué bloques necesitas paso a paso sin código
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors"
+            className="w-11 h-11 rounded-xl text-[#4B5563] hover:text-[#111827] hover:bg-slate-100 flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer"
+            aria-label="Cerrar asistente de bloques"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Prompt Input */}
-        <div className="p-4 bg-[#090f1d] border-b border-slate-800 flex flex-col gap-2">
-          <label className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
-            <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+        <div className="p-4 bg-[#F7F8FA] border-b border-[#E2E8F0] flex flex-col gap-2.5 flex-shrink-0">
+          <label className="text-xs text-[#111827] font-semibold flex items-center gap-1.5">
+            <Lightbulb className="w-4 h-4 text-[#7C2D48] flex-shrink-0" />
             <span>¿Qué mecánica o lógica deseas construir con bloques?</span>
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <input
               type="text"
               value={prompt}
@@ -358,22 +347,23 @@ Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del b
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleGenerateStepByStep();
               }}
-              placeholder="Ej: Cuando el jugador toque la pantalla mover la nave y disparar láseres..."
-              className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-700 text-slate-100 text-xs outline-none focus:border-emerald-500 placeholder:text-slate-500 font-sans"
+              placeholder="Ej: Al tocar la pantalla mover la nave y disparar..."
+              className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-white border border-[#CBD5E1] text-[#111827] text-xs sm:text-sm outline-none focus:border-[#7C2D48] placeholder:text-[#6B7280] font-sans"
             />
             <button
+              type="button"
               onClick={() => handleGenerateStepByStep()}
               disabled={isGenerating || !prompt.trim()}
-              className="px-4 py-2 rounded bg-gradient-to-r from-emerald-600 to-lime-600 hover:from-emerald-500 hover:to-lime-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md disabled:opacity-50 transition-all cursor-pointer"
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-[#7C2D48] hover:bg-[#642239] text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 transition-colors cursor-pointer flex-shrink-0"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isGenerating ? "Pensando..." : "Explicar"}</span>
+              <Sparkles className="w-4 h-4" />
+              <span>{isGenerating ? "Pensando..." : "Explicar paso a paso"}</span>
             </button>
           </div>
 
           {/* Quick Suggestions */}
-          <div className="flex items-center gap-1.5 overflow-x-auto text-[10px] pt-1">
-            <span className="text-slate-500 font-semibold flex-shrink-0">Mecánicas Rápidas:</span>
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs pt-0.5">
+            <span className="text-[#6B7280] font-semibold flex-shrink-0">Ideas:</span>
             {[
               "Laberinto con colisión y meta",
               "Disparo hacia el cursor y sonido",
@@ -382,11 +372,12 @@ Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del b
             ].map((p, idx) => (
               <button
                 key={idx}
+                type="button"
                 onClick={() => {
                   setPrompt(p);
                   handleGenerateStepByStep(p);
                 }}
-                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 whitespace-nowrap transition-colors cursor-pointer"
+                className="min-h-[36px] px-2.5 py-1 rounded-lg bg-white hover:bg-[#FDF2F5] text-[#374151] hover:text-[#7C2D48] border border-[#E2E8F0] whitespace-nowrap transition-colors cursor-pointer"
               >
                 {p}
               </button>
@@ -395,36 +386,36 @@ Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del b
         </div>
 
         {/* Steps List (Explicación Paso a Paso) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 font-sans">
-          <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5" />
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 font-sans bg-white">
+          <div className="text-xs font-bold text-[#2F6F4E] uppercase tracking-wider flex items-center gap-1.5">
+            <Layers className="w-4 h-4" />
             <span>Guía Paso a Paso para Construir tu Lógica</span>
           </div>
 
           {steps.map((st) => (
             <div
               key={st.stepNumber}
-              className="p-3 rounded-lg bg-[#0c1424] border border-slate-800 hover:border-emerald-500/40 transition-colors flex flex-col gap-1.5"
+              className="p-3.5 rounded-xl bg-[#F7F8FA] border border-[#E2E8F0] transition-colors flex flex-col gap-2"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-emerald-950 border border-emerald-600 text-emerald-300 text-[10px] font-bold flex items-center justify-center">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-[#7C2D48] text-white text-xs font-bold flex items-center justify-center flex-shrink-0 tabular-nums">
                     {st.stepNumber}
                   </span>
                   <span
-                    className="px-2 py-0.5 rounded text-[11px] font-bold text-white shadow-xs font-mono"
+                    className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold text-white font-mono truncate max-w-[200px] sm:max-w-none"
                     style={{ backgroundColor: st.categoryColor }}
                   >
                     {st.blockName}
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-semibold">{st.category}</span>
+                <span className="text-[11px] text-[#6B7280] font-semibold">{st.category}</span>
               </div>
 
-              <p className="text-xs text-slate-300 pl-7 leading-relaxed">{st.explanation}</p>
+              <p className="text-xs text-[#374151] sm:pl-8 leading-relaxed">{st.explanation}</p>
 
-              <div className="pl-7 text-[10px] text-amber-300/90 italic flex items-center gap-1">
-                <span>💡 Tip:</span>
+              <div className="sm:pl-8 text-[11px] text-[#7C2D48] font-medium flex items-start gap-1.5">
+                <Lightbulb className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                 <span>{st.tip}</span>
               </div>
             </div>
@@ -432,25 +423,27 @@ Devuelve una lista de 4 o 5 pasos pedagógicos claros con el nombre exacto del b
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3 bg-[#0d1627] border-t border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Los bloques creados se traducen automáticamente a código DIV Games Studio</span>
+        <div className="px-4 sm:px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#F7F8FA] border-t border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 flex-shrink-0">
+          <div className="flex items-center gap-2 text-xs text-[#4B5563]">
+            <CheckCircle2 className="w-4 h-4 text-[#2F6F4E] flex-shrink-0" />
+            <span>Los bloques se traducen solos a código DIV</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
             <button
+              type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#374151] text-xs font-semibold transition-colors cursor-pointer"
             >
               Cerrar
             </button>
             <button
+              type="button"
               onClick={handleInsertGeneratedBlocks}
-              className="px-4 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-lime-600 hover:from-emerald-500 hover:to-lime-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all cursor-pointer"
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>🧩 Insertar Bloques en el Canvas</span>
+              <Plus className="w-4 h-4" />
+              <span>Insertar Bloques en el Canvas</span>
             </button>
           </div>
         </div>

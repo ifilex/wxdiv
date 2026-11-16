@@ -22,13 +22,15 @@ import {
   FileText,
   Calculator,
   Paintbrush,
+  Brain,
 } from "lucide-react";
 import { PRESETS } from "../engine/presets";
 import { DivGraphic } from "../types";
 import { DEFAULT_SPRITES } from "../engine/graphics";
 import { APP_TEMPLATES } from "../engine/appTemplates";
+import { COGNITIVE_STARTERS } from "./WineboxEcosystemModal";
 
-export type ProjectKind = "all" | "game" | "app" | "web" | "database";
+export type ProjectKind = "all" | "cognitive" | "game" | "app" | "web" | "database";
 
 export interface NewProjectData {
   title: string;
@@ -192,21 +194,51 @@ END
     {
       id: "mode8_dungeon",
       category: "game" as const,
-      name: "Dungeon Crypt 3D (Modo 8 Raycaster FPS)",
+      name: "Roblox Obby Tower 3D (Modo 8)",
       icon: Box,
-      badge: "Modo 8 FPS",
-      color: "text-amber-300",
-      description: "Motor 3D Raycasting estilo Wolfenstein / Catacomb con paredes texturizadas, monstruos 3D y niebla.",
+      badge: "Roblox 3D",
+      color: "text-amber-500",
+      description: "Circuito 3D estilo Roblox Studs con plataformas ascendentes, piscina neón, monedas, checkpoints, enemigos IA activos y cámara 3ª Persona / FPS.",
       code: PRESETS.find((p) => p.id === "mode8_dungeon")?.code || "",
+    },
+    {
+      id: "hexen_citadel_3d",
+      category: "game" as const,
+      name: "Roblox Sky Citadel 3D (Aventura)",
+      icon: Box,
+      badge: "Roblox 3D",
+      color: "text-yellow-500",
+      description: "Ciudadela celestial de mármol y oro estilo Roblox con terrazas escalonadas, cofres, escoltas Redcliff y Titán activo.",
+      code: PRESETS.find((p) => p.id === "hexen_citadel_3d")?.code || "",
+    },
+    {
+      id: "div2_modo8_raycast",
+      category: "game" as const,
+      name: "Roblox Dojo de Pelea 3D (DIV 2)",
+      icon: Sword,
+      badge: "Dojo 3D",
+      color: "text-emerald-500",
+      description: "Arena marcial estilo Roblox Dojo con tatami en dos alturas, antorchas, espadas 3D y duelistas Samurái activos.",
+      code: PRESETS.find((p) => p.id === "div2_modo8_raycast")?.code || "",
+    },
+    {
+      id: "modo8_dark_md2_workers",
+      category: "game" as const,
+      name: "Roblox Cyber Base 3D (Sci-Fi)",
+      icon: Cpu,
+      badge: "Cyber 3D",
+      color: "text-cyan-500",
+      description: "Base futurista estilo Roblox Cyber Neón con plataforma reactor, terminales digitales y Cyber Mechs patrullando.",
+      code: PRESETS.find((p) => p.id === "modo8_dark_md2_workers")?.code || "",
     },
     {
       id: "doom_modo8_classic",
       category: "game" as const,
-      name: "DOOM 1993: Hangar E1M1 (Modo 8 FPS)",
-      icon: Box,
-      badge: "Modo 8 3D",
-      color: "text-red-400",
-      description: "FPS 3D clásico en Modo 8 con escopeta corredera en primera persona, imps demoníacos, efectos sonoros y automapa.",
+      name: "Base Espacial Blox E1M1 (Modo 8)",
+      icon: Flame,
+      badge: "Shooter 3D",
+      color: "text-red-500",
+      description: "Patio modular estilo Roblox Studs con escalera de 4 peldaños hacia cubierta dorada, enemigos activos, escopeta 3D y cámara 3ª Persona / FPS.",
       code: PRESETS.find((p) => p.id === "doom_modo8_classic")?.code || "",
     },
 
@@ -325,6 +357,18 @@ END
       description: "Base de datos relacional con tablas, consultas SQL SELECT/INSERT, vista de grilla y sincronización persistente.",
       code: APP_TEMPLATES.find((t) => t.id === "db_crud_sqlite")?.code || "",
     },
+
+    // --- 6. Estimulación Cognitiva (Winebox Clinic / Cloud) ---
+    ...COGNITIVE_STARTERS.map((c) => ({
+      id: c.id,
+      category: "cognitive" as const,
+      name: c.title,
+      icon: Brain,
+      badge: "Winebox Cognitiva",
+      color: "text-[#7C2D48]",
+      description: c.description,
+      code: c.code,
+    })),
   ];
 
   // Filter templates by active category
@@ -383,6 +427,7 @@ END
         <div className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-white border-b border-[#E2E8F0] overflow-x-auto">
           {[
             { id: "all", label: "Todos", icon: Layers, count: ALL_TEMPLATES.length },
+            { id: "cognitive", label: "Estimulación Cognitiva", icon: Brain, count: ALL_TEMPLATES.filter(t => t.category === "cognitive").length },
             { id: "game", label: "Videojuegos", icon: Gamepad2, count: ALL_TEMPLATES.filter(t => t.category === "game").length },
             { id: "app", label: "Aplicaciones", icon: Layout, count: ALL_TEMPLATES.filter(t => t.category === "app").length },
             { id: "web", label: "Landings & Webs", icon: Globe, count: ALL_TEMPLATES.filter(t => t.category === "web").length },

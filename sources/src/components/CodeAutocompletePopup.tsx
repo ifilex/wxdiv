@@ -97,10 +97,10 @@ export const CodeAutocompletePopup: React.FC<CodeAutocompletePopupProps> = ({
       id="div-autocomplete-popup"
       role="listbox"
       aria-label="Sugerencias de autocompletado DIV"
-      className="absolute z-50 flex shadow-2xl rounded-lg border border-slate-700/80 bg-[#090f1d] text-slate-200 text-xs font-mono overflow-hidden backdrop-blur-md select-none transition-all duration-75 max-w-[540px]"
+      className="absolute z-50 flex shadow-2xl rounded-lg border border-slate-700/80 bg-[#090f1d] text-slate-200 text-xs font-mono overflow-hidden backdrop-blur-md select-none transition-all duration-75 max-w-[calc(100vw-24px)] sm:max-w-[540px]"
       style={{
         top: `${position.top}px`,
-        left: `${position.left}px`,
+        left: `${Math.max(8, position.left)}px`,
         boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 15px 1px rgba(16, 185, 129, 0.15)",
       }}
     >
@@ -122,11 +122,11 @@ export const CodeAutocompletePopup: React.FC<CodeAutocompletePopupProps> = ({
               role="option"
               aria-selected={isSelected}
               onMouseEnter={() => onHoverIndex(index)}
-              onMouseDown={(e) => {
-                e.preventDefault(); // Don't steal focus from textarea before insert
+              onPointerDown={(e) => {
+                e.preventDefault();
                 onSelect(item);
               }}
-              className={`px-2 py-1.5 rounded flex items-center justify-between gap-1.5 cursor-pointer text-xs transition-colors my-0.5 ${
+              className={`px-2.5 py-2 sm:py-1.5 min-h-[38px] sm:min-h-0 rounded flex items-center justify-between gap-1.5 cursor-pointer text-xs transition-colors my-0.5 touch-manipulation ${
                 isSelected
                   ? "bg-emerald-950/70 border border-emerald-500/40 text-white font-semibold"
                   : "hover:bg-slate-800/50 text-slate-300"
@@ -148,7 +148,7 @@ export const CodeAutocompletePopup: React.FC<CodeAutocompletePopupProps> = ({
         })}
 
         {/* Footer shortcuts hint */}
-        <div className="mt-1 pt-1 border-t border-slate-800/60 px-2 py-1 text-[9px] text-slate-500 font-sans flex items-center justify-between">
+        <div className="mt-1 pt-1 border-t border-slate-800/60 px-2 py-1 text-[9px] text-slate-500 font-sans hidden sm:flex items-center justify-between">
           <span>
             <kbd className="px-1 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[9px]">Tab</kbd> /{" "}
             <kbd className="px-1 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[9px]">↵</kbd> insertar
@@ -161,7 +161,7 @@ export const CodeAutocompletePopup: React.FC<CodeAutocompletePopupProps> = ({
 
       {/* Selected Item Detail / Documentation Preview */}
       {selectedItem && (
-        <div className="w-56 sm:w-64 p-3 bg-[#0c1427]/90 flex flex-col justify-between text-xs font-sans">
+        <div className="hidden sm:flex w-64 p-3 bg-[#0c1427]/90 flex-col justify-between text-xs font-sans">
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-mono font-bold text-emerald-300 text-sm">

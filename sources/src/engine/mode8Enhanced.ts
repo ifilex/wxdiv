@@ -173,7 +173,7 @@ function generateKnightModel(): DivModel3DData {
       { name: "attack", vertices: vAttack },
     ],
     triangles,
-    baseScale: 1.0,
+    baseScale: 0.78,
   };
 }
 
@@ -237,7 +237,7 @@ function generateGargoyleModel(): DivModel3DData {
       { name: "flap", vertices: vFlap },
     ],
     triangles,
-    baseScale: 1.1,
+    baseScale: 0.78,
   };
 }
 
@@ -426,7 +426,7 @@ function generateDemonBruteModel(): DivModel3DData {
       { name: "attack", vertices: vAttack },
     ],
     triangles,
-    baseScale: 1.25,
+    baseScale: 0.84,
   };
 }
 
@@ -530,11 +530,403 @@ function generateChestModel(): DivModel3DData {
   };
 }
 
+/**
+ * Helper to build articulated multi-part 3D box meshes with per-face shading
+ */
+function addPartBox(
+  vertices: DivModel3DVertex[],
+  triangles: DivModel3DTriangle[],
+  cx: number,
+  cy: number,
+  cz: number,
+  hx: number,
+  hy: number,
+  hz: number,
+  color: string,
+  topColor?: string,
+  sideColor?: string
+): { start: number; end: number } {
+  const start = vertices.length;
+  vertices.push(
+    { x: cx - hx, y: cy - hy, z: cz - hz }, // 0: front-bottom-left
+    { x: cx + hx, y: cy - hy, z: cz - hz }, // 1: front-bottom-right
+    { x: cx + hx, y: cy + hy, z: cz - hz }, // 2: back-bottom-right
+    { x: cx - hx, y: cy + hy, z: cz - hz }, // 3: back-bottom-left
+    { x: cx - hx, y: cy - hy, z: cz + hz }, // 4: front-top-left
+    { x: cx + hx, y: cy - hy, z: cz + hz }, // 5: front-top-right
+    { x: cx + hx, y: cy + hy, z: cz + hz }, // 6: back-top-right
+    { x: cx - hx, y: cy + hy, z: cz + hz }  // 7: back-top-left
+  );
+  const cTop = topColor || color;
+  const cSide = sideColor || color;
+  const s = start;
+  triangles.push(
+    // Front (-Y)
+    { v: [s + 0, s + 1, s + 5], color },
+    { v: [s + 0, s + 5, s + 4], color },
+    // Back (+Y)
+    { v: [s + 2, s + 3, s + 7], color: cSide },
+    { v: [s + 2, s + 7, s + 6], color: cSide },
+    // Top (+Z)
+    { v: [s + 4, s + 5, s + 6], color: cTop },
+    { v: [s + 4, s + 6, s + 7], color: cTop },
+    // Bottom (-Z)
+    { v: [s + 3, s + 2, s + 1], color: cSide },
+    { v: [s + 3, s + 1, s + 0], color: cSide },
+    // Left (-X)
+    { v: [s + 3, s + 0, s + 4], color: cSide },
+    { v: [s + 3, s + 4, s + 7], color: cSide },
+    // Right (+X)
+    { v: [s + 1, s + 2, s + 6], color: cSide },
+    { v: [s + 1, s + 6, s + 5], color: cSide }
+  );
+  return { start, end: vertices.length - 1 };
+}
+
+function rotateRangeAroundPivot(
+  verts: DivModel3DVertex[],
+  start: number,
+  end: number,
+  px: number,
+  py: number,
+  pz: number,
+  pitchRad: number,
+  rollRad: number = 0
+) {
+  const cp = Math.cos(pitchRad);
+  const sp = Math.sin(pitchRad);
+  const cr = Math.cos(rollRad);
+  const sr = Math.sin(rollRad);
+  for (let i = start; i <= end; i++) {
+    const dx = verts[i].x - px;
+    const dy = verts[i].y - py;
+    const dz = verts[i].z - pz;
+    // Pitch around X (swing forward/back along Y/Z)
+    const y1 = dy * cp - dz * sp;
+    const z1 = dy * sp + dz * cp;
+    // Roll around Y
+    const x2 = dx * cr - z1 * sr;
+    const z2 = dx * sr + z1 * cr;
+    verts[i] = { x: px + x2, y: py + y1, z: pz + z2 };
+  }
+}
+
+/**
+ * Built-in MD2 Roblox-Style Blox Hero (Articulated iconic Noob / Avatar)
+ */
+function generateBloxHeroModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+
+  // Legs (green)
+  const lLeg = addPartBox(baseVerts, triangles, -0.1, 0, 0.2, 0.085, 0.09, 0.2, "#22c55e", "#4ade80", "#15803d");
+  const rLeg = addPartBox(baseVerts, triangles, 0.1, 0, 0.2, 0.085, 0.09, 0.2, "#22c55e", "#4ade80", "#15803d");
+  // Torso (iconic bright azure blue)
+  const torso = addPartBox(baseVerts, triangles, 0, 0, 0.58, 0.19, 0.11, 0.19, "#0284c7", "#38bdf8", "#0369a1");
+  // Head (bright yellow) + smiling visor detail
+  const head = addPartBox(baseVerts, triangles, 0, 0, 0.9, 0.14, 0.14, 0.13, "#facc15", "#fde047", "#eab308");
+  // Sunglasses / face band on front of head
+  addPartBox(baseVerts, triangles, 0, -0.145, 0.92, 0.1, 0.015, 0.035, "#0f172a", "#1e293b", "#0f172a");
+  // Arms (bright yellow)
+  const lArm = addPartBox(baseVerts, triangles, -0.28, 0, 0.57, 0.075, 0.085, 0.18, "#facc15", "#fde047", "#ca8a04");
+  const rArm = addPartBox(baseVerts, triangles, 0.28, 0, 0.57, 0.075, 0.085, 0.18, "#facc15", "#fde047", "#ca8a04");
+
+  const makeWalk = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, lLeg.start, lLeg.end, -0.1, 0, 0.38, phase * 0.6);
+    rotateRangeAroundPivot(v, rLeg.start, rLeg.end, 0.1, 0, 0.38, -phase * 0.6);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.28, 0, 0.72, -phase * 0.55);
+    rotateRangeAroundPivot(v, rArm.start, rArm.end, 0.28, 0, 0.72, phase * 0.55);
+    // Subtle bounce
+    const bounce = Math.abs(phase) * 0.04;
+    for (let i = torso.start; i <= head.end; i++) v[i].z += bounce;
+    return v;
+  };
+
+  const makeJump = () => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.28, 0, 0.72, -2.4, -0.25);
+    rotateRangeAroundPivot(v, rArm.start, rArm.end, 0.28, 0, 0.72, -2.4, 0.25);
+    for (let i = 0; i < v.length; i++) v[i].z += 0.16;
+    return v;
+  };
+
+  const makeAttack = () => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, rArm.start, rArm.end, 0.28, 0, 0.72, -1.55);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.28, 0, 0.72, 0.45);
+    return v;
+  };
+
+  return {
+    id: "blox_hero",
+    name: "Héroe Blox Arcade (MD2)",
+    format: "md2",
+    frames: [
+      { name: "idle", vertices: baseVerts },
+      { name: "walk_0", vertices: makeWalk(1) },
+      { name: "walk_1", vertices: makeWalk(-1) },
+      { name: "jump", vertices: makeJump() },
+      { name: "attack", vertices: makeAttack() },
+    ],
+    triangles,
+    baseScale: 0.74,
+  };
+}
+
+/**
+ * Built-in MD2 Roblox Redcliff Armored Champion with Cape, Crest & Radiant Sword
+ */
+function generateBloxKnightModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+
+  const lLeg = addPartBox(baseVerts, triangles, -0.1, 0, 0.2, 0.085, 0.095, 0.2, "#334155", "#64748b", "#1e293b");
+  const rLeg = addPartBox(baseVerts, triangles, 0.1, 0, 0.2, 0.085, 0.095, 0.2, "#334155", "#64748b", "#1e293b");
+  addPartBox(baseVerts, triangles, 0, 0, 0.58, 0.2, 0.12, 0.2, "#991b1b", "#dc2626", "#7f1d1d"); // Crimson breastplate
+  addPartBox(baseVerts, triangles, 0, 0.14, 0.52, 0.18, 0.03, 0.26, "#b91c1c", "#ef4444", "#7f1d1d"); // Cape
+  // Plumed Helmet & Visor
+  addPartBox(baseVerts, triangles, 0, 0, 0.9, 0.15, 0.15, 0.14, "#64748b", "#cbd5e1", "#475569");
+  addPartBox(baseVerts, triangles, 0, -0.155, 0.9, 0.1, 0.02, 0.035, "#38bdf8", "#7dd3fc", "#0284c7"); // Glowing cyan visor
+  addPartBox(baseVerts, triangles, 0, 0.02, 1.08, 0.04, 0.14, 0.07, "#ef4444", "#f87171", "#b91c1c"); // Plume crest
+  // Arms + Pauldrons + Radiant Sword on Right Arm
+  const lArm = addPartBox(baseVerts, triangles, -0.29, 0, 0.57, 0.08, 0.09, 0.18, "#475569", "#eab308", "#334155");
+  const rStart = baseVerts.length;
+  addPartBox(baseVerts, triangles, 0.29, 0, 0.57, 0.08, 0.09, 0.18, "#475569", "#eab308", "#334155");
+  addPartBox(baseVerts, triangles, 0.31, -0.18, 0.43, 0.09, 0.03, 0.03, "#eab308", "#fde047", "#ca8a04"); // Crossguard
+  addPartBox(baseVerts, triangles, 0.31, -0.45, 0.43, 0.03, 0.28, 0.02, "#e0f2fe", "#ffffff", "#7dd3fc"); // Blade
+  const rEnd = baseVerts.length - 1;
+
+  const makeWalk = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, lLeg.start, lLeg.end, -0.1, 0, 0.38, phase * 0.55);
+    rotateRangeAroundPivot(v, rLeg.start, rLeg.end, 0.1, 0, 0.38, -phase * 0.55);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.29, 0, 0.72, -phase * 0.45);
+    rotateRangeAroundPivot(v, rStart, rEnd, 0.29, 0, 0.72, phase * 0.45);
+    return v;
+  };
+  const makeAttack = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, rStart, rEnd, 0.29, 0, 0.72, phase > 0 ? -1.45 : -0.35);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.29, 0, 0.72, -0.5);
+    return v;
+  };
+
+  return {
+    id: "blox_knight",
+    name: "Caballero Redcliff Blox (MD2)",
+    format: "md2",
+    frames: [
+      { name: "idle", vertices: baseVerts },
+      { name: "walk_0", vertices: makeWalk(1) },
+      { name: "walk_1", vertices: makeWalk(-1) },
+      { name: "attack_0", vertices: makeAttack(1) },
+      { name: "attack_1", vertices: makeAttack(-1) },
+    ],
+    triangles,
+    baseScale: 0.76,
+  };
+}
+
+/**
+ * Built-in MD2 Dojo Katana Samurai Fighter
+ */
+function generateSamuraiModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+
+  const lLeg = addPartBox(baseVerts, triangles, -0.11, 0, 0.2, 0.08, 0.09, 0.2, "#1e293b", "#334155", "#0f172a");
+  const rLeg = addPartBox(baseVerts, triangles, 0.11, 0, 0.2, 0.08, 0.09, 0.2, "#1e293b", "#334155", "#0f172a");
+  addPartBox(baseVerts, triangles, 0, 0, 0.56, 0.19, 0.11, 0.2, "#b91c1c", "#ef4444", "#7f1d1d"); // Crimson Do armor
+  addPartBox(baseVerts, triangles, 0, 0, 0.87, 0.13, 0.13, 0.12, "#fde68a", "#fef3c7", "#d97706"); // Face
+  addPartBox(baseVerts, triangles, 0, 0.02, 0.97, 0.18, 0.17, 0.07, "#0f172a", "#334155", "#1e293b"); // Kabuto dome
+  addPartBox(baseVerts, triangles, -0.13, -0.12, 1.08, 0.03, 0.02, 0.09, "#facc15", "#fef08a", "#ca8a04"); // Left horn
+  addPartBox(baseVerts, triangles, 0.13, -0.12, 1.08, 0.03, 0.02, 0.09, "#facc15", "#fef08a", "#ca8a04"); // Right horn
+
+  const lArm = addPartBox(baseVerts, triangles, -0.27, 0, 0.56, 0.07, 0.08, 0.17, "#991b1b", "#dc2626", "#450a0a");
+  const rStart = baseVerts.length;
+  addPartBox(baseVerts, triangles, 0.27, 0, 0.56, 0.07, 0.08, 0.17, "#991b1b", "#dc2626", "#450a0a");
+  addPartBox(baseVerts, triangles, 0.28, -0.18, 0.42, 0.06, 0.025, 0.025, "#eab308"); // Tsuba
+  addPartBox(baseVerts, triangles, 0.28, -0.52, 0.45, 0.018, 0.34, 0.025, "#f8fafc", "#ffffff", "#cbd5e1"); // Katana
+  const rEnd = baseVerts.length - 1;
+
+  const makeWalk = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, lLeg.start, lLeg.end, -0.11, 0, 0.38, phase * 0.55);
+    rotateRangeAroundPivot(v, rLeg.start, rLeg.end, 0.11, 0, 0.38, -phase * 0.55);
+    rotateRangeAroundPivot(v, rStart, rEnd, 0.27, 0, 0.72, -0.35 + phase * 0.3);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.27, 0, 0.72, -phase * 0.4);
+    return v;
+  };
+  const makeAttack = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, rStart, rEnd, 0.27, 0, 0.72, phase > 0 ? -1.6 : 0.15);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.27, 0, 0.72, -0.9);
+    return v;
+  };
+
+  return {
+    id: "samurai_fighter",
+    name: "Samurái Dojo Katana (MD2)",
+    format: "md2",
+    frames: [
+      { name: "idle", vertices: baseVerts },
+      { name: "walk_0", vertices: makeWalk(1) },
+      { name: "walk_1", vertices: makeWalk(-1) },
+      { name: "attack_0", vertices: makeAttack(1) },
+      { name: "attack_1", vertices: makeAttack(-1) },
+    ],
+    triangles,
+    baseScale: 0.76,
+  };
+}
+
+/**
+ * Built-in MD3 Cyber Mech Walker with Twin Cannons & Cyan Visor
+ */
+function generateCyberMechModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+
+  const lLeg = addPartBox(baseVerts, triangles, -0.16, 0, 0.26, 0.1, 0.12, 0.26, "#334155", "#64748b", "#1e293b");
+  const rLeg = addPartBox(baseVerts, triangles, 0.16, 0, 0.26, 0.1, 0.12, 0.26, "#334155", "#64748b", "#1e293b");
+  addPartBox(baseVerts, triangles, 0, 0, 0.76, 0.32, 0.24, 0.26, "#0f172a", "#0284c7", "#1e293b"); // Heavy chassis
+  addPartBox(baseVerts, triangles, 0, -0.25, 0.82, 0.22, 0.03, 0.07, "#22d3ee", "#67e8f9", "#06b6d4"); // Glowing cockpit visor
+  // Twin Shoulder Cannons
+  const lArm = addPartBox(baseVerts, triangles, -0.42, -0.08, 0.85, 0.09, 0.28, 0.09, "#0284c7", "#38bdf8", "#0369a1");
+  const rArm = addPartBox(baseVerts, triangles, 0.42, -0.08, 0.85, 0.09, 0.28, 0.09, "#0284c7", "#38bdf8", "#0369a1");
+
+  const makeWalk = (phase: number) => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    rotateRangeAroundPivot(v, lLeg.start, lLeg.end, -0.16, 0, 0.5, phase * 0.45);
+    rotateRangeAroundPivot(v, rLeg.start, rLeg.end, 0.16, 0, 0.5, -phase * 0.45);
+    rotateRangeAroundPivot(v, lArm.start, lArm.end, -0.42, 0, 0.85, phase * 0.12);
+    rotateRangeAroundPivot(v, rArm.start, rArm.end, 0.42, 0, 0.85, -phase * 0.12);
+    return v;
+  };
+  const makeAttack = () => {
+    const v = baseVerts.map((pt) => ({ ...pt }));
+    for (let i = lArm.start; i <= rArm.end; i++) v[i].y -= 0.08;
+    return v;
+  };
+
+  return {
+    id: "cyber_mech",
+    name: "Cyber Mech Pesado (MD3)",
+    format: "md3",
+    frames: [
+      { name: "idle", vertices: baseVerts },
+      { name: "walk_0", vertices: makeWalk(1) },
+      { name: "walk_1", vertices: makeWalk(-1) },
+      { name: "attack", vertices: makeAttack() },
+    ],
+    triangles,
+    baseScale: 0.82,
+  };
+}
+
+/**
+ * Built-in MD2 Victory Golden Crown Trophy (Obby Goal!)
+ */
+function generateTrophyStarModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+  // Pedestal base
+  addPartBox(baseVerts, triangles, 0, 0, 0.08, 0.26, 0.26, 0.08, "#1e293b", "#475569", "#0f172a");
+  addPartBox(baseVerts, triangles, 0, 0, 0.24, 0.12, 0.12, 0.1, "#ca8a04", "#facc15", "#a16207");
+  // Golden Diamond Star hovering on top
+  const s = baseVerts.length;
+  baseVerts.push(
+    { x: 0, y: 0, z: 1.05 },       // 0 top apex
+    { x: 0, y: -0.28, z: 0.68 },   // 1 front
+    { x: 0.28, y: 0, z: 0.68 },    // 2 right
+    { x: 0, y: 0.28, z: 0.68 },    // 3 back
+    { x: -0.28, y: 0, z: 0.68 },   // 4 left
+    { x: 0, y: 0, z: 0.36 }        // 5 bottom apex
+  );
+  triangles.push(
+    { v: [s + 0, s + 1, s + 2], color: "#fde047" },
+    { v: [s + 0, s + 2, s + 3], color: "#facc15" },
+    { v: [s + 0, s + 3, s + 4], color: "#eab308" },
+    { v: [s + 0, s + 4, s + 1], color: "#fef08a" },
+    { v: [s + 5, s + 2, s + 1], color: "#ca8a04" },
+    { v: [s + 5, s + 3, s + 2], color: "#a16207" },
+    { v: [s + 5, s + 4, s + 3], color: "#854d0e" },
+    { v: [s + 5, s + 1, s + 4], color: "#ca8a04" }
+  );
+
+  const makeFloat = (dz: number) =>
+    baseVerts.map((v, idx) => (idx >= s ? { ...v, z: v.z + dz } : { ...v }));
+
+  return {
+    id: "trophy_star",
+    name: "Trofeo Estrella Dorada (MD2)",
+    format: "md2",
+    frames: [
+      { name: "spin_0", vertices: makeFloat(0.0) },
+      { name: "spin_1", vertices: makeFloat(0.1) },
+      { name: "idle", vertices: makeFloat(0.05) },
+    ],
+    triangles,
+    baseScale: 0.72,
+  };
+}
+
+/**
+ * Built-in MD3 Neon Portal / Checkpoint Crystal
+ */
+function generatePortalCrystalModel(): DivModel3DData {
+  const baseVerts: DivModel3DVertex[] = [];
+  const triangles: DivModel3DTriangle[] = [];
+  addPartBox(baseVerts, triangles, 0, 0, 0.06, 0.3, 0.3, 0.06, "#0f172a", "#06b6d4", "#1e293b");
+  const s = baseVerts.length;
+  baseVerts.push(
+    { x: 0, y: 0, z: 1.12 },
+    { x: 0, y: -0.22, z: 0.66 },
+    { x: 0.22, y: 0, z: 0.66 },
+    { x: 0, y: 0.22, z: 0.66 },
+    { x: -0.22, y: 0, z: 0.66 },
+    { x: 0, y: 0, z: 0.22 }
+  );
+  triangles.push(
+    { v: [s + 0, s + 1, s + 2], color: "#22d3ee" },
+    { v: [s + 0, s + 2, s + 3], color: "#06b6d4" },
+    { v: [s + 0, s + 3, s + 4], color: "#a855f7" },
+    { v: [s + 0, s + 4, s + 1], color: "#38bdf8" },
+    { v: [s + 5, s + 2, s + 1], color: "#0284c7" },
+    { v: [s + 5, s + 3, s + 2], color: "#7e22ce" },
+    { v: [s + 5, s + 4, s + 3], color: "#9333ea" },
+    { v: [s + 5, s + 1, s + 4], color: "#0369a1" }
+  );
+  const makeBob = (dz: number) =>
+    baseVerts.map((v, idx) => (idx >= s ? { ...v, z: v.z + dz } : { ...v }));
+
+  return {
+    id: "portal_crystal",
+    name: "Cristal Checkpoint Neón (MD3)",
+    format: "md3",
+    frames: [
+      { name: "spin_0", vertices: makeBob(0) },
+      { name: "spin_1", vertices: makeBob(0.12) },
+      { name: "idle", vertices: makeBob(0.05) },
+    ],
+    triangles,
+    baseScale: 0.72,
+  };
+}
+
 const modelsRecord: Record<string, DivModel3DData> = {
   hombre: generateDivCharacterModel("hombre"),
   mujer: generateDivCharacterModel("mujer"),
   nino: generateDivCharacterModel("nino"),
   armado: generateDivCharacterModel("armado"),
+  blox_hero: generateBloxHeroModel(),
+  roblox_noob: generateBloxHeroModel(),
+  blox_knight: generateBloxKnightModel(),
+  samurai_fighter: generateSamuraiModel(),
+  cyber_mech: generateCyberMechModel(),
+  trophy_star: generateTrophyStarModel(),
+  portal_crystal: generatePortalCrystalModel(),
   knight: generateKnightModel(),
   md2_knight: generateKnightModel(),
   gargoyle: generateGargoyleModel(),
@@ -630,7 +1022,7 @@ function generateDoomImpModel(): DivModel3DData {
       { name: "attack", vertices: vAttack },
     ],
     triangles,
-    baseScale: 1.1,
+    baseScale: 0.76,
   };
 }
 
@@ -690,7 +1082,7 @@ function generateDoomCacodemonModel(): DivModel3DData {
       { name: "attack", vertices: vFloat },
     ],
     triangles,
-    baseScale: 1.35,
+    baseScale: 0.78,
   };
 }
 
@@ -753,7 +1145,7 @@ function generateDoomMarineModel(): DivModel3DData {
       { name: "attack", vertices: vWalk },
     ],
     triangles,
-    baseScale: 1.15,
+    baseScale: 0.76,
   };
 }
 
@@ -1080,6 +1472,64 @@ function generateVoxelChest(): DivVoxelModel {
   return { id: "voxel_chest", name: "Cofre del Tesoro Vóxel", voxels, scale: 1.1 };
 }
 
+function generateVoxelCoin(): DivVoxelModel {
+  const voxels: DivVoxelPoint[] = [];
+  for (let z = 1; z <= 6; z++) {
+    for (let x = -2; x <= 2; x++) {
+      if ((z === 1 || z === 6) && Math.abs(x) === 2) continue;
+      const isInner = Math.abs(x) <= 1 && z >= 2 && z <= 5;
+      voxels.push({
+        x: x * 0.045,
+        y: 0,
+        z: z * 0.05 + 0.15,
+        color: isInner ? "#fef08a" : "#eab308",
+      });
+    }
+  }
+  return { id: "voxel_coin", name: "Moneda Dorada Arcade Vóxel", voxels, scale: 1.1 };
+}
+
+function generateVoxelCheckpoint(): DivVoxelModel {
+  const voxels: DivVoxelPoint[] = [];
+  // Neon base plate
+  for (let y = -3; y <= 3; y++) {
+    for (let x = -3; x <= 3; x++) {
+      const edge = Math.abs(x) === 3 || Math.abs(y) === 3;
+      voxels.push({ x: x * 0.045, y: y * 0.045, z: 0.03, color: edge ? "#22d3ee" : "#0f172a" });
+    }
+  }
+  // Pole & bright pennant flag
+  for (let z = 1; z <= 9; z++) {
+    voxels.push({ x: -0.09, y: 0, z: z * 0.06, color: "#cbd5e1" });
+  }
+  for (let z = 6; z <= 9; z++) {
+    for (let x = 0; x <= 3; x++) {
+      voxels.push({ x: (x - 1.5) * 0.045, y: 0, z: z * 0.06, color: "#22c55e" });
+    }
+  }
+  return { id: "voxel_checkpoint", name: "Bandera Checkpoint Vóxel", voxels, scale: 1.15 };
+}
+
+function generateVoxelNeonCube(): DivVoxelModel {
+  const voxels: DivVoxelPoint[] = [];
+  for (let z = 0; z <= 5; z++) {
+    for (let y = -2; y <= 2; y++) {
+      for (let x = -2; x <= 2; x++) {
+        const onEdge = Math.abs(x) === 2 || Math.abs(y) === 2 || z === 0 || z === 5;
+        if (!onEdge) continue;
+        const isFrame = (Math.abs(x) === 2 && Math.abs(y) === 2) || z === 0 || z === 5;
+        voxels.push({
+          x: x * 0.045,
+          y: y * 0.045,
+          z: z * 0.045 + 0.05,
+          color: isFrame ? "#38bdf8" : "#6366f1",
+        });
+      }
+    }
+  }
+  return { id: "voxel_neon_cube", name: "Núcleo Neón Cyber Vóxel", voxels, scale: 1.1 };
+}
+
 const voxelsRecord: Record<string, DivVoxelModel> = {
   voxel_potion: generateVoxelPotion(),
   vox_potion: generateVoxelPotion(),
@@ -1103,6 +1553,12 @@ const voxelsRecord: Record<string, DivVoxelModel> = {
   medikit: generateVoxelMedikit(),
   voxel_chest: generateVoxelChest(),
   chest: generateVoxelChest(),
+  voxel_coin: generateVoxelCoin(),
+  coin: generateVoxelCoin(),
+  voxel_checkpoint: generateVoxelCheckpoint(),
+  checkpoint: generateVoxelCheckpoint(),
+  voxel_neon_cube: generateVoxelNeonCube(),
+  neon_cube: generateVoxelNeonCube(),
 };
 
 export const BUILTIN_VOXELS: Record<string, DivVoxelModel> & { get: (id: string) => DivVoxelModel | undefined } = Object.assign(
@@ -1365,6 +1821,8 @@ export interface Camera3DPose {
   angle?: number;
   pitch?: number;
   fov?: number;
+  focalLength?: number;
+  horizonY?: number;
   width?: number;
   height?: number;
   screenWidth?: number;
@@ -1373,6 +1831,7 @@ export interface Camera3DPose {
 
 /**
  * Transforms a 3D world coordinate into 2D camera viewport coordinates
+ * using unified symmetric focalLength projection (exact match with Doom 2 walls/floors).
  */
 export function project3DPoint(
   wx: number,
@@ -1390,39 +1849,67 @@ export function project3DPoint(
 
   const w = cam.width ?? cam.screenWidth ?? 640;
   const h = cam.height ?? cam.screenHeight ?? 480;
+  const halfW = w * 0.5;
+  const horizonY = cam.horizonY ?? (h * 0.5 + (cam.pitch || 0));
+  const fovDeg = cam.fov ?? 75;
+  const focalLength = cam.focalLength ?? halfW / Math.tan((fovDeg * Math.PI) / 360);
 
-  let dirX = cam.dirX;
-  let dirY = cam.dirY;
-  let planeX = cam.planeX;
-  let planeY = cam.planeY;
-
-  if (dirX === undefined || dirY === undefined || planeX === undefined || planeY === undefined) {
+  let cosA: number;
+  let sinA: number;
+  if (cam.dirX !== undefined && cam.dirY !== undefined) {
+    const len = Math.hypot(cam.dirX, cam.dirY) || 1;
+    cosA = cam.dirX / len;
+    sinA = cam.dirY / len;
+  } else {
     const rad = ((cam.angle || 0) * Math.PI) / 180;
-    dirX = Math.cos(rad);
-    dirY = Math.sin(rad);
-    planeX = -dirY * 0.66;
-    planeY = dirX * 0.66;
+    cosA = Math.cos(rad);
+    sinA = Math.sin(rad);
   }
 
-  // Camera plane transformation
-  const invDet = 1.0 / (planeX * dirY - dirX * planeY || 1e-6);
-  const transX = invDet * (dirY * rx - dirX * ry);
-  const transY = invDet * (-planeY * rx + planeX * ry); // depth along view vector
+  // Unified camera view space: +tx right, +tz forward
+  const tx = -rx * sinA + ry * cosA;
+  const tz = rx * cosA + ry * sinA;
 
-  if (transY <= 0.15) {
-    return { sx: 0, sy: 0, screenX: 0, screenY: 0, depth: transY, visible: false };
+  if (tz <= 0.15) {
+    return { sx: 0, sy: 0, screenX: 0, screenY: 0, depth: tz, visible: false };
   }
 
-  const sx = Math.floor((w / 2) * (1 + transX / transY));
-  const sy = Math.floor(
-    (h / 2) * (1 - rz / transY) + (cam.pitch || 0)
-  );
+  const sx = halfW + (tx * focalLength) / tz;
+  const sy = horizonY - (rz * focalLength) / tz;
 
-  return { sx, sy, screenX: sx, screenY: sy, depth: transY, visible: true };
+  return { sx, sy, screenX: sx, screenY: sy, depth: tz, visible: true };
 }
 
 /**
- * Renders an MD2/MD3 3D mesh model with lighting and perspective
+ * Fast hex shading with directional + dynamic point light
+ */
+function shadeHexColorWithLight(
+  hex: string,
+  shade: number,
+  lightR: number,
+  lightG: number,
+  lightB: number
+): string {
+  const clean = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (clean.length !== 6) return hex;
+  const rBase = parseInt(clean.slice(0, 2), 16);
+  const gBase = parseInt(clean.slice(2, 4), 16);
+  const bBase = parseInt(clean.slice(4, 6), 16);
+  if (Number.isNaN(rBase) || Number.isNaN(gBase) || Number.isNaN(bBase)) return hex;
+
+  // Keep vibrant base brightness (>= 0.62) plus dynamic colored light boost
+  const lr = Math.max(0.62, Math.min(1.25, shade + (lightR / 255) * 0.35));
+  const lg = Math.max(0.62, Math.min(1.25, shade + (lightG / 255) * 0.35));
+  const lb = Math.max(0.62, Math.min(1.25, shade + (lightB / 255) * 0.35));
+
+  const r = Math.min(255, Math.max(0, Math.round(rBase * lr)));
+  const g = Math.min(255, Math.max(0, Math.round(gBase * lg)));
+  const b = Math.min(255, Math.max(0, Math.round(bBase * lb)));
+  return `rgb(${r},${g},${b})`;
+}
+
+/**
+ * Renders an MD2/MD3 3D mesh model with live animations, directional face shading & lighting
  */
 export function render3DModel(
   ctx: CanvasRenderingContext2D,
@@ -1441,34 +1928,65 @@ export function render3DModel(
   const dx = placed.x - camX;
   const dy = placed.y - camY;
   const dist = Math.hypot(dx, dy);
-  if (dist > 26) return; // Too far for retro 3D frustum
+  if (dist > 32) return; // Outside retro 3D frustum
 
   const camAngleRad = ((cam.angle ?? 0) * Math.PI) / 180;
   const dot = dx * Math.cos(camAngleRad) + dy * Math.sin(camAngleRad);
-  if (dot < -0.8 && dist > 1.2) return; // Completely behind camera
+  if (dot < -0.9 && dist > 1.5) return; // Completely behind camera
 
-  // Select and interpolate frames based on animation
+  // Select and smoothly animate keyframes based on placed.currentAnimation | animation | animName
+  const targetAnim = (placed.currentAnimation || placed.animation || placed.animName || "idle").toLowerCase();
+  const groupIndices: number[] = [];
+  model.frames.forEach((f, idx) => {
+    const fn = f.name.toLowerCase();
+    if (fn === targetAnim || fn.startsWith(`${targetAnim}_`) || fn.startsWith(targetAnim)) {
+      groupIndices.push(idx);
+    }
+  });
+  if (groupIndices.length === 0 && model.frames.length > 0) {
+    // Graceful fallback: map walk->1/0, attack->last/1, fly/flap->all
+    if (targetAnim === "walk" || targetAnim === "fly" || targetAnim === "flap" || targetAnim === "float") {
+      for (let i = 0; i < model.frames.length; i++) groupIndices.push(i);
+    } else {
+      groupIndices.push(0);
+    }
+  }
+
   let activeVertices: DivModel3DVertex[] = model.frames[0]?.vertices || [];
-  const targetAnim = (placed.currentAnimation || "idle").toLowerCase();
-  let frameIdx = model.frames.findIndex((f) => f.name.toLowerCase() === targetAnim);
-  if (frameIdx < 0) frameIdx = 0;
-
-  const frameA = model.frames[frameIdx];
-  if (frameA) {
-    activeVertices = frameA.vertices;
-    // If multiple frames exist for this animation or sequence, interpolate
-    const nextIdx = (frameIdx + 1) % model.frames.length;
-    const frameB = model.frames[nextIdx];
-    const t = Math.max(0, Math.min(1, placed.animFrame || 0));
-    if (frameB && frameB.vertices.length === frameA.vertices.length && t > 0) {
-      activeVertices = frameA.vertices.map((va, i) => {
-        const vb = frameB.vertices[i];
-        return {
-          x: va.x + (vb.x - va.x) * t,
-          y: va.y + (vb.y - va.y) * t,
-          z: va.z + (vb.z - va.z) * t,
-        };
-      });
+  if (groupIndices.length > 0) {
+    const speedMult = placed.animationSpeed ?? 1.0;
+    const animPos =
+      placed.animFrame !== undefined
+        ? placed.animFrame
+        : groupIndices.length > 1
+          ? (performance.now() * 0.0045 * speedMult) % groupIndices.length
+          : 0;
+    const iA = groupIndices[Math.floor(animPos) % groupIndices.length];
+    const iB = groupIndices[(Math.floor(animPos) + 1) % groupIndices.length];
+    const t = animPos - Math.floor(animPos);
+    const frameA = model.frames[iA];
+    const frameB = model.frames[iB];
+    if (frameA) {
+      if (frameB && frameB !== frameA && frameB.vertices.length === frameA.vertices.length && t > 0.001) {
+        activeVertices = frameA.vertices.map((va, idx) => {
+          const vb = frameB.vertices[idx];
+          return {
+            x: va.x + (vb.x - va.x) * t,
+            y: va.y + (vb.y - va.y) * t,
+            z: va.z + (vb.z - va.z) * t,
+          };
+        });
+      } else if (groupIndices.length === 1 && targetAnim === "idle") {
+        // Subtle alive breathing/hover bob even on 1-frame idle
+        const breath = Math.sin(performance.now() * 0.003 + placed.x) * 0.015;
+        activeVertices = frameA.vertices.map((va) => ({
+          x: va.x,
+          y: va.y,
+          z: va.z > 0.45 ? va.z + breath : va.z,
+        }));
+      } else {
+        activeVertices = frameA.vertices;
+      }
     }
   }
 
@@ -1492,7 +2010,10 @@ export function render3DModel(
     if (typeof mapW === "number") mapHVal = mapW;
   }
 
-  const yawRad = ((placed.yaw || 0) * Math.PI) / 180;
+  // Auto spin for trophies / crystals / relics
+  const isSpinning = targetAnim === "spin" || placed.modelId === "trophy_star" || placed.modelId === "portal_crystal";
+  const effectiveYaw = (placed.yaw || 0) + (isSpinning ? (performance.now() * 0.08) % 360 : 0);
+  const yawRad = (effectiveYaw * Math.PI) / 180;
   const cosYaw = Math.cos(yawRad);
   const sinYaw = Math.sin(yawRad);
   const scale = (placed.scale || 1.0) * (model.baseScale || 1.0);
@@ -1502,7 +2023,6 @@ export function render3DModel(
   const projVerts: { sx: number; sy: number; depth: number; visible: boolean }[] = [];
 
   for (const v of activeVertices) {
-    // Model space rotation around Z
     const rx = (v.x * cosYaw - v.y * sinYaw) * scale;
     const ry = (v.x * sinYaw + v.y * cosYaw) * scale;
     const rz = v.z * scale;
@@ -1529,41 +2049,67 @@ export function render3DModel(
     mapHVal
   );
 
-  // Sort triangles by average depth
+  // Sort triangles back-to-front using Painter's Algorithm
   const sortedTriangles = model.triangles
     .map((tri) => {
+      if (!tri?.v) return null;
       const p0 = projVerts[tri.v[0]];
       const p1 = projVerts[tri.v[1]];
       const p2 = projVerts[tri.v[2]];
+      const w0 = worldVerts[tri.v[0]];
+      const w1 = worldVerts[tri.v[1]];
+      const w2 = worldVerts[tri.v[2]];
+      if (!p0 || !p1 || !p2 || !w0 || !w1 || !w2) return null;
+      if (
+        !Number.isFinite(p0.sx) || !Number.isFinite(p0.sy) ||
+        !Number.isFinite(p1.sx) || !Number.isFinite(p1.sy) ||
+        !Number.isFinite(p2.sx) || !Number.isFinite(p2.sy) ||
+        !Number.isFinite(p0.depth) || !Number.isFinite(p1.depth) || !Number.isFinite(p2.depth)
+      ) {
+        return null;
+      }
       const avgDepth = (p0.depth + p1.depth + p2.depth) / 3;
-      return { tri, p0, p1, p2, avgDepth };
+
+      // Compute face normal for directional sun shading
+      const ax = w1.x - w0.x;
+      const ay = w1.y - w0.y;
+      const az = w1.z - w0.z;
+      const bx = w2.x - w0.x;
+      const by = w2.y - w0.y;
+      const bz = w2.z - w0.z;
+      const nx = ay * bz - az * by;
+      const ny = az * bx - ax * bz;
+      const nz = ax * by - ay * bx;
+      const nLen = Math.hypot(nx, ny, nz) || 1;
+      const sunDot = (nx / nLen) * 0.45 + (ny / nLen) * -0.45 + (nz / nLen) * 0.77;
+      const shade = 0.72 + Math.max(-0.18, Math.min(0.32, sunDot * 0.32));
+
+      return { tri, p0, p1, p2, avgDepth, shade };
     })
-    .filter((t) => t.p0.visible || t.p1.visible || t.p2.visible)
+    .filter((t): t is NonNullable<typeof t> => t !== null && (t.p0.visible || t.p1.visible || t.p2.visible))
     .sort((a, b) => b.avgDepth - a.avgDepth);
 
-  for (const { tri, p0, p1, p2, avgDepth } of sortedTriangles) {
-    if (avgDepth <= 0.2) continue;
+  for (const { tri, p0, p1, p2, avgDepth, shade } of sortedTriangles) {
+    if (avgDepth <= 0.18) continue;
 
     // Check Z-buffer occlusion at centroid
     const midX = Math.floor((p0.sx + p1.sx + p2.sx) / 3);
-    const colIdx = Math.floor(midX / colWidth);
+    const colIdx = Math.floor(midX / Math.max(1, colWidth));
     if (colIdx >= 0 && colIdx < zBuffer.length && avgDepth > zBuffer[colIdx]) {
       continue; // Wall occludes triangle
     }
 
-    // Shading with dynamic light
     ctx.beginPath();
     ctx.moveTo(p0.sx, p0.sy);
     ctx.lineTo(p1.sx, p1.sy);
     ctx.lineTo(p2.sx, p2.sy);
     ctx.closePath();
 
-    ctx.fillStyle = tri.color || "#94a3b8";
+    ctx.fillStyle = shadeHexColorWithLight(tri.color || "#94a3b8", shade, lightRgb.r, lightRgb.g, lightRgb.b);
     ctx.fill();
 
-    // Subtle dark edge wireframe for crisp retro aesthetic
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
+    ctx.lineWidth = 0.8;
     ctx.stroke();
   }
 }
@@ -1642,6 +2188,437 @@ export function renderVoxelObject(
 
     ctx.fillStyle = pv.color;
     ctx.fillRect(pv.sx - pv.size / 2, pv.sy - pv.size / 2, pv.size, pv.size);
+  }
+}
+
+export interface ModelOverlayPoint {
+  id: string;
+  sx: number;
+  sy: number;
+  depth: number;
+  role: "enemy" | "ally" | "prop" | "goal" | "checkpoint";
+  hp?: number;
+  maxHp?: number;
+  label?: string;
+}
+
+export function inferModelRole(
+  modelId: string,
+  explicitRole?: DivMode8PlacedModel["role"]
+): "enemy" | "ally" | "prop" | "goal" | "checkpoint" {
+  if (explicitRole) return explicitRole;
+  const id = (modelId || "").toLowerCase();
+  if (id === "trophy_star") return "goal";
+  if (id === "portal_crystal") return "checkpoint";
+  if (
+    id === "demon_brute" ||
+    id === "doom_imp" ||
+    id === "doom_caco" ||
+    id === "gargoyle" ||
+    id === "md2_gargoyle" ||
+    id === "knight" ||
+    id === "md2_knight" ||
+    id === "samurai_fighter" ||
+    id === "cyber_mech" ||
+    id === "blox_knight"
+  ) {
+    return "enemy";
+  }
+  if (id === "blox_hero") return "ally";
+  return "prop";
+}
+
+const IS_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
+
+function packAbgr(r: number, g: number, b: number, a: number = 255): number {
+  const cr = r < 0 ? 0 : r > 255 ? 255 : r | 0;
+  const cg = g < 0 ? 0 : g > 255 ? 255 : g | 0;
+  const cb = b < 0 ? 0 : b > 255 ? 255 : b | 0;
+  const ca = a < 0 ? 0 : a > 255 ? 255 : a | 0;
+  return IS_LITTLE_ENDIAN
+    ? ((ca << 24) | (cb << 16) | (cg << 8) | cr) >>> 0
+    : ((cr << 24) | (cg << 16) | (cb << 8) | ca) >>> 0;
+}
+
+const hexRgbCache = new Map<string, [number, number, number]>();
+
+function parseHexRgb(hex: string): [number, number, number] {
+  const cached = hexRgbCache.get(hex);
+  if (cached) return cached;
+  const clean = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
+      const tuple: [number, number, number] = [r, g, b];
+      hexRgbCache.set(hex, tuple);
+      return tuple;
+    }
+  }
+  const fallback: [number, number, number] = [148, 163, 184];
+  hexRgbCache.set(hex, fallback);
+  return fallback;
+}
+
+function rasterizeTriangleInvZ(
+  pixelBuf: Uint32Array,
+  invZBuf: Float32Array,
+  w: number,
+  h: number,
+  x0: number,
+  y0: number,
+  iz0: number,
+  x1: number,
+  y1: number,
+  iz1: number,
+  x2: number,
+  y2: number,
+  iz2: number,
+  color32: number
+) {
+  const area = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+  if (Math.abs(area) < 0.05) return;
+
+  const minX = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
+  const maxX = Math.min(w - 1, Math.ceil(Math.max(x0, x1, x2)));
+  const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
+  const maxY = Math.min(h - 1, Math.ceil(Math.max(y0, y1, y2)));
+  if (minX > maxX || minY > maxY) return;
+
+  const invArea = 1 / area;
+  const dx12 = y1 - y2;
+  const dy12 = x2 - x1;
+  const dx20 = y2 - y0;
+  const dy20 = x0 - x2;
+  const sign = area > 0 ? 1 : -1;
+
+  for (let py = minY; py <= maxY; py++) {
+    const cy = py + 0.5;
+    const rowOff = py * w;
+    for (let px = minX; px <= maxX; px++) {
+      const cx = px + 0.5;
+      const w0s = ((cx - x1) * dx12 + (cy - y1) * dy12) * sign;
+      if (w0s < -0.001) continue;
+      const w1s = ((cx - x2) * dx20 + (cy - y2) * dy20) * sign;
+      if (w1s < -0.001) continue;
+      const w2s = Math.abs(area) - w0s - w1s;
+      if (w2s < -0.001) continue;
+
+      const u0 = w0s * Math.abs(invArea);
+      const u1 = w1s * Math.abs(invArea);
+      const u2 = 1 - u0 - u1;
+      const iz = u0 * iz0 + u1 * iz1 + u2 * iz2;
+      const idx = rowOff + px;
+      if (iz > invZBuf[idx]) {
+        invZBuf[idx] = iz;
+        pixelBuf[idx] = color32;
+      }
+    }
+  }
+}
+
+/**
+ * Renders an MD2/MD3 3D mesh model directly into a per-pixel 1/Z depth-buffered RGBA buffer
+ * so it intersects cleanly with floors, walls, steps, and other 3D objects without painter bleed.
+ */
+export function render3DModelToBuffer(
+  pixelBuf: Uint32Array,
+  invZBuf: Float32Array,
+  w: number,
+  h: number,
+  model: DivModel3DData,
+  placed: DivMode8PlacedModel,
+  cam: { x: number; y: number; z: number; cosA: number; sinA: number; focalLength: number; horizonY: number },
+  lights: DivMode8Light[] = [],
+  overlaysOut?: ModelOverlayPoint[]
+) {
+  const dx = placed.x - cam.x;
+  const dy = placed.y - cam.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 34) return;
+
+  const mtz = dx * cam.cosA + dy * cam.sinA;
+  if (mtz < -1.0 && dist > 1.8) return;
+
+  const targetAnim = (placed.currentAnimation || placed.animation || placed.animName || "idle").toLowerCase();
+  const groupIndices: number[] = [];
+  model.frames.forEach((f, idx) => {
+    const fn = f.name.toLowerCase();
+    if (fn === targetAnim || fn.startsWith(`${targetAnim}_`) || fn.startsWith(targetAnim)) {
+      groupIndices.push(idx);
+    }
+  });
+  if (groupIndices.length === 0 && model.frames.length > 0) {
+    if (targetAnim === "walk" || targetAnim === "fly" || targetAnim === "flap" || targetAnim === "float") {
+      for (let i = 0; i < model.frames.length; i++) groupIndices.push(i);
+    } else {
+      groupIndices.push(0);
+    }
+  }
+
+  let activeVertices: DivModel3DVertex[] = model.frames[0]?.vertices || [];
+  if (groupIndices.length > 0) {
+    const speedMult = placed.animationSpeed ?? 1.0;
+    const animPos =
+      placed.animFrame !== undefined
+        ? placed.animFrame
+        : groupIndices.length > 1
+          ? (performance.now() * 0.0052 * speedMult) % groupIndices.length
+          : 0;
+    const iA = groupIndices[Math.floor(animPos) % groupIndices.length];
+    const iB = groupIndices[(Math.floor(animPos) + 1) % groupIndices.length];
+    const t = animPos - Math.floor(animPos);
+    const frameA = model.frames[iA];
+    const frameB = model.frames[iB];
+    if (frameA) {
+      if (frameB && frameB !== frameA && frameB.vertices.length === frameA.vertices.length && t > 0.001) {
+        activeVertices = frameA.vertices.map((va, idx) => {
+          const vb = frameB.vertices[idx];
+          return {
+            x: va.x + (vb.x - va.x) * t,
+            y: va.y + (vb.y - va.y) * t,
+            z: va.z + (vb.z - va.z) * t,
+          };
+        });
+      } else if (groupIndices.length === 1 && targetAnim === "idle") {
+        const breath = Math.sin(performance.now() * 0.004 + placed.x) * 0.016;
+        activeVertices = frameA.vertices.map((va) => ({
+          x: va.x,
+          y: va.y,
+          z: va.z > 0.4 ? va.z + breath : va.z,
+        }));
+      } else {
+        activeVertices = frameA.vertices;
+      }
+    }
+  }
+
+  const isSpinning = targetAnim === "spin" || placed.modelId === "trophy_star" || placed.modelId === "portal_crystal";
+  const effectiveYaw = (placed.yaw || 0) + (isSpinning ? (performance.now() * 0.09) % 360 : 0);
+  const yawRad = (effectiveYaw * Math.PI) / 180;
+  const cosYaw = Math.cos(yawRad);
+  const sinYaw = Math.sin(yawRad);
+  const scale = (placed.scale || 1.0) * (model.baseScale || 1.0);
+  const hoverBob = isSpinning ? Math.sin(performance.now() * 0.004 + placed.x) * 0.06 : 0;
+
+  const viewVerts: { vx: number; vy: number; vz: number; wx: number; wy: number; wz: number }[] = [];
+  let maxZWorld = placed.z;
+  for (const v of activeVertices) {
+    const rx = (v.x * cosYaw - v.y * sinYaw) * scale;
+    const ry = (v.x * sinYaw + v.y * cosYaw) * scale;
+    const rz = v.z * scale + hoverBob;
+    const wx = placed.x + rx;
+    const wy = placed.y + ry;
+    const wz = placed.z + rz;
+    if (wz > maxZWorld) maxZWorld = wz;
+
+    const rdx = wx - cam.x;
+    const rdy = wy - cam.y;
+    const vx = -rdx * cam.sinA + rdy * cam.cosA;
+    const vz = rdx * cam.cosA + rdy * cam.sinA;
+    const vy = wz - cam.z;
+    viewVerts.push({ vx, vy, vz, wx, wy, wz });
+  }
+
+  const lightRgb = calculatePointLighting(placed.x, placed.y, placed.z + 0.4, 0, 0, 1, lights);
+  const hitFlash = placed.hitFlash || 0;
+  const halfW = w * 0.5;
+  const Z_NEAR = 0.15;
+
+  for (const tri of model.triangles) {
+    if (!tri?.v) continue;
+    const a = viewVerts[tri.v[0]];
+    const b = viewVerts[tri.v[1]];
+    const c = viewVerts[tri.v[2]];
+    if (!a || !b || !c) continue;
+    if (a.vz <= Z_NEAR && b.vz <= Z_NEAR && c.vz <= Z_NEAR) continue;
+
+    // Face normal in world space for crisp directional Roblox/arcade sunlight
+    const ux = b.wx - a.wx;
+    const uy = b.wy - a.wy;
+    const uz = b.wz - a.wz;
+    const vx = c.wx - a.wx;
+    const vy = c.wy - a.wy;
+    const vz = c.wz - a.wz;
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    const sunDot = (nx / nLen) * 0.42 + (ny / nLen) * -0.38 + (nz / nLen) * 0.82;
+    const shade = 0.72 + Math.max(-0.2, Math.min(0.32, sunDot * 0.32));
+
+    const [rBase, gBase, bBase] = parseHexRgb(tri.color || "#94a3b8");
+    const distFade = Math.max(0.55, Math.min(1.0, 1.04 - Math.max(0, mtz) * 0.015));
+    const lr = Math.max(0.55, Math.min(1.25, (shade + (lightRgb.r / 255) * 0.25) * distFade));
+    const lg = Math.max(0.55, Math.min(1.25, (shade + (lightRgb.g / 255) * 0.25) * distFade));
+    const lb = Math.max(0.55, Math.min(1.25, (shade + (lightRgb.b / 255) * 0.25) * distFade));
+
+    let rr = Math.min(255, Math.round(rBase * lr));
+    let gg = Math.min(255, Math.round(gBase * lg));
+    let bb = Math.min(255, Math.round(bBase * lb));
+    if (hitFlash > 0) {
+      const f = Math.min(1, hitFlash);
+      rr = Math.round(rr + (255 - rr) * f);
+      gg = Math.round(gg + (80 - gg) * f);
+      bb = Math.round(bb + (80 - bb) * f);
+    }
+    const color32 = packAbgr(rr, gg, bb, 255);
+
+    // Clip triangle against near plane tz = Z_NEAR
+    const polyIn = [a, b, c];
+    const clipped: { vx: number; vy: number; vz: number }[] = [];
+    for (let i = 0; i < 3; i++) {
+      const cur = polyIn[i];
+      const prev = polyIn[(i + 2) % 3];
+      const curIn = cur.vz >= Z_NEAR;
+      const prevIn = prev.vz >= Z_NEAR;
+      if (curIn !== prevIn) {
+        const denom = cur.vz - prev.vz || 1e-6;
+        const t = (Z_NEAR - prev.vz) / denom;
+        clipped.push({
+          vx: prev.vx + t * (cur.vx - prev.vx),
+          vy: prev.vy + t * (cur.vy - prev.vy),
+          vz: Z_NEAR,
+        });
+      }
+      if (curIn) clipped.push(cur);
+    }
+    if (clipped.length < 3) continue;
+
+    const p0 = {
+      sx: halfW + (clipped[0].vx * cam.focalLength) / clipped[0].vz,
+      sy: cam.horizonY - (clipped[0].vy * cam.focalLength) / clipped[0].vz,
+      iz: 1 / clipped[0].vz,
+    };
+    for (let i = 1; i + 1 < clipped.length; i++) {
+      const p1 = {
+        sx: halfW + (clipped[i].vx * cam.focalLength) / clipped[i].vz,
+        sy: cam.horizonY - (clipped[i].vy * cam.focalLength) / clipped[i].vz,
+        iz: 1 / clipped[i].vz,
+      };
+      const p2 = {
+        sx: halfW + (clipped[i + 1].vx * cam.focalLength) / clipped[i + 1].vz,
+        sy: cam.horizonY - (clipped[i + 1].vy * cam.focalLength) / clipped[i + 1].vz,
+        iz: 1 / clipped[i + 1].vz,
+      };
+      rasterizeTriangleInvZ(
+        pixelBuf,
+        invZBuf,
+        w,
+        h,
+        p0.sx, p0.sy, p0.iz,
+        p1.sx, p1.sy, p1.iz,
+        p2.sx, p2.sy, p2.iz,
+        color32
+      );
+    }
+  }
+
+  if (overlaysOut && mtz > Z_NEAR && mtz < 18) {
+    const role = inferModelRole(String(placed.modelId), placed.role);
+    if (role === "enemy" || role === "goal" || role === "checkpoint") {
+      const mtx = -dx * cam.sinA + dy * cam.cosA;
+      const sx = halfW + (mtx * cam.focalLength) / mtz;
+      const sy = cam.horizonY - ((maxZWorld + 0.14 - cam.z) * cam.focalLength) / mtz;
+      if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) {
+        const colIdx = Math.min(w - 1, Math.max(0, Math.floor(sx)));
+        const rowIdx = Math.min(h - 1, Math.max(0, Math.floor(sy + 10)));
+        if (1 / mtz >= invZBuf[rowIdx * w + colIdx] * 0.85) {
+          overlaysOut.push({
+            id: String(placed.id),
+            sx,
+            sy,
+            depth: mtz,
+            role,
+            hp: placed.hp,
+            maxHp: placed.maxHp,
+            label: String(placed.name || placed.modelId),
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Renders a Voxel object directly into the per-pixel 1/Z depth-buffered RGBA buffer
+ */
+export function renderVoxelToBuffer(
+  pixelBuf: Uint32Array,
+  invZBuf: Float32Array,
+  w: number,
+  h: number,
+  voxelModel: DivVoxelModel,
+  placed: DivMode8PlacedVoxel,
+  cam: { x: number; y: number; z: number; cosA: number; sinA: number; focalLength: number; horizonY: number }
+) {
+  if (placed.collected) return;
+  const dx = placed.x - cam.x;
+  const dy = placed.y - cam.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 28) return;
+
+  const mtz = dx * cam.cosA + dy * cam.sinA;
+  if (mtz < -0.5 && dist > 1.2) return;
+
+  const isAutoSpin =
+    placed.voxelId === "voxel_coin" ||
+    placed.voxelId === "coin" ||
+    placed.voxelId === "voxel_key" ||
+    placed.voxelId === "key" ||
+    placed.voxelId === "voxel_neon_cube";
+  const effectiveYaw = (placed.yaw || 0) + (isAutoSpin ? (performance.now() * 0.12) % 360 : 0);
+  const yawRad = (effectiveYaw * Math.PI) / 180;
+  const cosYaw = Math.cos(yawRad);
+  const sinYaw = Math.sin(yawRad);
+  const mScale = (placed.scale || 1.0) * (voxelModel.scale || 1.0);
+  const bob = isAutoSpin ? Math.sin(performance.now() * 0.005 + placed.x) * 0.045 : 0;
+  const halfW = w * 0.5;
+  const Z_NEAR = 0.15;
+
+  for (const pt of voxelModel.voxels) {
+    const rx = (pt.x * cosYaw - pt.y * sinYaw) * mScale;
+    const ry = (pt.x * sinYaw + pt.y * cosYaw) * mScale;
+    const rz = pt.z * mScale + bob;
+
+    const wx = placed.x + rx;
+    const wy = placed.y + ry;
+    const wz = placed.z + rz;
+
+    const pdx = wx - cam.x;
+    const pdy = wy - cam.y;
+    const ptz = pdx * cam.cosA + pdy * cam.sinA;
+    if (ptz <= Z_NEAR) continue;
+
+    const ptx = -pdx * cam.sinA + pdy * cam.cosA;
+    const invZ = 1 / ptz;
+    const sx = halfW + ptx * cam.focalLength * invZ;
+    const sy = cam.horizonY - (wz - cam.z) * cam.focalLength * invZ;
+    const size = Math.max(2, Math.round(cam.focalLength * invZ * 0.048 * mScale));
+    const halfS = Math.floor(size * 0.5);
+
+    const x0 = Math.max(0, Math.floor(sx - halfS));
+    const x1 = Math.min(w - 1, Math.floor(sx + halfS));
+    const y0 = Math.max(0, Math.floor(sy - halfS));
+    const y1 = Math.min(h - 1, Math.floor(sy + halfS));
+    if (x0 > x1 || y0 > y1) continue;
+
+    const [r, g, b] = parseHexRgb(pt.color);
+    const col32 = packAbgr(r, g, b, 255);
+    const hi32 = packAbgr(Math.min(255, r + 24), Math.min(255, g + 24), Math.min(255, b + 24), 255);
+
+    for (let py = y0; py <= y1; py++) {
+      const rowOff = py * w;
+      const c32 = py === y0 ? hi32 : col32;
+      for (let px = x0; px <= x1; px++) {
+        const idx = rowOff + px;
+        if (invZ > invZBuf[idx]) {
+          invZBuf[idx] = invZ;
+          pixelBuf[idx] = c32;
+        }
+      }
+    }
   }
 }
 
@@ -1849,7 +2826,7 @@ export function renderFirstPersonWeapon3D(
   ctx.scale(swingScale, swingScale);
 
   const frame = attackProgress > 0 && model.frames[1] ? model.frames[1] : model.frames[0];
-  const verts = frame.vertices;
+  const verts = frame?.vertices || [];
 
   // Project weapon 3D vertices to 2D local space
   const projWeaponVerts = verts.map((v) => {
@@ -1861,8 +2838,15 @@ export function renderFirstPersonWeapon3D(
     };
   });
 
-  // Sort triangles by depth
-  const sorted = [...model.triangles].sort((a, b) => {
+  // Sort valid triangles by depth
+  const validTris = model.triangles.filter(
+    (tri) =>
+      tri?.v &&
+      projWeaponVerts[tri.v[0]] &&
+      projWeaponVerts[tri.v[1]] &&
+      projWeaponVerts[tri.v[2]]
+  );
+  const sorted = validTris.sort((a, b) => {
     const da = (projWeaponVerts[a.v[0]].depth + projWeaponVerts[a.v[1]].depth + projWeaponVerts[a.v[2]].depth) / 3;
     const db = (projWeaponVerts[b.v[0]].depth + projWeaponVerts[b.v[1]].depth + projWeaponVerts[b.v[2]].depth) / 3;
     return da - db;
@@ -1872,6 +2856,7 @@ export function renderFirstPersonWeapon3D(
     const p0 = projWeaponVerts[tri.v[0]];
     const p1 = projWeaponVerts[tri.v[1]];
     const p2 = projWeaponVerts[tri.v[2]];
+    if (!p0 || !p1 || !p2) continue;
 
     ctx.beginPath();
     ctx.moveTo(p0.sx, p0.sy);

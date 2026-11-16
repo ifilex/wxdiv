@@ -1,16 +1,30 @@
 import express from "express";
+import http from "http";
+import fs from "node:fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { generatePrecodeNeuralCode } from "./src/engine/ai/precodeEngine";
+import {
+  getCloudCompilerCapabilities,
+  generateReleaseKeystore,
+  inspectKeystoreP12,
+  signPackageManifestArchive,
+} from "./src/server/androidCloudCompiler";
+import {
+  buildExpressPwaZipBuffer,
+  compileExpressCloudApp,
+  getExpressBuildDir,
+  readExpressBuildMeta,
+} from "./src/server/expressCloudCompiler";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "35mb" }));
 
 // Safe initialization of Gemini AI with custom or system API key
 let defaultAiClient: GoogleGenAI | null = null;
@@ -375,11 +389,260 @@ Do not include markdown ticks or any extra text, only the raw JSON.`;
   }
 });
 
+// ============================================================================
+// Android Cloud Compiler & Cryptographic Signing Endpoints
+// ============================================================================
+
+app.get("/api/cloud-build/capabilities", async (_req, res) => {
+  try {
+    const caps = await getCloudCompilerCapabilities();
+    res.json({ success: true, capabilities: caps });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message || "Error consultando capacidades" });
+  }
+});
+
+app.post("/api/android/keystore/generate", (req, res) => {
+  try {
+    const result = generateReleaseKeystore(req.body || {});
+    res.json({ success: true, keystore: result });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "No se pudo generar el keystore PKCS#12",
+    });
+  }
+});
+
+app.post("/api/android/keystore/inspect", (req, res) => {
+  try {
+    const { keystoreP12Base64, password } = req.body || {};
+    if (!keystoreP12Base64) {
+      return res.status(400).json({ success: false, message: "Falta el archivo .p12/.pfx codificado." });
+    }
+    const info = inspectKeystoreP12(keystoreP12Base64, password || "");
+    res.json({ success: true, info });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "Contraseña incorrecta o archivo PKCS#12 inválido.",
+    });
+  }
+});
+
+app.post("/api/android/sign-package", async (req, res) => {
+  try {
+    const { entries, keystoreP12Base64, password, alias } = req.body || {};
+    if (!Array.isArray(entries) || entries.length === 0 || !keystoreP12Base64) {
+      return res.status(400).json({
+        success: false,
+        message: "Se requieren archivos del proyecto y un keystore .p12 válido para firmar.",
+      });
+    }
+    const signed = await signPackageManifestArchive({
+      entries,
+      keystoreP12Base64,
+      password: password || "",
+      alias,
+    });
+    res.json({ success: true, ...signed });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "Error firmando el paquete con PKCS#7.",
+    });
+  }
+});
+
+// ============================================================================
+// Zero-Data Express Cloud Compiler & Instant PWA/Web Hosting
+// ============================================================================
+
+app.post("/api/cloud-build/express", async (req, res) => {
+  try {
+    const result = await compileExpressCloudApp(req.body || {});
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      message: err?.message || "No se pudo compilar tu idea en la nube.",
+    });
+  }
+});
+
+app.get("/api/cloud-build/express/:buildId", (req, res) => {
+  const meta = readExpressBuildMeta(req.params.buildId);
+  if (!meta) {
+    return res.status(404).json({ success: false, message: "Publicación no encontrada." });
+  }
+  res.json({ success: true, meta });
+});
+
+app.get("/p/:buildId", (req, res, next) => {
+  if (req.originalUrl.endsWith("/")) return next();
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) {
+    return res.status(404).send("<h1>Publicación no encontrada</h1>");
+  }
+  res.redirect(302, `/p/${req.params.buildId}/`);
+});
+
+app.get("/p/:buildId/", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) {
+    return res.status(404).send("<h1>Esta app no existe o expiró.</h1>");
+  }
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.sendFile(path.join(dir, "index.html"));
+});
+
+app.get("/p/:buildId/manifest.webmanifest", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  res.sendFile(path.join(dir, "manifest.webmanifest"));
+});
+
+app.get("/p/:buildId/sw.js", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+  res.setHeader("Service-Worker-Allowed", `/p/${req.params.buildId}/`);
+  res.sendFile(path.join(dir, "sw.js"));
+});
+
+app.get("/p/:buildId/icon-192.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(path.join(dir, "icon-192.png"));
+});
+
+app.get("/p/:buildId/icon-512.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(path.join(dir, "icon-512.png"));
+});
+
+app.get("/p/:buildId/icon-maskable-512.png", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).end();
+  const maskPath = path.join(dir, "icon-maskable-512.png");
+  res.setHeader("Content-Type", "image/png");
+  res.sendFile(fs.existsSync(maskPath) ? maskPath : path.join(dir, "icon-512.png"));
+});
+
+app.get("/p/:buildId/pwa-bundle.zip", async (req, res) => {
+  try {
+    const zipBuf = await buildExpressPwaZipBuffer(req.params.buildId);
+    if (!zipBuf) return res.status(404).send("No encontrado");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}-pwa.zip"`);
+    res.send(zipBuf);
+  } catch (err: any) {
+    res.status(500).send(err?.message || "Error empaquetando PWA");
+  }
+});
+
+app.get("/p/:buildId/download-html", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).send("No encontrado");
+  const filePath = path.join(dir, "offline.html");
+  if (!fs.existsSync(filePath)) return res.status(404).send("No encontrado");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}.html"`);
+  res.sendFile(filePath);
+});
+
+app.get("/p/:buildId/app.apk", (req, res) => {
+  const dir = getExpressBuildDir(req.params.buildId);
+  if (!dir) return res.status(404).send("No encontrado");
+  const apkPath = path.join(dir, "app.apk");
+  if (!fs.existsSync(apkPath)) {
+    return res.status(404).send("APK no disponible en este servidor.");
+  }
+  res.setHeader("Content-Type", "application/vnd.android.package-archive");
+  res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}.apk"`);
+  res.sendFile(apkPath);
+});
+
 // Vite middleware setup
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
+    if (process.env.DISABLE_HMR === "true") {
+      app.get("/@vite/client", (_req, res) => {
+        res.type("application/javascript");
+        res.setHeader("Cache-Control", "no-store");
+        res.send(`
+const sheetsMap = new Map();
+if ("document" in globalThis) {
+  document.querySelectorAll("style[data-vite-dev-id]").forEach((el) => {
+    sheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+}
+let lastInsertedStyle;
+export function updateStyle(id, content) {
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("type", "text/css");
+    style.setAttribute("data-vite-dev-id", id);
+    style.textContent = content;
+    if (!lastInsertedStyle) {
+      document.head.appendChild(style);
+      setTimeout(() => { lastInsertedStyle = undefined; }, 0);
+    } else {
+      lastInsertedStyle.insertAdjacentElement("afterend", style);
+    }
+    lastInsertedStyle = style;
+  } else {
+    style.textContent = content;
+  }
+  sheetsMap.set(id, style);
+}
+export function removeStyle(id) {
+  const style = sheetsMap.get(id);
+  if (style) {
+    document.head.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+export function createHotContext() {
+  return {
+    data: {},
+    accept() {},
+    acceptExports() {},
+    dispose() {},
+    prune() {},
+    decline() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+  };
+}
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== "." && url[0] !== "/") return url;
+  const pathname = url.replace(/[?#].*$/, "");
+  const { search, hash } = new URL(url, "http://vite.dev");
+  return pathname + "?" + queryToInject + (search ? "&" + search.slice(1) : "") + (hash || "");
+}
+export class ErrorOverlay extends HTMLElement {}
+`);
+      });
+    }
+
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr:
+          process.env.DISABLE_HMR === "true"
+            ? false
+            : { server: httpServer },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -391,7 +654,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`WXDIV 3.0 Server running on http://localhost:${PORT}`);
   });
 }

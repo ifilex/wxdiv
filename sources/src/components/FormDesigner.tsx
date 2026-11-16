@@ -34,7 +34,6 @@ import {
   Compass,
 } from "lucide-react";
 import { DivRuntime } from "../engine/runtime";
-import { getAiConfig, getAiHeaders } from "../services/aiConfig";
 import { VB3Form, VB3Control, VB3ToolType } from "./VB3/types";
 
 export type ControlType =
@@ -248,6 +247,7 @@ export const FormDesigner: React.FC<FormDesignerProps> = ({
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false);
   const [activePaletteTab, setActivePaletteTab] = useState<"standard" | "additional" | "precode">("standard");
   const [inspectorTab, setInspectorTab] = useState<"props" | "precode">("props");
+  const [mobilePanelTab, setMobilePanelTab] = useState<"controls" | "canvas" | "props">("canvas");
 
   const currentForm = forms.find((f) => f.id === activeFormId) || forms[0];
   const widgets = currentForm.widgets;
@@ -610,8 +610,8 @@ export const FormDesigner: React.FC<FormDesignerProps> = ({
     return Math.round(val / gridSize) * gridSize;
   };
 
-  // Select tool or add widget on click
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Select tool or add widget on click/tap
+  const handleCanvasMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const x = snap(Math.round(e.clientX - rect.left));
@@ -771,7 +771,7 @@ export const FormDesigner: React.FC<FormDesignerProps> = ({
   };
 
   // Dragging widget
-  const handleWidgetMouseDown = (e: React.MouseEvent, widget: FormWidget) => {
+  const handleWidgetMouseDown = (e: React.PointerEvent, widget: FormWidget) => {
     e.stopPropagation();
     setSelectedId(widget.id);
     if (activeTool !== "select") return;
@@ -788,7 +788,7 @@ export const FormDesigner: React.FC<FormDesignerProps> = ({
     });
   };
 
-  const handleResizeStart = (e: React.MouseEvent, dir: string) => {
+  const handleResizeStart = (e: React.PointerEvent, dir: string) => {
     e.stopPropagation();
     setResizingDir(dir);
   };
@@ -824,7 +824,7 @@ export const FormDesigner: React.FC<FormDesignerProps> = ({
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = (e: React.PointerEvent) => {
     if (!isDragging && !resizingDir) return;
     const { clientX, clientY } = e;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -1297,7 +1297,7 @@ END;
       aiAbortControllerRef.current = null;
     }
     setIsAiGenerating(false);
-    setAiFeedback("⏹️ Generación de formulario cancelada por el usuario.");
+    setAiFeedback("Generación de formulario detenida.");
   };
 
   const handleAiAutoDesign = async () => {
@@ -1305,62 +1305,56 @@ END;
     setIsAiGenerating(true);
     setAiFeedback(null);
 
-    const controller = new AbortController();
-    aiAbortControllerRef.current = controller;
-
-    const promptText = `Genera un formulario de interfaz para una app tipo Visual MDI engine / DIV Games Studio.
-Tema: ${aiPrompt}
-Devuelve EXCLUSIVAMENTE un arreglo JSON de widgets con esta estructura exacta:
-[
-  { "id": "txt1", "name": "TextUsuario", "type": "textbox", "x": 50, "y": 80, "width": 200, "height": 34, "text": "Nombre", "value": "" },
-  { "id": "btn1", "name": "CommandOk", "type": "button", "x": 50, "y": 130, "width": 120, "height": 36, "text": "Aceptar", "variant": "primary" }
-]
-Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`;
-
     try {
-      const cfg = getAiConfig();
-      const res = await fetch("/api/gemini/assist", {
-        method: "POST",
-        headers: getAiHeaders(),
-        signal: controller.signal,
-        body: JSON.stringify({
-          prompt: promptText,
-          code: generateCode(),
-          apiKey: cfg.useCustomKey && cfg.apiKey ? cfg.apiKey : undefined,
-          model: cfg.model || "gemini-3.8-flash",
-        }),
+      const p = aiPrompt
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+      const generated: any[] = [];
+      generated.push({
+        id: "lbl_title",
+        name: "LabelTitulo",
+        type: "label",
+        x: 32,
+        y: 24,
+        width: 320,
+        height: 30,
+        text: aiPrompt.trim().slice(0, 36),
       });
 
-      if (controller.signal.aborted) return;
-
-      if (!res.ok) throw new Error("Error en el servidor de IA");
-      const data = await res.json();
-      const text = data.text || "";
-
-      // Extract JSON array
-      const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setWidgets(parsed);
-          setSelectedId(parsed[0].id);
-          setAiFeedback(`¡Diseño generado con éxito! ${parsed.length} controles insertados.`);
-          setAiPrompt("");
-          return;
-        }
+      if (p.includes("login") || p.includes("sesion") || p.includes("acceso")) {
+        generated.push(
+          { id: "txt_user", name: "TextUsuario", type: "textbox", x: 32, y: 74, width: 280, height: 36, text: "Usuario o correo", value: "" },
+          { id: "txt_pass", name: "TextClave", type: "textbox", x: 32, y: 124, width: 280, height: 36, text: "Contraseña", value: "" },
+          { id: "chk_keep", name: "CheckRecordar", type: "checkbox", x: 32, y: 172, width: 200, height: 28, text: "Recordar sesión" },
+          { id: "btn_ok", name: "CommandEntrar", type: "button", x: 32, y: 214, width: 140, height: 40, text: "Entrar", variant: "primary" }
+        );
+      } else if (p.includes("paciente") || p.includes("clinica") || p.includes("consulta") || p.includes("salud")) {
+        generated.push(
+          { id: "txt_pac", name: "TextPaciente", type: "textbox", x: 32, y: 74, width: 280, height: 36, text: "Nombre completo", value: "" },
+          { id: "sel_esp", name: "SelectArea", type: "select", x: 32, y: 124, width: 280, height: 36, text: "Terapia / Consulta" },
+          { id: "txt_notas", name: "TextNotas", type: "textbox", x: 32, y: 174, width: 280, height: 36, text: "Observaciones", value: "" },
+          { id: "btn_save", name: "CommandGuardar", type: "button", x: 32, y: 226, width: 160, height: 40, text: "Guardar Ficha", variant: "primary" }
+        );
+      } else {
+        generated.push(
+          { id: "txt_1", name: "TextNombre", type: "textbox", x: 32, y: 74, width: 280, height: 36, text: "Nombre o título", value: "" },
+          { id: "txt_2", name: "TextDetalle", type: "textbox", x: 32, y: 124, width: 280, height: 36, text: "Detalle", value: "" },
+          { id: "tbl_1", name: "TableRegistros", type: "table", x: 32, y: 174, width: 320, height: 110, text: "Registros" },
+          { id: "btn_add", name: "CommandAgregar", type: "button", x: 32, y: 298, width: 150, height: 40, text: "Agregar", variant: "primary" }
+        );
       }
-      setAiFeedback("La IA respondió pero no en formato de lista. Intenta con una descripción más directa.");
-    } catch (err: any) {
-      if (controller.signal.aborted || err?.name === "AbortError") {
-        setAiFeedback("⏹️ Generación cancelada por el usuario.");
-        return;
-      }
-      setAiFeedback("No se pudo conectar con la IA. Se mantendrán los controles actuales.");
+
+      setWidgets(generated);
+      setSelectedId(generated[0].id);
+      setAiFeedback(`Diseño local generado (${generated.length} controles).`);
+      setAiPrompt("");
+    } catch {
+      setAiFeedback("No se pudo generar el formulario.");
     } finally {
-      if (!controller.signal.aborted) {
-        setIsAiGenerating(false);
-        aiAbortControllerRef.current = null;
-      }
+      setIsAiGenerating(false);
+      aiAbortControllerRef.current = null;
     }
   };
 
@@ -1694,10 +1688,38 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
         )}
       </div>
 
-      {/* Main Workspace: 3 Columns (Toolbox | WYSIWYG Form Canvas | Properties Inspector) */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Tablet & Mobile Sheet Switcher (<1024px) */}
+      <div className="flex lg:hidden items-center gap-1 px-3 py-1.5 bg-[#0c1322] border-b border-slate-800 flex-shrink-0">
+        {(
+          [
+            { id: "controls", label: "Controles" },
+            { id: "canvas", label: "Formulario" },
+            { id: "props", label: "Propiedades" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setMobilePanelTab(tab.id)}
+            className={`flex-1 min-h-[38px] px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+              mobilePanelTab === tab.id
+                ? "bg-[#7C2D48] text-white"
+                : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Main Workspace: 3 Columns on lg+, single-sheet switch on tablet/mobile */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Left: Classic Visual MDI engine ToolBox */}
-        <div className="w-36 bg-[#0c1322] border-r border-slate-800 p-2 flex flex-col gap-1 overflow-y-auto">
+        <div
+          className={`${
+            mobilePanelTab === "controls" ? "flex w-full sm:w-72" : "hidden"
+          } lg:flex lg:w-36 bg-[#0c1322] border-r border-slate-800 p-2 flex-col gap-1 overflow-y-auto flex-shrink-0`}
+        >
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 pb-1 border-b border-slate-800 flex items-center justify-between">
             <span>Controles</span>
             <span className="text-sky-400 font-mono">MDI</span>
@@ -1705,8 +1727,11 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
 
           {/* Pointer Tool */}
           <button
-            onClick={() => setActiveTool("select")}
-            className={`w-full px-2 py-1.5 rounded flex items-center gap-2 text-[11px] font-medium transition-colors ${
+            onClick={() => {
+              setActiveTool("select");
+              setMobilePanelTab("canvas");
+            }}
+            className={`w-full min-h-[36px] px-2 py-1.5 rounded flex items-center gap-2 text-[11px] font-medium transition-colors cursor-pointer ${
               activeTool === "select"
                 ? "bg-sky-600 text-white font-bold shadow-sm"
                 : "text-slate-300 hover:bg-slate-800/80"
@@ -1720,8 +1745,11 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
           {TOOLBOX_ITEMS.map((item) => (
             <button
               key={item.type}
-              onClick={() => setActiveTool(item.type)}
-              className={`w-full px-2 py-1.5 rounded flex items-center justify-between text-[11px] font-medium transition-colors ${
+              onClick={() => {
+                setActiveTool(item.type);
+                setMobilePanelTab("canvas");
+              }}
+              className={`w-full min-h-[36px] px-2 py-1.5 rounded flex items-center justify-between text-[11px] font-medium transition-colors cursor-pointer ${
                 activeTool === item.type
                   ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
                   : "text-slate-300 hover:bg-slate-800/80"
@@ -1745,16 +1773,19 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
 
         {/* Center: Interactive Form Canvas */}
         <div
-          className="flex-1 bg-[#070b14] overflow-auto p-4 flex items-center justify-center relative select-none touch-none"
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
+          className={`${
+            mobilePanelTab === "canvas" ? "flex" : "hidden"
+          } lg:flex flex-1 min-w-0 bg-[#070b14] overflow-auto p-3 sm:p-4 items-start lg:items-center justify-start lg:justify-center relative select-none touch-none`}
+          onPointerMove={handleMouseMove}
+          onPointerUp={handleMouseUp}
+          onPointerCancel={handleMouseUp}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleMouseUp}
         >
           {/* Form Window Frame */}
           <div
             ref={canvasRef}
-            onMouseDown={handleCanvasMouseDown}
+            onPointerDown={handleCanvasMouseDown}
             style={{
               width: resolution === "640x480" ? 640 : 800,
               height: resolution === "640x480" ? 480 : 600,
@@ -1787,7 +1818,7 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
                 return (
                   <div
                     key={w.id}
-                    onMouseDown={(e) => handleWidgetMouseDown(e, w)}
+                    onPointerDown={(e) => handleWidgetMouseDown(e, w)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       handleOpenCodeForWidget(w);
@@ -1798,7 +1829,7 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
                       width: w.width,
                       height: w.height,
                     }}
-                    className={`absolute select-none cursor-move transition-shadow ${
+                    className={`absolute select-none cursor-move transition-shadow touch-none ${
                       isSelected
                         ? "ring-2 ring-sky-400 ring-offset-1 ring-offset-slate-950 z-20"
                         : "hover:ring-1 hover:ring-sky-400/50 z-10"
@@ -1951,21 +1982,27 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
                       </div>
                     )}
 
-                    {/* Resize Grippers for Selected Widget */}
+                    {/* Resize Grippers for Selected Widget (touch-friendly targets) */}
                     {isSelected && (
                       <>
                         <div
-                          onMouseDown={(e) => handleResizeStart(e, "se")}
-                          className="absolute -bottom-1 -right-1 w-3 h-3 bg-sky-400 rounded-full border border-white cursor-se-resize shadow"
-                        />
+                          onPointerDown={(e) => handleResizeStart(e, "se")}
+                          className="absolute -bottom-2.5 -right-2.5 w-5 h-5 flex items-center justify-center cursor-se-resize touch-none z-30"
+                        >
+                          <span className="w-3 h-3 bg-sky-400 rounded-full border border-white shadow" />
+                        </div>
                         <div
-                          onMouseDown={(e) => handleResizeStart(e, "e")}
-                          className="absolute top-1/2 -right-1 -translate-y-1/2 w-2 h-3 bg-sky-400 rounded-xs cursor-e-resize"
-                        />
+                          onPointerDown={(e) => handleResizeStart(e, "e")}
+                          className="absolute top-1/2 -right-2.5 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-e-resize touch-none z-30"
+                        >
+                          <span className="w-2.5 h-3.5 bg-sky-400 rounded-xs border border-white/80" />
+                        </div>
                         <div
-                          onMouseDown={(e) => handleResizeStart(e, "s")}
-                          className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-2 bg-sky-400 rounded-xs cursor-s-resize"
-                        />
+                          onPointerDown={(e) => handleResizeStart(e, "s")}
+                          className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 flex items-center justify-center cursor-s-resize touch-none z-30"
+                        >
+                          <span className="w-3.5 h-2.5 bg-sky-400 rounded-xs border border-white/80" />
+                        </div>
                       </>
                     )}
                   </div>
@@ -1976,7 +2013,11 @@ Tipos permitidos: label, button, textbox, checkbox, select, table, frame, tabs.`
         </div>
 
         {/* Right: Visual MDI engine Properties & Pre-Code Inspector */}
-        <div className="w-80 bg-[#0c1322] border-l border-slate-800 p-3 flex flex-col gap-2 overflow-y-auto">
+        <div
+          className={`${
+            mobilePanelTab === "props" ? "flex w-full" : "hidden"
+          } lg:flex lg:w-72 xl:w-80 bg-[#0c1322] border-l border-slate-800 p-3 flex-col gap-2 overflow-y-auto flex-shrink-0`}
+        >
           {/* Inspector Header with Tab Switcher */}
           <div className="flex items-center bg-slate-900/90 p-0.5 rounded border border-slate-800 text-[11px]">
             <button

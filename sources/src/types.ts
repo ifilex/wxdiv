@@ -170,9 +170,21 @@ export interface DivMode8Entity {
   type: "player" | "monster" | "barrel" | "torch" | "key" | "medikit" | "ammo" | "treasure" | "weapon" | "custom" | string;
   x: number; // world pixel coordinates (grid cell * 64 + 32)
   y: number;
+  z?: number;
   graph?: number;
   name?: string;
   alive?: boolean;
+  yaw?: number;
+  hp?: number;
+  maxHp?: number;
+  speed?: number;
+  damage?: number;
+  patrolRadius?: number;
+  homeX?: number;
+  homeY?: number;
+  hitFlash?: number;
+  attackCooldown?: number;
+  animation?: string;
 }
 
 export type DivFluidType = "none" | "water" | "lava" | "acid" | "blood";
@@ -260,6 +272,17 @@ export interface DivMode8PlacedModel {
   animFrame?: number;
   animationSpeed?: number;
   name?: string;
+  role?: "enemy" | "ally" | "prop" | "goal" | "checkpoint";
+  hp?: number;
+  maxHp?: number;
+  speed?: number;
+  damage?: number;
+  patrolRadius?: number;
+  hitFlash?: number;
+  homeX?: number;
+  homeY?: number;
+  homeZ?: number;
+  attackCooldown?: number;
 }
 
 export interface DivVoxelPoint {
@@ -286,6 +309,7 @@ export interface DivMode8PlacedVoxel {
   rotSpeed?: number;
   scale: number;
   name?: string;
+  collected?: boolean;
 }
 
 export interface DivDoomLinedef {
@@ -316,6 +340,7 @@ export interface DivDoomSector {
   lightLevel?: number; // 0..255
   special?: number;
   tag?: number;
+  fluidType?: DivFluidType;
 }
 
 export interface DivVectorWall {
@@ -373,6 +398,7 @@ export interface DivFluidParticle {
 }
 
 export type DivMode8EngineMode = "classic" | "hybrid" | "doom2";
+export type Mode8CameraMode = "fps" | "third_person" | "isometric" | "orbit";
 
 export interface DivMode8 {
   id: number;
@@ -387,6 +413,9 @@ export interface DivMode8 {
   height: number;     // Camera eye height
   pitch: number;      // Pitch offset
   camera: number;     // Process ID to track
+  cameraMode?: Mode8CameraMode; // FPS, 3rd person chase, isometric, or orbit
+  skyTexture?: string;          // e.g. "SKY1", "SKY_ROBLOX", "SKY_CYBER"
+  playerModelId?: string;       // Avatar MD2 model in 3rd-person/isometric views
   fogColor: string;
   fogDistance: number;
   mapWidth: number;

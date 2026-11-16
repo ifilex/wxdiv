@@ -1,4 +1,5 @@
 import { VB3Form, VB3Control } from "../components/VB3/types";
+import { getPresetFormDefinition } from "./presetForms";
 
 /**
  * WXDIV 3.0 / DIV Games Studio Native HTML5 & Web Landing Page Engine
@@ -188,7 +189,29 @@ export function parseDivToHtml5State(
   visualFormsOrPresetId?: any[] | string
 ): Html5AppState {
   const state = createDefaultHtml5State();
-  const lower = code.toLowerCase();
+  const lower = (code || "").toLowerCase();
+
+  // Mode 8 3D worlds MUST NEVER be hijacked into HTML5 DOM landing/form mode
+  const isMode8Code =
+    lower.includes("m8_set_doom_sector") ||
+    lower.includes("m8_add_doom_line") ||
+    lower.includes("m8_engine_mode") ||
+    lower.includes("m8_place_voxel") ||
+    lower.includes("m8_add_voxel") ||
+    lower.includes("m8_add_model") ||
+    lower.includes("m8_place_model") ||
+    lower.includes("m8_set_sector") ||
+    lower.includes("m8_set_fluid") ||
+    lower.includes("m8_spawn_entity") ||
+    lower.includes("start_mode8") ||
+    lower.includes("jugador_doom") ||
+    lower.includes("jugador_blox") ||
+    lower.includes("jugador_marine") ||
+    lower.includes("mundo 3d modo 8");
+  if (isMode8Code) {
+    state.active = false;
+    return state;
+  }
 
   const presetIdOrTitle = typeof visualFormsOrPresetId === "string" ? visualFormsOrPresetId.toLowerCase() : "";
   const visualForms = Array.isArray(visualFormsOrPresetId) ? visualFormsOrPresetId : undefined;
@@ -837,6 +860,37 @@ export function parseDivToHtml5State(
     }
   }
 
+  // 16. Fallback to matching preset VB3Form definition (Calculator, Notepad, Paint, SQLite DB, etc.)
+  if (!state.visualForm && !isWebOrLanding) {
+    const hasInlinePrimitives = Boolean(
+      state.hero ||
+      state.form ||
+      state.table ||
+      (state.actions && state.actions.length > 0) ||
+      (state.tabs && state.tabs.length > 0) ||
+      (state.features && state.features.length > 0)
+    );
+    if (!hasInlinePrimitives) {
+      let inferredPresetId = presetIdOrTitle;
+      if (!getPresetFormDefinition(inferredPresetId)) {
+        if (lower.includes("calculadora")) inferredPresetId = "app_calculator_sci";
+        else if (lower.includes("sqlite") || lower.includes("empresas.db")) inferredPresetId = "app_database_sqlite";
+        else if (lower.includes("notepad") || lower.includes("editor_texto")) inferredPresetId = "app_text_editor";
+        else if (lower.includes("paint") || lower.includes("dibujo")) inferredPresetId = "app_paint_canvas";
+        else if (lower.includes("login_form")) inferredPresetId = "app_login";
+        else if (lower.includes("crm")) inferredPresetId = "app_crm";
+      }
+      const presetForm = getPresetFormDefinition(inferredPresetId);
+      if (presetForm) {
+        state.visualForm = presetForm;
+        state.mode = "app";
+        if (!state.title || state.title === "Aplicación Web") {
+          state.title = presetForm.caption || presetForm.name || state.title;
+        }
+      }
+    }
+  }
+
   return state;
 }
 
@@ -865,7 +919,12 @@ export function generateVisualFormHtml(form: VB3Form, appTitle?: string): string
     if (cType === "textbox") {
       const isPass = (c as any).passwordChar;
       const isDisplay = c.id === "txtPantalla" || c.name === "txtPantalla" || c.id.toLowerCase().includes("pantalla") || c.id.toLowerCase().includes("display") || c.id.toLowerCase().includes("calc");
-      return `<input id="${c.id}" name="${cName}" class="vb-input" type="${isPass ? 'password' : 'text'}" value="${(c.text || c.caption || (isDisplay ? '0' : '')).replace(/"/g, '&quot;')}" style="position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; background-color: ${c.backColor || '#ffffff'}; color: ${c.foreColor || '#000000'}; border: 2px solid #808080; border-top-color: #000000; border-left-color: #000000; border-bottom-color: #dfdfdf; border-right-color: #dfdfdf; padding: ${isDisplay ? '2px 10px' : '2px 8px'}; font-family: ${isDisplay ? "'Courier New', Courier, monospace" : "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"}; font-size: ${isDisplay ? '20px' : (c.fontSize || 13) + 'px'}; font-weight: ${isDisplay ? 'bold' : 'normal'}; text-align: ${isDisplay ? 'right' : ((c as any).align || 'left')}; outline: none; box-sizing: border-box;" />`;
+      const rawText = String(c.text || c.caption || (isDisplay ? "0" : ""));
+      if (h >= 80 && !isDisplay) {
+        const escTxt = rawText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `<textarea id="${c.id}" name="${cName}" class="vb-input" style="position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; background-color: ${c.backColor || '#ffffff'}; color: ${c.foreColor || '#000000'}; border: 2px solid #808080; border-top-color: #000000; border-left-color: #000000; border-bottom-color: #dfdfdf; border-right-color: #dfdfdf; padding: 8px; font-family: 'Courier New', Courier, monospace; font-size: ${c.fontSize || 13}px; resize: none; outline: none; box-sizing: border-box;">${escTxt}</textarea>`;
+      }
+      return `<input id="${c.id}" name="${cName}" class="vb-input" type="${isPass ? 'password' : 'text'}" value="${rawText.replace(/"/g, '&quot;')}" style="position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; background-color: ${c.backColor || '#ffffff'}; color: ${c.foreColor || '#000000'}; border: 2px solid #808080; border-top-color: #000000; border-left-color: #000000; border-bottom-color: #dfdfdf; border-right-color: #dfdfdf; padding: ${isDisplay ? '2px 10px' : '2px 8px'}; font-family: ${isDisplay ? "'Courier New', Courier, monospace" : "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"}; font-size: ${isDisplay ? '20px' : (c.fontSize || 13) + 'px'}; font-weight: ${isDisplay ? 'bold' : 'normal'}; text-align: ${isDisplay ? 'right' : ((c as any).align || 'left')}; outline: none; box-sizing: border-box;" />`;
     }
 
     if (cType === "label") {
@@ -890,6 +949,9 @@ export function generateVisualFormHtml(form: VB3Form, appTitle?: string): string
     }
 
     if (cType === "picturebox" || cType === "canvas5" || cType === "image") {
+      if (c.id === "picCanvas" || cCaption.toLowerCase().includes("lienzo")) {
+        return `<canvas id="${c.id}" width="${w}" height="${h}" class="vb-paint-canvas" style="position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; background-color: #ffffff; border: 2px solid #808080; border-top-color: #000000; border-left-color: #000000; border-bottom-color: #dfdfdf; border-right-color: #dfdfdf; box-sizing: border-box; cursor: crosshair; touch-action: none;"></canvas>`;
+      }
       return `<div id="${c.id}" style="position: absolute; left: ${x}px; top: ${y}px; width: ${w}px; height: ${h}px; background-color: ${c.backColor || '#ffffff'}; border: 2px solid #808080; border-top-color: #000000; border-left-color: #000000; border-bottom-color: #dfdfdf; border-right-color: #dfdfdf; box-sizing: border-box; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: monospace; color: #64748b;">${cCaption || `[${cName}]`}</div>`;
     }
 
@@ -1229,6 +1291,36 @@ export function generateVisualFormHtml(form: VB3Form, appTitle?: string): string
           if (btn) btn.click();
         }
       });
+
+      // Interactive Paint 2D Canvas support if .vb-paint-canvas exists
+      const paintCanvas = document.querySelector(".vb-paint-canvas");
+      if (paintCanvas && paintCanvas.getContext) {
+        const pctx = paintCanvas.getContext("2d");
+        pctx.fillStyle = "#ffffff";
+        pctx.fillRect(0, 0, paintCanvas.width, paintCanvas.height);
+        let drawing = false;
+        let brushMode = "pencil";
+        const btnLapiz = document.getElementById("btnLapiz");
+        const btnPincel = document.getElementById("btnPincel");
+        const btnBorrador = document.getElementById("btnBorrador");
+        const lblStatus = document.getElementById("lblPaintStatus");
+        if (btnLapiz) btnLapiz.addEventListener("click", () => { brushMode = "pencil"; if (lblStatus) lblStatus.textContent = "Herramienta: Lápiz • Color: Negro"; });
+        if (btnPincel) btnPincel.addEventListener("click", () => { brushMode = "brush"; if (lblStatus) lblStatus.textContent = "Herramienta: Pincel (8px) • Color: Rojo Vino"; });
+        if (btnBorrador) btnBorrador.addEventListener("click", () => { brushMode = "eraser"; if (lblStatus) lblStatus.textContent = "Herramienta: Borrador"; });
+        function drawDot(ev) {
+          const rect = paintCanvas.getBoundingClientRect();
+          const px = ((ev.clientX - rect.left) / rect.width) * paintCanvas.width;
+          const py = ((ev.clientY - rect.top) / rect.height) * paintCanvas.height;
+          pctx.fillStyle = brushMode === "eraser" ? "#ffffff" : brushMode === "brush" ? "#7C2D48" : "#111827";
+          const sz = brushMode === "eraser" ? 16 : brushMode === "brush" ? 8 : 3;
+          pctx.beginPath();
+          pctx.arc(px, py, sz / 2, 0, Math.PI * 2);
+          pctx.fill();
+        }
+        paintCanvas.addEventListener("pointerdown", (ev) => { drawing = true; drawDot(ev); });
+        paintCanvas.addEventListener("pointermove", (ev) => { if (drawing) drawDot(ev); });
+        window.addEventListener("pointerup", () => { drawing = false; });
+      }
     })();
   </script>
 </body>
@@ -1261,17 +1353,124 @@ export function generateProductionHtml5Js(state: Html5AppState): string {
   );
 
   if (!hasAnyContent) {
+    const safeTitle = state.title || "Mi Aplicación Web";
+    const safeSub = state.subtitle || "Aplicación compilada lista para usar en cualquier navegador y sin internet.";
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>${state.title || "App Nativa HTML5"}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background-color: #000000; min-height: 100vh; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #F7F8FA;
+      color: #111827;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .app-card {
+      width: 100%;
+      max-width: 560px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+    }
+    h1 { font-size: 24px; font-weight: 800; color: #111827; margin-bottom: 8px; }
+    p { font-size: 14px; color: #4B5563; line-height: 1.6; margin-bottom: 20px; }
+    .note-box { display: flex; gap: 8px; margin-bottom: 16px; }
+    input {
+      flex: 1;
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid #CBD5E1;
+      font-size: 14px;
+    }
+    button {
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 10px;
+      border: none;
+      background: #7C2D48;
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: #642239; }
+    ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      font-size: 14px;
+    }
+    .del-btn {
+      background: transparent;
+      color: #94A3B8;
+      min-height: 32px;
+      padding: 0 8px;
+      font-size: 12px;
+    }
+    .del-btn:hover { color: #DC2626; background: #FEE2E2; }
   </style>
 </head>
-<body style="background-color: #000000;"></body>
+<body>
+  <main class="app-card">
+    <h1>${safeTitle}</h1>
+    <p>${safeSub}</p>
+    <form class="note-box" id="quickAppForm">
+      <input type="text" id="quickAppInput" placeholder="Escribe un registro o nota..." required />
+      <button type="submit">Guardar</button>
+    </form>
+    <ul id="quickAppList"></ul>
+  </main>
+  <script>
+    (function() {
+      var KEY = "wxdiv_quick_" + ${JSON.stringify(safeTitle.slice(0, 24))};
+      var items = [];
+      try { items = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) {}
+      var listEl = document.getElementById("quickAppList");
+      var inputEl = document.getElementById("quickAppInput");
+      var formEl = document.getElementById("quickAppForm");
+      function render() {
+        listEl.innerHTML = items.map(function(txt, i) {
+          return '<li><span></span><button type="button" class="del-btn" data-idx="' + i + '">Eliminar</button></li>';
+        }).join("");
+        Array.prototype.forEach.call(listEl.querySelectorAll("li"), function(li, i) {
+          li.querySelector("span").textContent = items[i];
+          li.querySelector("button").onclick = function() {
+            items.splice(i, 1);
+            try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+            render();
+          };
+        });
+      }
+      formEl.onsubmit = function(ev) {
+        ev.preventDefault();
+        var v = (inputEl.value || "").trim();
+        if (!v) return;
+        items.unshift(v);
+        inputEl.value = "";
+        try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+        render();
+      };
+      render();
+    })();
+  </script>
+</body>
 </html>`;
   }
 
@@ -1290,21 +1489,141 @@ export function generateProductionHtml5Js(state: Html5AppState): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${state.title || brand}</title>
   <meta name="description" content="${state.subtitle || ''}">
-  <!-- Tailwind CSS CDN for instant, zero-build styling -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: { 50: '#ecfeff', 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490' },
-            accent: { 500: '#10b981', 600: '#059669' }
-          }
-        }
-      }
-    };
-  </script>
+  <!-- 100% Offline Self-Contained Utility CSS (zero external CDN dependencies) -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    .hidden { display: none !important; }
+    .flex { display: flex; }
+    .inline-flex { display: inline-flex; }
+    .inline-block { display: inline-block; }
+    .block { display: block; }
+    .flex-col { flex-direction: column; }
+    .flex-wrap { flex-wrap: wrap; }
+    .items-center { align-items: center; }
+    .items-baseline { align-items: baseline; }
+    .items-stretch { align-items: stretch; }
+    .justify-between { justify-content: space-between; }
+    .justify-center { justify-content: center; }
+    .grid { display: grid; }
+    .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .gap-1 { gap: 0.25rem; } .gap-1\\.5 { gap: 0.375rem; } .gap-2 { gap: 0.5rem; } .gap-2\\.5 { gap: 0.625rem; }
+    .gap-3 { gap: 0.75rem; } .gap-4 { gap: 1rem; } .gap-6 { gap: 1.5rem; }
+    .space-y-3 > * + * { margin-top: 0.75rem; }
+    .space-y-4 > * + * { margin-top: 1rem; }
+    .space-y-5 > * + * { margin-top: 1.25rem; }
+    .w-4 { width: 1rem; } .h-4 { height: 1rem; }
+    .w-8 { width: 2rem; } .h-8 { height: 2rem; }
+    .w-fit { width: fit-content; }
+    .w-full { width: 100%; }
+    .h-16 { height: 4rem; }
+    .max-w-2xl { max-width: 42rem; } .max-w-3xl { max-width: 48rem; } .max-w-4xl { max-width: 56rem; }
+    .max-w-5xl { max-width: 64rem; } .max-w-6xl { max-width: 72rem; } .max-w-xl { max-width: 36rem; }
+    .mx-auto { margin-left: auto; margin-right: auto; }
+    .mt-1 { margin-top: 0.25rem; } .mt-2 { margin-top: 0.5rem; } .mt-3 { margin-top: 0.75rem; }
+    .mt-4 { margin-top: 1rem; } .mt-6 { margin-top: 1.5rem; } .mt-8 { margin-top: 2rem; }
+    .mt-auto { margin-top: auto; }
+    .mb-2 { margin-bottom: 0.5rem; } .mb-3 { margin-bottom: 0.75rem; } .mb-4 { margin-bottom: 1rem; }
+    .mb-6 { margin-bottom: 1.5rem; } .mb-8 { margin-bottom: 2rem; } .mb-10 { margin-bottom: 2.5rem; } .mb-12 { margin-bottom: 3rem; }
+    .p-3 { padding: 0.75rem; } .p-4 { padding: 1rem; } .p-6 { padding: 1.5rem; } .p-8 { padding: 2rem; }
+    .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .px-4 { padding-left: 1rem; padding-right: 1rem; }
+    .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+    .px-8 { padding-left: 2rem; padding-right: 2rem; }
+    .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+    .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+    .py-3\\.5 { padding-top: 0.875rem; padding-bottom: 0.875rem; }
+    .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+    .py-10 { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+    .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
+    .pt-2 { padding-top: 0.5rem; } .pt-4 { padding-top: 1rem; } .pt-16 { padding-top: 4rem; } .pb-12 { padding-bottom: 3rem; }
+    .sticky { position: sticky; } .top-0 { top: 0; } .relative { position: relative; } .z-50 { z-index: 50; }
+    .rounded { border-radius: 0.25rem; } .rounded-md { border-radius: 0.375rem; } .rounded-lg { border-radius: 0.5rem; }
+    .rounded-xl { border-radius: 0.75rem; } .rounded-2xl { border-radius: 1rem; } .rounded-3xl { border-radius: 1.5rem; }
+    .border { border-width: 1px; border-style: solid; }
+    .border-2 { border-width: 2px; border-style: solid; }
+    .border-t { border-top-width: 1px; border-top-style: solid; }
+    .border-b { border-bottom-width: 1px; border-bottom-style: solid; }
+    .border-y { border-top-width: 1px; border-bottom-width: 1px; border-top-style: solid; border-bottom-style: solid; }
+    .text-center { text-align: center; }
+    .text-xs { font-size: 0.75rem; line-height: 1rem; }
+    .text-\\[11px\\] { font-size: 11px; }
+    .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+    .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+    .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+    .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+    .text-4xl { font-size: 2.25rem; line-height: 2.5rem; }
+    .font-medium { font-weight: 500; } .font-semibold { font-weight: 600; }
+    .font-bold { font-weight: 700; } .font-extrabold { font-weight: 800; } .font-black { font-weight: 900; }
+    .italic { font-style: italic; }
+    .uppercase { text-transform: uppercase; }
+    .tracking-wide { letter-spacing: 0.025em; } .tracking-wider { letter-spacing: 0.05em; }
+    .tracking-widest { letter-spacing: 0.1em; } .tracking-tight { letter-spacing: -0.025em; }
+    .leading-tight { line-height: 1.2; } .leading-relaxed { line-height: 1.625; }
+    .cursor-pointer { cursor: pointer; }
+    .transition-all, .transition-colors, .transition-transform { transition: all 0.2s ease; }
+    .backdrop-blur-md, .backdrop-blur-xl { backdrop-filter: blur(12px); }
+    .shadow-md { box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
+    .shadow-lg { box-shadow: 0 10px 25px rgba(0,0,0,0.16); }
+    .shadow-xl { box-shadow: 0 20px 30px rgba(0,0,0,0.22); }
+    .shadow-2xl { box-shadow: 0 25px 50px rgba(0,0,0,0.35); }
+    .bg-white { background-color: #ffffff; } .bg-white\\/95 { background-color: rgba(255,255,255,0.95); }
+    .bg-black { background-color: #020617; } .bg-black\\/80 { background-color: rgba(2,6,23,0.85); }
+    .bg-\\[\\#F7F8FA\\] { background-color: #F7F8FA; }
+    .bg-\\[\\#FDF2F5\\] { background-color: #FDF2F5; }
+    .bg-\\[\\#EEF6F1\\] { background-color: #EEF6F1; }
+    .bg-\\[\\#7C2D48\\] { background-color: #7C2D48; }
+    .hover\\:bg-\\[\\#642239\\]:hover { background-color: #642239; }
+    .bg-slate-800 { background-color: #1e293b; } .bg-slate-800\\/80 { background-color: rgba(30,41,59,0.8); }
+    .bg-slate-900 { background-color: #0f172a; } .bg-slate-900\\/40 { background-color: rgba(15,23,42,0.45); }
+    .bg-slate-900\\/60 { background-color: rgba(15,23,42,0.65); } .bg-slate-950\\/70 { background-color: rgba(2,6,23,0.75); }
+    .bg-cyan-400 { background-color: #22d3ee; } .bg-cyan-500 { background-color: #06b6d4; }
+    .hover\\:bg-cyan-400:hover { background-color: #22d3ee; }
+    .bg-cyan-600\\/30 { background-color: rgba(8,145,178,0.3); } .bg-cyan-950\\/80 { background-color: rgba(8,51,68,0.85); }
+    .bg-emerald-950\\/80 { background-color: rgba(2,44,34,0.85); }
+    .bg-gradient-to-r.from-cyan-500.to-emerald-400 { background: linear-gradient(90deg, #06b6d4, #34d399); }
+    .bg-gradient-to-r.from-cyan-900\\/60 { background: linear-gradient(90deg, rgba(22,78,99,0.7), rgba(30,58,138,0.6), rgba(15,23,42,0.85)); }
+    .bg-gradient-to-b.from-cyan-950\\/60 { background: linear-gradient(180deg, rgba(8,51,68,0.75), rgba(15,23,42,0.85)); }
+    .bg-gradient-to-b.from-slate-900\\/90 { background: linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.7)); }
+    .text-white { color: #ffffff; } .text-black { color: #020617; } .text-slate-950 { color: #020617; }
+    .text-slate-100 { color: #f1f5f9; } .text-slate-200 { color: #e2e8f0; } .text-slate-300 { color: #cbd5e1; }
+    .text-slate-400 { color: #94a3b8; } .text-slate-500 { color: #64748b; }
+    .text-cyan-300 { color: #67e8f9; } .text-cyan-400 { color: #22d3ee; }
+    .text-emerald-300 { color: #6ee7b7; } .text-emerald-400 { color: #34d399; } .text-amber-500 { color: #f59e0b; }
+    .text-\\[\\#111827\\] { color: #111827; } .text-\\[\\#374151\\] { color: #374151; }
+    .text-\\[\\#4B5563\\] { color: #4B5563; } .text-\\[\\#6B7280\\] { color: #6B7280; }
+    .text-\\[\\#7C2D48\\] { color: #7C2D48; } .text-\\[\\#2F6F4E\\] { color: #2F6F4E; }
+    .border-\\[\\#E2E8F0\\] { border-color: #E2E8F0; } .border-\\[\\#F3D0DC\\] { border-color: #F3D0DC; }
+    .border-\\[\\#CFE4D7\\] { border-color: #CFE4D7; } .border-\\[\\#7C2D48\\] { border-color: #7C2D48; }
+    .border-slate-800 { border-color: #1e293b; } .border-slate-900 { border-color: #0f172a; }
+    .border-slate-900\\/80 { border-color: rgba(15,23,42,0.8); } .border-slate-800\\/80 { border-color: rgba(30,41,59,0.8); }
+    .border-cyan-500 { border-color: #06b6d4; } .border-cyan-500\\/40 { border-color: rgba(6,182,212,0.4); }
+    .border-cyan-800\\/60 { border-color: rgba(21,94,117,0.6); } .border-emerald-500\\/60 { border-color: rgba(16,185,129,0.6); }
+    .focus\\:outline-none:focus { outline: none; }
+    .focus\\:border-cyan-500:focus { border-color: #06b6d4; }
+    .focus\\:border-\\[\\#7C2D48\\]:focus { border-color: #7C2D48; }
+    details[open] summary span:last-child { transform: rotate(180deg); }
+    @media (min-width: 640px) {
+      .sm\\:px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+      .sm\\:p-10 { padding: 2.5rem; } .sm\\:p-12 { padding: 3rem; }
+      .sm\\:flex-row { flex-direction: row; }
+      .sm\\:text-6xl { font-size: 3.5rem; line-height: 1.1; }
+      .sm\\:text-4xl { font-size: 2.25rem; } .sm\\:text-3xl { font-size: 1.875rem; }
+      .sm\\:text-xl { font-size: 1.25rem; } .sm\\:text-base { font-size: 1rem; }
+    }
+    @media (min-width: 768px) {
+      .md\\:flex { display: flex !important; }
+      .md\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .md\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .md\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .md\\:pt-24 { padding-top: 5rem; } .md\\:pb-20 { padding-bottom: 4.5rem; }
+    }
+  </style>
 </head>
 <body class="${isLight ? "bg-[#F7F8FA] text-[#111827] selection:bg-[#7C2D48] selection:text-white" : "bg-black text-slate-100 selection:bg-cyan-500 selection:text-black"} font-sans antialiased min-h-screen flex flex-col">
 

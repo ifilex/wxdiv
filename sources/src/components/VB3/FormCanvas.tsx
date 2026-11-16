@@ -1031,46 +1031,24 @@ export const FormCanvas: React.FC<FormCanvasProps> = ({
             {/* Outline selection border */}
             <div className="absolute inset-0 border border-black pointer-events-none" />
 
-            {/* Top-Left */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "nw")}
-              className="absolute -top-1 -left-1 w-2 h-2 bg-black border border-white cursor-nwse-resize z-20"
-            />
-            {/* Top-Mid */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "n")}
-              className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black border border-white cursor-ns-resize z-20"
-            />
-            {/* Top-Right */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "ne")}
-              className="absolute -top-1 -right-1 w-2 h-2 bg-black border border-white cursor-nesw-resize z-20"
-            />
-            {/* Mid-Right */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "e")}
-              className="absolute top-1/2 -right-1 -translate-y-1/2 w-2 h-2 bg-black border border-white cursor-ew-resize z-20"
-            />
-            {/* Bottom-Right */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "se")}
-              className="absolute -bottom-1 -right-1 w-2 h-2 bg-black border border-white cursor-nwse-resize z-20"
-            />
-            {/* Bottom-Mid */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "s")}
-              className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black border border-white cursor-ns-resize z-20"
-            />
-            {/* Bottom-Left */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "sw")}
-              className="absolute -bottom-1 -left-1 w-2 h-2 bg-black border border-white cursor-nesw-resize z-20"
-            />
-            {/* Mid-Left */}
-            <div
-              onPointerDown={(e) => handleResizePointerDown(e, ctrl, "w")}
-              className="absolute top-1/2 -left-1 -translate-y-1/2 w-2 h-2 bg-black border border-white cursor-ew-resize z-20"
-            />
+            {[
+              { handle: "nw" as const, pos: "-top-2 -left-2 cursor-nwse-resize" },
+              { handle: "n" as const, pos: "-top-2 left-1/2 -translate-x-1/2 cursor-ns-resize" },
+              { handle: "ne" as const, pos: "-top-2 -right-2 cursor-nesw-resize" },
+              { handle: "e" as const, pos: "top-1/2 -right-2 -translate-y-1/2 cursor-ew-resize" },
+              { handle: "se" as const, pos: "-bottom-2 -right-2 cursor-nwse-resize" },
+              { handle: "s" as const, pos: "-bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize" },
+              { handle: "sw" as const, pos: "-bottom-2 -left-2 cursor-nesw-resize" },
+              { handle: "w" as const, pos: "top-1/2 -left-2 -translate-y-1/2 cursor-ew-resize" },
+            ].map(({ handle, pos }) => (
+              <div
+                key={handle}
+                onPointerDown={(e) => handleResizePointerDown(e, ctrl, handle)}
+                className={`absolute ${pos} w-5 h-5 flex items-center justify-center touch-none z-20`}
+              >
+                <div className="w-2.5 h-2.5 bg-[#7C2D48] border border-white rounded-xs shadow-sm" />
+              </div>
+            ))}
           </>
         )}
       </div>

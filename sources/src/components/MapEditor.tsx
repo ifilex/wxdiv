@@ -20,6 +20,7 @@ import {
   RotateCcw,
   CheckCircle2,
   Grid,
+  Move,
 } from "lucide-react";
 import { DivGraphic } from "../types";
 import { DivRuntime } from "../engine/runtime";
@@ -43,7 +44,9 @@ export const MapEditor: React.FC<MapEditorProps> = ({ runtime, onInsertCode }) =
 
   // Tool state
   const [currentTool, setCurrentTool] = useState<"pencil" | "eraser" | "bucket">("pencil");
-  const [selectedColorIndex, setSelectedColorIndex] = useState<number>(7); // Cyan by default
+  const [touchNavMode, setTouchNavMode] = useState<"draw" | "scroll">("draw");
+  const [mobileTab, setMobileTab] = useState<"canvas" | "inspector">("canvas");
+  const [selectedColorIndex, setSelectedColorIndex] = useState<number>(7);
   const [zoom, setZoom] = useState<number>(4);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
@@ -73,7 +76,7 @@ export const MapEditor: React.FC<MapEditorProps> = ({ runtime, onInsertCode }) =
   const syncToRuntime = (updatedMaps: DivMapFile[]) => {
     setMapFiles(updatedMaps);
     updatedMaps.forEach((m) => {
-      runtime.mapFiles.set(m.id, m);
+      runtime?.mapFiles?.set(m.id, m);
     });
   };
 
@@ -152,7 +155,7 @@ export const MapEditor: React.FC<MapEditorProps> = ({ runtime, onInsertCode }) =
     }
     const updated = mapFiles.filter((m) => m.id !== id);
     syncToRuntime(updated);
-    runtime.unload_map(id);
+    runtime?.unload_map?.(id);
     setSelectedMapId(updated[0].id);
     showToast("Archivo .map eliminado");
   };
@@ -370,14 +373,14 @@ END`
   const palette = activeMap?.graphic?.palette || DEFAULT_PALETTE;
 
   return (
-    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#060913] text-slate-100 font-sans select-none overflow-hidden">
+    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] font-sans select-none overflow-hidden">
       {/* Top Header Bar */}
-      <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-[#090e1a] border-b border-slate-800 gap-3 flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white border-b border-[#E2E8F0] gap-2 flex-shrink-0">
         {/* Left: Map files pill list */}
-        <div className="flex items-center gap-2 overflow-x-auto py-0.5 max-w-2xl scrollbar-thin">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 mr-2 shrink-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full lg:max-w-2xl no-scrollbar">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C2D48] mr-1 shrink-0">
             <FileImage className="w-4 h-4" />
-            <span>ARCHIVOS .MAP:</span>
+            <span className="hidden sm:inline">MAPAS (.MAP):</span>
           </div>
 
           {mapFiles.map((m) => {
@@ -386,15 +389,15 @@ END`
               <button
                 key={m.id}
                 onClick={() => setSelectedMapId(m.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-mono transition-all shrink-0 ${
+                className={`flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-lg text-xs font-mono transition-colors shrink-0 whitespace-nowrap border ${
                   isSelected
-                    ? "bg-emerald-600/30 text-emerald-200 border border-emerald-500/60 shadow-sm shadow-emerald-950"
-                    : "bg-slate-900/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800"
+                    ? "bg-[#7C2D48] text-white border-[#7C2D48] shadow-xs font-bold"
+                    : "bg-[#F8FAFC] text-[#4B5563] hover:text-[#111827] hover:bg-[#F1F5F9] border-[#E2E8F0]"
                 }`}
               >
-                <FileImage className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-400" : "text-slate-500"}`} />
-                <span className="font-semibold">{m.filename}</span>
-                <span className="text-[10px] text-slate-500">
+                <FileImage className={`w-3.5 h-3.5 ${isSelected ? "text-white" : "text-[#6B7280]"}`} />
+                <span>{m.filename}</span>
+                <span className={`text-[10px] ${isSelected ? "text-white/80" : "text-[#6B7280]"}`}>
                   {m.graphic.width}x{m.graphic.height}
                 </span>
               </button>
@@ -403,16 +406,15 @@ END`
 
           <button
             onClick={() => setIsNewMapModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium bg-slate-900 text-slate-300 hover:text-emerald-300 hover:bg-slate-800 border border-dashed border-slate-700 hover:border-emerald-500/50 shrink-0 transition-colors"
+            className="flex items-center gap-1 px-2.5 min-h-[36px] rounded-lg text-xs font-semibold bg-white text-[#7C2D48] hover:bg-[#FDF2F4] border border-dashed border-[#7C2D48]/40 shrink-0 whitespace-nowrap transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-emerald-400" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Nuevo .map</span>
           </button>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Import image to map */}
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <input
             type="file"
             ref={fileInputRef}
@@ -422,14 +424,14 @@ END`
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 text-xs font-medium transition-colors"
+            className="flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-lg bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#2F6F4E] border border-[#A7F3D0] text-xs font-semibold transition-colors whitespace-nowrap"
             title="Convertir imagen externa PNG/JPG a archivo .map"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Importar Imagen</span>
+            <span className="hidden sm:inline">Importar Imagen</span>
+            <span className="sm:hidden">Imagen</span>
           </button>
 
-          {/* Transfer to FPG */}
           <button
             onClick={() => {
               const mainPkg = runtime?.fpgPackages?.get(0);
@@ -437,28 +439,27 @@ END`
               setTargetSpriteId(nextId);
               setIsTransferModalOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 text-xs font-medium transition-colors"
+            className="flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-lg bg-[#FDF2F4] hover:bg-[#FCE7EB] text-[#7C2D48] border border-[#FBCFE8] text-xs font-semibold transition-colors whitespace-nowrap"
             title="Copiar este mapa individual dentro de un paquete .FPG"
           >
             <Package className="w-3.5 h-3.5" />
-            <span>Añadir a FPG...</span>
+            <span className="hidden sm:inline">Añadir a FPG</span>
+            <span className="sm:hidden">A FPG</span>
           </button>
 
-          {/* Export Map */}
           <button
             onClick={handleExportMap}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+            className="flex items-center gap-1 px-2.5 min-h-[36px] rounded-lg bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#374151] border border-[#E2E8F0] text-xs font-medium transition-colors whitespace-nowrap"
             title="Descargar archivo .map"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Exportar .map</span>
+            <span className="hidden sm:inline">Exportar</span>
           </button>
 
-          {/* Delete Map */}
           {activeMap && (
             <button
               onClick={() => handleDeleteMap(activeMap.id)}
-              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-950/40 rounded transition-colors"
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center text-[#6B7280] hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 transition-colors"
               title={`Eliminar ${activeMap.filename}`}
             >
               <Trash2 className="w-4 h-4" />
@@ -467,68 +468,123 @@ END`
         </div>
       </div>
 
+      {/* Mobile Sub-tabs */}
+      <div className="flex md:hidden items-center bg-white border-b border-[#E2E8F0] px-3 py-1.5 gap-2 flex-shrink-0">
+        <button
+          onClick={() => setMobileTab("canvas")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "canvas"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Lienzo .MAP
+        </button>
+        <button
+          onClick={() => setMobileTab("inspector")}
+          className={`flex-1 min-h-[38px] rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+            mobileTab === "inspector"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F8FAFC] text-[#4B5563] border border-[#E2E8F0]"
+          }`}
+        >
+          Inspector y Código
+        </button>
+      </div>
+
       {/* Main Studio Body: Canvas Left & Sidebar Right */}
-      <div className="flex-1 flex-grow min-h-0 w-full h-full flex overflow-hidden">
+      <div className="flex-1 flex-grow min-h-0 w-full h-full flex flex-col md:flex-row overflow-hidden">
         {/* Left: Pixel Drawing Workspace */}
-        <div className="flex-1 flex-grow min-h-0 flex flex-col bg-[#070b16] min-w-0">
-          {/* Canvas Toolbar: Tools, Zoom, Grid, Clear */}
-          <div className="flex items-center justify-between px-4 py-2 bg-[#0a0f1d] border-b border-slate-800 gap-4 flex-shrink-0">
-            {/* Tools (Pencil, Eraser, Bucket) */}
-            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => setCurrentTool("pencil")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  currentTool === "pencil"
-                    ? "bg-emerald-600 text-slate-950 font-bold"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="Lápiz de píxeles"
-              >
-                <Paintbrush className="w-3.5 h-3.5" />
-                <span>Lápiz</span>
-              </button>
+        <div
+          className={`${
+            mobileTab === "canvas" ? "flex" : "hidden md:flex"
+          } flex-1 flex-grow min-h-0 flex-col bg-[#F7F8FA] min-w-0`}
+        >
+          {/* Canvas Toolbar: Tools, Touch Nav, Zoom, Grid, Clear */}
+          <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white border-b border-[#E2E8F0] gap-2 flex-shrink-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Tools */}
+              <div className="flex items-center gap-1 bg-[#F8FAFC] p-1 rounded-lg border border-[#E2E8F0]">
+                <button
+                  onClick={() => {
+                    setCurrentTool("pencil");
+                    setTouchNavMode("draw");
+                  }}
+                  className={`flex items-center gap-1 px-2.5 min-h-[34px] rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                    currentTool === "pencil" && touchNavMode === "draw"
+                      ? "bg-[#7C2D48] text-white"
+                      : "text-[#4B5563] hover:text-[#111827]"
+                  }`}
+                  title="Lápiz de píxeles"
+                >
+                  <Paintbrush className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Lápiz</span>
+                </button>
 
-              <button
-                onClick={() => setCurrentTool("eraser")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  currentTool === "eraser"
-                    ? "bg-emerald-600 text-slate-950 font-bold"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="Borrador transparente"
-              >
-                <Eraser className="w-3.5 h-3.5" />
-                <span>Goma</span>
-              </button>
+                <button
+                  onClick={() => {
+                    setCurrentTool("eraser");
+                    setTouchNavMode("draw");
+                  }}
+                  className={`flex items-center gap-1 px-2.5 min-h-[34px] rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                    currentTool === "eraser" && touchNavMode === "draw"
+                      ? "bg-[#7C2D48] text-white"
+                      : "text-[#4B5563] hover:text-[#111827]"
+                  }`}
+                  title="Borrador transparente"
+                >
+                  <Eraser className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Goma</span>
+                </button>
 
+                <button
+                  onClick={() => {
+                    setCurrentTool("bucket");
+                    setTouchNavMode("draw");
+                  }}
+                  className={`flex items-center gap-1 px-2.5 min-h-[34px] rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                    currentTool === "bucket" && touchNavMode === "draw"
+                      ? "bg-[#7C2D48] text-white"
+                      : "text-[#4B5563] hover:text-[#111827]"
+                  }`}
+                  title="Bote de pintura / Relleno"
+                >
+                  <PaintBucket className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Relleno</span>
+                </button>
+              </div>
+
+              {/* Touch Pan Mode Toggle (helpful on large maps in mobile) */}
               <button
-                onClick={() => setCurrentTool("bucket")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  currentTool === "bucket"
-                    ? "bg-emerald-600 text-slate-950 font-bold"
-                    : "text-slate-400 hover:text-slate-200"
+                onClick={() =>
+                  setTouchNavMode((m) => (m === "draw" ? "scroll" : "draw"))
+                }
+                className={`flex items-center gap-1 px-2.5 min-h-[36px] rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap md:hidden ${
+                  touchNavMode === "scroll"
+                    ? "bg-[#2F6F4E] text-white border-[#2F6F4E]"
+                    : "bg-white text-[#4B5563] border-[#E2E8F0]"
                 }`}
-                title="Bote de pintura / Relleno"
+                title="Cambiar entre pintar con el dedo o desplazar el lienzo"
               >
-                <PaintBucket className="w-3.5 h-3.5" />
-                <span>Relleno</span>
+                <Move className="w-3.5 h-3.5" />
+                <span>{touchNavMode === "scroll" ? "Desplazar" : "Mover mapa"}</span>
               </button>
             </div>
 
             {/* Zoom Controls */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded border border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1 bg-[#F8FAFC] px-1.5 py-0.5 rounded-lg border border-[#E2E8F0] text-xs text-[#374151]">
                 <button
                   onClick={() => setZoom((z) => Math.max(1, z - 1))}
-                  className="hover:text-emerald-400 p-0.5"
+                  className="min-w-[32px] min-h-[32px] flex items-center justify-center hover:text-[#7C2D48]"
                   title="Alejar"
                 >
                   <ZoomOut className="w-3.5 h-3.5" />
                 </button>
-                <span className="font-mono text-[11px] w-8 text-center">{zoom}x</span>
+                <span className="font-mono text-[11px] w-7 text-center font-bold">{zoom}x</span>
                 <button
                   onClick={() => setZoom((z) => Math.min(16, z + 1))}
-                  className="hover:text-emerald-400 p-0.5"
+                  className="min-w-[32px] min-h-[32px] flex items-center justify-center hover:text-[#7C2D48]"
                   title="Acercar"
                 >
                   <ZoomIn className="w-3.5 h-3.5" />
@@ -537,10 +593,10 @@ END`
 
               <button
                 onClick={() => setShowGrid(!showGrid)}
-                className={`p-1.5 rounded border text-xs transition-colors ${
+                className={`min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg border text-xs transition-colors ${
                   showGrid
-                    ? "bg-emerald-950/40 text-emerald-300 border-emerald-500/50"
-                    : "bg-slate-900 text-slate-400 border-slate-800"
+                    ? "bg-[#FDF2F4] text-[#7C2D48] border-[#7C2D48]/40"
+                    : "bg-white text-[#4B5563] border-[#E2E8F0]"
                 }`}
                 title="Alternar cuadrícula de píxeles"
               >
@@ -554,7 +610,7 @@ END`
                   updatePixels(blank);
                   showToast("Lienzo vaciado a transparente");
                 }}
-                className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-red-300 border border-slate-800 text-xs transition-colors"
+                className="px-2.5 min-h-[36px] rounded-lg bg-white hover:bg-rose-50 text-[#4B5563] hover:text-rose-600 border border-[#E2E8F0] text-xs font-medium transition-colors whitespace-nowrap"
                 title="Limpiar todo el mapa"
               >
                 Limpiar
@@ -563,10 +619,12 @@ END`
           </div>
 
           {/* Canvas Viewport */}
-          <div className="flex-1 flex items-center justify-center overflow-auto p-6 bg-[#040711]">
+          <div className="flex-1 flex items-center justify-center overflow-auto p-3 sm:p-6 bg-[#E5E7EB]">
             {activeMap && (
               <div
-                className="relative border-2 border-slate-700 shadow-2xl rounded overflow-hidden select-none"
+                className={`relative border-2 border-[#0F172A] shadow-xl rounded overflow-hidden select-none shrink-0 ${
+                  touchNavMode === "draw" ? "touch-none" : "touch-pan-x touch-pan-y"
+                }`}
                 style={{
                   backgroundImage:
                     "repeating-conic-gradient(#172033 0% 25%, #0f172a 0% 50%)",
@@ -574,29 +632,32 @@ END`
                   width: `${activeMap.graphic.width * zoom}px`,
                   height: `${activeMap.graphic.height * zoom}px`,
                 }}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
+                  if (touchNavMode === "scroll" && e.pointerType !== "mouse") return;
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
                   setIsDrawing(true);
                   handlePixelAction(e.clientX, e.clientY);
                 }}
-                onMouseMove={(e) => {
+                onPointerMove={(e) => {
+                  if (touchNavMode === "scroll" && e.pointerType !== "mouse") return;
                   if (isDrawing) {
                     handlePixelAction(e.clientX, e.clientY);
                   }
                 }}
-                onMouseUp={() => setIsDrawing(false)}
-                onMouseLeave={() => setIsDrawing(false)}
+                onPointerUp={() => setIsDrawing(false)}
+                onPointerCancel={() => setIsDrawing(false)}
               >
                 <canvas
                   ref={canvasRef}
-                  className="w-full h-full image-rendering-pixelated cursor-crosshair"
+                  className="w-full h-full image-rendering-pixelated cursor-crosshair block"
                 />
 
-                {/* Optional Grid Overlay */}
                 {showGrid && zoom >= 4 && (
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)`,
+                      backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)`,
                       backgroundSize: `${zoom}px ${zoom}px`,
                     }}
                   />
@@ -606,9 +667,9 @@ END`
           </div>
 
           {/* Palette Selector Bar */}
-          <div className="flex items-center px-4 py-2.5 bg-[#090e1a] border-t border-slate-800 gap-3">
-            <span className="text-xs font-mono text-slate-400">Paleta 8-Bit:</span>
-            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+          <div className="flex items-center px-3 py-2 bg-white border-t border-[#E2E8F0] gap-2.5 flex-shrink-0">
+            <span className="text-xs font-mono font-bold text-[#4B5563] shrink-0">Paleta:</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1">
               {palette.map((color, idx) => {
                 const isSelected = selectedColorIndex === idx;
                 const isTrans = idx === 0;
@@ -618,18 +679,19 @@ END`
                     onClick={() => {
                       setSelectedColorIndex(idx);
                       if (currentTool === "eraser") setCurrentTool("pencil");
+                      setTouchNavMode("draw");
                     }}
-                    className={`relative w-6 h-6 rounded transition-transform ${
+                    className={`relative w-8 h-8 rounded-md shrink-0 transition-transform ${
                       isSelected
-                        ? "scale-110 ring-2 ring-emerald-400 z-10"
-                        : "hover:scale-105 border border-slate-700"
+                        ? "scale-110 ring-2 ring-[#7C2D48] ring-offset-1 z-10"
+                        : "hover:scale-105 border border-[#CBD5E1]"
                     }`}
                     style={{
                       backgroundColor: isTrans ? "transparent" : color,
                       backgroundImage: isTrans
-                        ? "repeating-conic-gradient(#334155 0% 25%, #0f172a 0% 50%)"
+                        ? "repeating-conic-gradient(#cbd5e1 0% 25%, #f8fafc 0% 50%)"
                         : "none",
-                      backgroundSize: "6px 6px",
+                      backgroundSize: "8px 8px",
                     }}
                     title={`Color #${idx}: ${color}`}
                   />
@@ -639,31 +701,33 @@ END`
           </div>
         </div>
 
-        {/* Right: Map Inspector & DIV Code (350px) */}
-        <div className="w-80 lg:w-96 flex flex-col bg-[#080d1a] border-l border-slate-800 overflow-y-auto p-4 gap-4">
+        {/* Right: Map Inspector & DIV Code */}
+        <div
+          className={`${
+            mobileTab === "inspector" ? "flex" : "hidden md:flex"
+          } w-full md:w-80 lg:w-96 flex-col bg-white md:border-l border-[#E2E8F0] overflow-y-auto p-4 gap-4`}
+        >
           {activeMap ? (
             <>
-              {/* Header Info */}
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                    <FileImage className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-[#111827] flex items-center gap-2">
+                    <FileImage className="w-4 h-4 text-[#7C2D48]" />
                     <span>{activeMap.name}</span>
                   </h3>
-                  <span className="text-xs text-slate-400 font-mono">
-                    Archivo: <span className="text-emerald-400">{activeMap.filename}</span>
+                  <span className="text-xs text-[#6B7280] font-mono">
+                    Archivo: <span className="text-[#2F6F4E] font-semibold">{activeMap.filename}</span>
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40 text-xs font-mono font-bold">
+                <span className="px-2 py-0.5 rounded bg-[#ECFDF5] text-[#2F6F4E] border border-[#A7F3D0] text-xs font-mono font-bold">
                   {activeMap.graphic.width}x{activeMap.graphic.height}
                 </span>
               </div>
 
-              {/* Control Point 0 (Center) */}
-              <div className="p-3 bg-[#0c1222] rounded-lg border border-slate-800 flex flex-col gap-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
+              <div className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs font-bold text-[#111827]">
                   <div className="flex items-center gap-1.5">
-                    <Crosshair className="w-3.5 h-3.5 text-yellow-400" />
+                    <Crosshair className="w-3.5 h-3.5 text-[#7C2D48]" />
                     <span>Punto de Anclaje (CPoint 0)</span>
                   </div>
                   <button
@@ -682,7 +746,7 @@ END`
                       syncToRuntime(updated);
                       showToast("Centro del mapa restablecido");
                     }}
-                    className="text-[10px] text-emerald-400 hover:underline"
+                    className="px-2.5 py-1 rounded bg-white border border-[#E2E8F0] text-xs font-semibold text-[#7C2D48] hover:bg-[#FDF2F4]"
                   >
                     Centrar
                   </button>
@@ -690,32 +754,31 @@ END`
 
                 <div className="flex items-center gap-4 text-xs font-mono mt-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500">X:</span>
-                    <span className="text-slate-200 font-bold">{activeMap.graphic.cx}</span>
+                    <span className="text-[#6B7280]">X:</span>
+                    <span className="text-[#111827] font-bold">{activeMap.graphic.cx}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500">Y:</span>
-                    <span className="text-slate-200 font-bold">{activeMap.graphic.cy}</span>
+                    <span className="text-[#6B7280]">Y:</span>
+                    <span className="text-[#111827] font-bold">{activeMap.graphic.cy}</span>
                   </div>
                 </div>
               </div>
 
-              {/* DIV Code Generator for .MAP */}
-              <div className="p-3 bg-[#0a0e1c] rounded-lg border border-slate-800 flex flex-col gap-2">
+              <div className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C2D48]">
                     <Code className="w-3.5 h-3.5" />
                     <span>Código DIV para este .MAP</span>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={handleCopySnippet}
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+                      className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg bg-white border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#374151] text-xs transition-colors"
                       title="Copiar código DIV"
                     >
                       {copiedCode ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-[#2F6F4E]" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
@@ -723,7 +786,7 @@ END`
                     {onInsertCode && (
                       <button
                         onClick={handleInsertSnippet}
-                        className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px] transition-colors"
+                        className="px-3 min-h-[34px] rounded-lg bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold text-xs transition-colors whitespace-nowrap"
                         title="Insertar en el editor de código"
                       >
                         Insertar
@@ -732,7 +795,7 @@ END`
                   </div>
                 </div>
 
-                <pre className="p-2.5 bg-slate-950 text-slate-300 rounded font-mono text-[11px] overflow-x-auto leading-relaxed border border-slate-800/80">
+                <pre className="p-3 bg-[#0F172A] text-slate-100 rounded-lg font-mono text-[11px] overflow-x-auto leading-relaxed">
                   <code>{divSnippet}</code>
                 </pre>
               </div>
@@ -743,51 +806,51 @@ END`
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-12 right-6 z-50 px-3.5 py-2 bg-slate-900/95 text-emerald-300 border border-emerald-500/40 rounded-lg shadow-xl text-xs font-mono flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className="fixed bottom-16 right-4 left-4 sm:left-auto z-50 px-3.5 py-2.5 bg-[#111827] text-white rounded-xl shadow-xl text-xs font-medium flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Modal: New .MAP File */}
       {isNewMapModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0a0f1d] border border-emerald-500/40 rounded-xl p-5 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-[#7C2D48] font-bold text-sm">
               <FileImage className="w-4 h-4" />
               <span>Crear Nuevo Archivo Gráfico .MAP</span>
             </div>
 
             <div className="flex flex-col gap-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1 font-mono">Nombre de Archivo (.map):</label>
+                <label className="block text-[#4B5563] mb-1 font-mono font-semibold">Nombre de Archivo (.map):</label>
                 <input
                   type="text"
                   placeholder="ej: pantalla_inicio.map"
                   value={newMapFilename}
                   onChange={(e) => setNewMapFilename(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-mono text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Nombre descriptivo:</label>
+                <label className="block text-[#4B5563] mb-1 font-semibold">Nombre descriptivo:</label>
                 <input
                   type="text"
                   placeholder="ej: Pantalla de Inicio y Créditos"
                   value={newMapName}
                   onChange={(e) => setNewMapName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Ancho (px):</label>
+                  <label className="block text-[#4B5563] mb-1 font-semibold">Ancho (px):</label>
                   <select
                     value={newMapW}
                     onChange={(e) => setNewMapW(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-mono text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                   >
                     <option value={64}>64 px (Tile)</option>
                     <option value={128}>128 px</option>
@@ -798,11 +861,11 @@ END`
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1">Alto (px):</label>
+                  <label className="block text-[#4B5563] mb-1 font-semibold">Alto (px):</label>
                   <select
                     value={newMapH}
                     onChange={(e) => setNewMapH(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-mono text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                   >
                     <option value={64}>64 px (Tile)</option>
                     <option value={120}>120 px</option>
@@ -817,13 +880,13 @@ END`
             <div className="flex justify-end gap-2 mt-2">
               <button
                 onClick={() => setIsNewMapModalOpen(false)}
-                className="px-4 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
+                className="px-4 min-h-[40px] rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#374151] text-xs font-semibold"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleCreateMap}
-                className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs"
+                className="px-4 min-h-[40px] rounded-lg bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold text-xs"
               >
                 Crear .MAP
               </button>
@@ -834,20 +897,20 @@ END`
 
       {/* Modal: Transfer to FPG */}
       {isTransferModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0a0f1d] border border-indigo-500/40 rounded-xl p-5 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm">
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-[#7C2D48] font-bold text-sm">
               <Package className="w-4 h-4" />
               <span>Añadir {activeMap?.filename} a un Paquete FPG</span>
             </div>
 
             <div className="flex flex-col gap-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1">Selecciona el paquete FPG destino:</label>
+                <label className="block text-[#4B5563] mb-1 font-semibold">Selecciona el paquete FPG destino:</label>
                 <select
                   value={targetFpgId}
                   onChange={(e) => setTargetFpgId(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-mono text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                 >
                   {(Array.from(runtime?.fpgPackages?.values() || []) as DivFpgPackage[]).map((p) => (
                     <option key={p.id} value={p.id}>
@@ -858,14 +921,14 @@ END`
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-mono">
+                <label className="block text-[#4B5563] mb-1 font-mono font-semibold">
                   ID de Sprite en el FPG (1-999):
                 </label>
                 <input
                   type="number"
                   value={targetSpriteId}
                   onChange={(e) => setTargetSpriteId(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-mono text-[#111827] focus:outline-none focus:border-[#7C2D48]"
                 />
               </div>
             </div>
@@ -873,13 +936,13 @@ END`
             <div className="flex justify-end gap-2 mt-2">
               <button
                 onClick={() => setIsTransferModalOpen(false)}
-                className="px-4 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
+                className="px-4 min-h-[40px] rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#374151] text-xs font-semibold"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleTransferToFpg}
-                className="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+                className="px-4 min-h-[40px] rounded-lg bg-[#7C2D48] hover:bg-[#66233A] text-white font-bold text-xs"
               >
                 Copiar al FPG
               </button>

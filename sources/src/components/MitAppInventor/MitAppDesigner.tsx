@@ -46,6 +46,8 @@ interface MitAppDesignerProps {
   onUpdateScreenProps: (props: ScreenProperties) => void;
   onSwitchToBlocks?: () => void;
   onRunGame?: () => void;
+  headerLeftSlot?: React.ReactNode;
+  headerRightSlot?: React.ReactNode;
 }
 
 export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
@@ -55,6 +57,8 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
   onUpdateScreenProps,
   onSwitchToBlocks,
   onRunGame,
+  headerLeftSlot,
+  headerRightSlot,
 }) => {
   // Selection state
   const [selectedId, setSelectedId] = useState<string>("Screen1");
@@ -199,56 +203,61 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
 
   return (
     <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] font-sans select-none overflow-hidden text-xs">
-      {/* Subheader: Device Switcher, Mobile Tabs & Simulator */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white border-b border-[#E2E8F0] text-[#4B5563] gap-2 flex-shrink-0 z-20">
-        <div className="flex items-center gap-1.5">
-          <div className="inline-flex rounded-lg bg-[#F1F5F9] border border-[#E2E8F0] p-0.5">
+      {/* Unified Single-Row Toolbar: Mode Switcher + Device + Mobile Drawers + Preview */}
+      <div className="flex items-center justify-between gap-2 px-2.5 sm:px-3 py-1.5 bg-white border-b border-[#E2E8F0] text-[#4B5563] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-nowrap flex-shrink-0 z-20 min-h-[48px]">
+        <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+          {headerLeftSlot}
+
+          <div className="inline-flex rounded-lg bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 shrink-0">
             <button
+              type="button"
               onClick={() => setDeviceType("phone")}
-              className={`min-h-[36px] px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 deviceType === "phone"
                   ? "bg-white text-[#7C2D48] shadow-2xs"
                   : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Formato Teléfono Celular"
             >
-              <Smartphone className="w-3.5 h-3.5" />
+              <Smartphone className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Celular</span>
             </button>
             <button
+              type="button"
               onClick={() => setDeviceType("tablet")}
-              className={`min-h-[36px] px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 deviceType === "tablet"
                   ? "bg-white text-[#7C2D48] shadow-2xs"
                   : "text-[#4B5563] hover:text-[#111827]"
               }`}
               title="Formato Tableta"
             >
-              <Tablet className="w-3.5 h-3.5" />
+              <Tablet className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Tablet</span>
             </button>
           </div>
 
           <button
+            type="button"
             onClick={() => setOrientation(orientation === "portrait" ? "landscape" : "portrait")}
-            className="min-h-[36px] px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-[#4B5563] border border-[#E2E8F0] text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+            className="min-h-[36px] px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-[#4B5563] border border-[#E2E8F0] text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
             title="Cambiar orientación"
           >
-            <RotateCw className="w-3.5 h-3.5 text-[#6B7280]" />
-            <span className="hidden md:inline">
+            <RotateCw className="w-3.5 h-3.5 text-[#6B7280] shrink-0" />
+            <span className="hidden lg:inline">
               {orientation === "portrait" ? "Vertical" : "Horizontal"}
             </span>
           </button>
         </div>
 
-        <div className="hidden xl:flex items-center gap-2 px-3 py-1 rounded-lg bg-[#F7F8FA] border border-[#E2E8F0] text-[#4B5563] text-[11px]">
+        <div className="hidden 2xl:flex items-center gap-2 px-3 py-1 rounded-lg bg-[#F7F8FA] border border-[#E2E8F0] text-[#4B5563] text-xs shrink-0 whitespace-nowrap">
           <span>App: <b className="text-[#111827]">{screenProps.appName || "Mi App"}</b></span>
           <span className="text-slate-300">·</span>
           <span>Pantalla: <b className="text-[#7C2D48]">{screenProps.title}</b></span>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex lg:hidden bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg p-0.5">
+        <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+          <div className="flex lg:hidden bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg p-0.5 shrink-0">
             {(
               [
                 { id: "palette", label: "Paleta" },
@@ -259,8 +268,9 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
             ).map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveMobileDrawer(tab.id)}
-                className={`min-h-[36px] px-2.5 py-1 rounded-md text-[11px] font-semibold cursor-pointer ${
+                className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 ${
                   activeMobileDrawer === tab.id ? "bg-white text-[#7C2D48] shadow-2xs" : "text-[#4B5563]"
                 }`}
               >
@@ -270,13 +280,16 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={() => setIsLiveSimulatorOpen(true)}
-            className="min-h-[36px] px-3 py-1 rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[36px] px-2.5 sm:px-3 py-1 rounded-lg bg-[#2F6F4E] hover:bg-[#25593E] text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             title="Probar WebApp interactiva"
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
+            <Play className="w-3.5 h-3.5 fill-current shrink-0" />
             <span className="hidden sm:inline">Vista Previa</span>
           </button>
+
+          {headerRightSlot}
         </div>
       </div>
 
@@ -284,7 +297,7 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
       <div className="flex flex-1 flex-grow min-h-0 w-full overflow-hidden relative">
         {/* PANEL 1: PALETTE */}
         <div
-          className={`w-60 bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 ${
+          className={`w-60 lg:w-52 xl:w-60 bg-white border-r border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 ${
             activeMobileDrawer === "palette" ? "flex absolute inset-0 w-full sm:w-80 z-30 shadow-xl" : "hidden lg:flex"
           }`}
         >
@@ -314,14 +327,14 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
                         handleAddComponent(item.type, item.name);
                         if (activeMobileDrawer === "palette") setActiveMobileDrawer("canvas");
                       }}
-                      className="w-full px-2 py-1.5 rounded hover:bg-[#e9eedb] active:bg-[#d7e3bd] text-left flex items-center justify-between group transition-colors cursor-pointer"
+                      className="w-full min-h-[40px] px-2 py-1.5 rounded hover:bg-[#e9eedb] active:bg-[#d7e3bd] text-left flex items-center justify-between group transition-colors cursor-pointer"
                       title={item.desc}
                     >
                       <div className="flex items-center gap-2 truncate">
                         <span className="text-base">{item.icon}</span>
                         <span className="font-semibold text-slate-800 truncate">{item.name}</span>
                       </div>
-                      <Plus className="w-3.5 h-3.5 text-[#5b871c] opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Plus className="w-3.5 h-3.5 text-[#5b871c] lg:opacity-0 lg:group-hover:opacity-100 transition-opacity flex-shrink-0" />
                     </button>
                   ))}
                 </div>
@@ -403,17 +416,16 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
             )}
           </div>
 
-          {/* Realistic Phone / Tablet Frame */}
-          <div
-            className="bg-[#18181b] rounded-[38px] p-3 shadow-2xl border-4 border-[#27272a] relative flex flex-col transition-all duration-200 select-none flex-shrink-0"
-            style={{
-              width: dims.width,
-              height: dims.height,
-              maxHeight: "calc(100% - 40px)",
-              maxWidth: "96%",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          {/* Realistic Phone / Tablet Frame (proportionally scaled via @container so aspect ratio never squishes on tablets) */}
+          <div className="@container flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden">
+            <div
+              className="bg-[#18181b] rounded-[38px] p-3 shadow-2xl border-4 border-[#27272a] relative flex flex-col transition-all duration-200 select-none flex-shrink-0"
+              style={{
+                width: `min(${dims.width}px, 96cqw, calc(96cqh * ${dims.width} / ${dims.height}))`,
+                aspectRatio: `${dims.width} / ${dims.height}`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Speaker bar & Front Camera notch */}
             <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">
               <div className="w-12 h-1 bg-[#2e2e33] rounded-full" />
@@ -679,6 +691,7 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
 
             {/* Bottom Home indicator */}
             <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-28 h-1 bg-[#3f3f46] rounded-full" />
+            </div>
           </div>
         </div>
 
@@ -763,7 +776,7 @@ export const MitAppDesigner: React.FC<MitAppDesignerProps> = ({
 
         {/* PANEL 4: PROPERTIES */}
         <div
-          className={`w-72 bg-white border-l border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 ${
+          className={`w-72 lg:w-64 xl:w-72 bg-white border-l border-[#E2E8F0] flex flex-col flex-shrink-0 z-10 ${
             activeMobileDrawer === "properties" ? "flex absolute inset-0 w-full sm:w-80 sm:left-auto z-30 shadow-xl" : "hidden lg:flex"
           }`}
         >

@@ -374,7 +374,7 @@ export const IDEHeader: React.FC<IDEHeaderProps> = ({
           <button
             onClick={onOpenAiSettings}
             className="px-2.5 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 transition-colors border border-slate-700/80 hover:border-cyan-500/50"
-            title="Configuración de API de IA (Gemini para desarrollo interactivo sin .env)"
+            title="Configuración de IA Local (CPU instantáneo / WebLLM)"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span className="hidden lg:inline">Ajustes IA</span>

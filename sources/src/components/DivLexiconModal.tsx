@@ -3,19 +3,13 @@ import {
   X,
   Search,
   BookOpen,
-  Code2,
   Copy,
   Check,
   PlusCircle,
-  Sparkles,
-  Layers,
-  Terminal,
-  Cpu,
-  Monitor,
-  Flame,
-  Volume2,
-  Gamepad2,
-  FileCode,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Lightbulb,
 } from "lucide-react";
 import { DivSuggestion } from "../engine/divKeywords";
 
@@ -23,6 +17,8 @@ interface DivLexiconModalProps {
   isOpen: boolean;
   onClose: () => void;
   onInsertCode?: (snippet: string) => void;
+  onInsertSnippet?: (snippet: string) => void;
+  onOpenGuide?: () => void;
 }
 
 export type LexiconCategory =
@@ -808,26 +804,40 @@ export const COMPLETE_DIV_LEXICON: LexiconItem[] = [
   },
 ];
 
+const LEXICON_CATEGORIES: { id: LexiconCategory; label: string }[] = [
+  { id: "all", label: "Todo" },
+  { id: "control", label: "Estructuras" },
+  { id: "graphics", label: "Gráficos 2D" },
+  { id: "3d", label: "Modo 8 (3D)" },
+  { id: "audio", label: "Sonido" },
+  { id: "input", label: "Entrada / Touch" },
+  { id: "collision", label: "Física" },
+  { id: "text", label: "Texto" },
+  { id: "variables", label: "Variables" },
+  { id: "visual_mdi", label: "Apps Visuales" },
+];
+
 export const DivLexiconModal: React.FC<DivLexiconModalProps> = ({
   isOpen,
   onClose,
   onInsertCode,
+  onInsertSnippet,
+  onOpenGuide,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<LexiconCategory>("all");
   const [selectedItem, setSelectedItem] = useState<LexiconItem | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Filtered list
+  const insertHandler = onInsertCode || onInsertSnippet;
+
   const filteredList = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return COMPLETE_DIV_LEXICON.filter((item) => {
-      // Category match
       if (activeCategory !== "all" && item.category !== activeCategory) {
         return false;
       }
-
-      // Query match
       if (!q) return true;
       return (
         item.name.toLowerCase().includes(q) ||
@@ -839,9 +849,26 @@ export const DivLexiconModal: React.FC<DivLexiconModalProps> = ({
   }, [searchQuery, activeCategory]);
 
   const activeDoc = selectedItem || filteredList[0] || null;
+  const activeIndex = activeDoc
+    ? filteredList.findIndex((i) => i.name === activeDoc.name)
+    : -1;
+
+  const handleSelectItem = (item: LexiconItem) => {
+    setSelectedItem(item);
+    setMobileView("detail");
+  };
+
+  const handleStepItem = (delta: number) => {
+    if (filteredList.length === 0) return;
+    const nextIdx =
+      activeIndex === -1
+        ? 0
+        : (activeIndex + delta + filteredList.length) % filteredList.length;
+    setSelectedItem(filteredList[nextIdx]);
+  };
 
   const handleCopyCode = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard?.writeText(text).catch(() => {});
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -849,231 +876,381 @@ export const DivLexiconModal: React.FC<DivLexiconModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[20000] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in select-none font-sans">
-      <div className="w-full max-w-5xl h-[88vh] bg-[#0c1222] border border-cyan-500/50 rounded-xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
+    <div
+      className="fixed inset-0 z-[20000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/45 backdrop-blur-[2px] select-none font-sans"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="div-lexicon-title"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-5xl h-[94dvh] sm:h-[88vh] bg-white border border-[#E2E8F0] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden text-[#111827]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Mobile Sheet Handle */}
+        <div className="sm:hidden flex justify-center pt-2 pb-0.5 bg-white flex-shrink-0">
+          <span className="w-10 h-1 rounded-full bg-slate-300" />
+        </div>
+
         {/* Header */}
-        <div className="h-12 bg-gradient-to-r from-slate-900 via-[#101b38] to-slate-900 border-b border-cyan-500/40 px-4 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="w-5 h-5 text-cyan-400" />
-            <h2 className="font-bold text-sm tracking-wide text-cyan-200">
-              Manual Oficial de Léxico DIV Games Studio & Visual MDI Engine
-            </h2>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/60 font-mono">
-              v3.0 PRO
-            </span>
+        <div className="px-4 sm:px-6 py-3 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#7C2D48] text-white flex items-center justify-center flex-shrink-0">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h2
+                id="div-lexicon-title"
+                className="font-bold text-sm sm:text-base text-[#111827] truncate"
+              >
+                Manual DIV Games Studio
+              </h2>
+              <p className="text-[11px] sm:text-xs text-[#6B7280] truncate">
+                {filteredList.length} comandos disponibles · Toca cualquiera para ver su ejemplo
+              </p>
+            </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Search & Categories Bar */}
-        <div className="bg-[#0f172a] border-b border-slate-800 px-4 py-2.5 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between flex-shrink-0">
-          {/* Search box */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar comando, función, proceso o variable..."
-              className="w-full pl-9 pr-3 py-1.5 rounded bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:outline-none text-xs text-slate-200 placeholder-slate-500 font-mono"
-            />
-          </div>
-
-          {/* Quick Stats */}
-          <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2">
-            <span>Resultados: <strong className="text-cyan-300">{filteredList.length}</strong></span>
-            <span>•</span>
-            <span>Léxico DIV verificado</span>
-          </div>
-        </div>
-
-        {/* Category Pills */}
-        <div className="bg-[#090d1a] border-b border-slate-800 px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto flex-shrink-0 text-xs">
-          {[
-            { id: "all", label: "Todo el Léxico" },
-            { id: "control", label: "Estructuras & Control" },
-            { id: "graphics", label: "Gráficos & 2D" },
-            { id: "3d", label: "Modo 8 (3D Raycaster)" },
-            { id: "audio", label: "Sonido & Música" },
-            { id: "input", label: "Entrada & Teclado" },
-            { id: "collision", label: "Física & Colisiones" },
-            { id: "text", label: "Texto & Fuentes FNT" },
-            { id: "variables", label: "Variables Locales" },
-            { id: "visual_mdi", label: "Visual MDI Engine" },
-          ].map((cat) => (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {onOpenGuide && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenGuide();
+                }}
+                className="min-h-[40px] px-2.5 sm:px-3 rounded-xl border border-[#F3D0DC] bg-[#FDF2F5] hover:bg-[#FCE7EE] text-[#7C2D48] text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                title="Abrir Guía Paso a Paso"
+              >
+                <Compass className="w-4 h-4" />
+                <span className="hidden sm:inline">Guía Paso a Paso</span>
+              </button>
+            )}
             <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id as LexiconCategory)}
-              className={`px-2.5 py-1 rounded text-[11px] whitespace-nowrap transition-colors font-medium ${
-                activeCategory === cat.id
-                  ? "bg-cyan-600 text-white shadow-sm"
-                  : "bg-slate-800/80 hover:bg-slate-700 text-slate-300"
-              }`}
+              type="button"
+              onClick={onClose}
+              className="w-11 h-11 rounded-xl hover:bg-slate-100 flex items-center justify-center text-[#4B5563] hover:text-[#111827] transition-colors cursor-pointer"
+              aria-label="Cerrar manual"
             >
-              {cat.label}
+              <X className="w-5 h-5" />
             </button>
-          ))}
+          </div>
         </div>
 
-        {/* Main 2-Column Split: List vs Documentation Detail */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Column: Command List */}
-          <div className="w-72 sm:w-80 border-r border-slate-800 bg-[#090f1e] overflow-y-auto flex-shrink-0 divide-y divide-slate-800/60">
+        {/* Search & Categories (Hidden on Mobile while viewing Detail for maximum reading space) */}
+        <div
+          className={`${
+            mobileView === "detail" ? "hidden md:block" : "block"
+          } bg-[#F7F8FA] border-b border-[#E2E8F0] flex-shrink-0`}
+        >
+          <div className="px-4 sm:px-6 pt-3 pb-2 flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-[#7C2D48] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setMobileView("list");
+                }}
+                placeholder="Buscar comando, función o variable..."
+                className="w-full min-h-[42px] pl-9 pr-8 py-2 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C2D48] focus:outline-none text-xs sm:text-sm text-[#111827] placeholder-[#6B7280]"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg text-[#6B7280] hover:text-[#111827] flex items-center justify-center cursor-pointer"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 text-xs text-[#6B7280]">
+              <span>
+                Mostrando <strong className="text-[#111827] tabular-nums">{filteredList.length}</strong> de {COMPLETE_DIV_LEXICON.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="px-4 sm:px-6 pb-2.5 flex items-center gap-1.5 overflow-x-auto">
+            {LEXICON_CATEGORIES.map((cat) => {
+              const active = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory(cat.id);
+                    setMobileView("list");
+                  }}
+                  className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                    active
+                      ? "bg-[#7C2D48] text-white shadow-2xs"
+                      : "bg-white text-[#4B5563] border border-[#E2E8F0] hover:text-[#111827]"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Main Master-Detail Workspace */}
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {/* Left Column (Mobile List / Desktop Master Sidebar) */}
+          <div
+            className={`${
+              mobileView === "list" ? "flex" : "hidden md:flex"
+            } flex-col w-full md:w-72 lg:w-80 border-r border-[#E2E8F0] bg-[#F7F8FA] overflow-y-auto flex-shrink-0 divide-y divide-[#E2E8F0]`}
+          >
             {filteredList.map((item) => {
               const isSelected = activeDoc?.name === item.name;
               return (
-                <div
+                <button
                   key={item.name}
-                  onClick={() => setSelectedItem(item)}
-                  className={`p-2.5 cursor-pointer transition-colors ${
+                  type="button"
+                  onClick={() => handleSelectItem(item)}
+                  className={`w-full min-h-[60px] px-4 py-3 text-left transition-colors flex items-center justify-between gap-3 cursor-pointer ${
                     isSelected
-                      ? "bg-cyan-950/70 border-l-4 border-cyan-400 text-white"
-                      : "hover:bg-slate-800/50 text-slate-300"
+                      ? "bg-[#FDF2F5] text-[#111827]"
+                      : "bg-white/60 hover:bg-white text-[#374151]"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-1 mb-0.5">
-                    <span className="font-mono font-bold text-xs text-cyan-300">
-                      {item.name}
-                    </span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
-                        item.type === "keyword"
-                          ? "bg-purple-950 text-purple-300 border border-purple-800/60"
-                          : item.type === "function"
-                          ? "bg-sky-950 text-sky-300 border border-sky-800/60"
-                          : "bg-emerald-950 text-emerald-300 border border-emerald-800/60"
-                      }`}
-                    >
-                      {item.type}
-                    </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-mono font-bold text-xs sm:text-sm truncate ${
+                          isSelected ? "text-[#7C2D48]" : "text-[#111827]"
+                        }`}
+                      >
+                        {item.name}
+                      </span>
+                      <span className="text-[11px] text-[#6B7280] flex-shrink-0">
+                        · {item.type === "keyword" ? "Estructura" : item.type === "function" ? "Función" : item.type === "constant" ? "Tecla" : "Variable"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#4B5563] line-clamp-2 leading-relaxed mt-0.5">
+                      {item.description}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
+                  <ChevronRight
+                    className={`w-4 h-4 flex-shrink-0 ${
+                      isSelected ? "text-[#7C2D48]" : "text-[#9CA3AF]"
+                    }`}
+                  />
+                </button>
               );
             })}
 
             {filteredList.length === 0 && (
-              <div className="p-8 text-center text-slate-500 text-xs">
-                No se encontraron comandos con "{searchQuery}".
+              <div className="p-8 text-center text-[#6B7280] text-xs space-y-2">
+                <p>No se encontraron comandos con &ldquo;{searchQuery}&rdquo;.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setActiveCategory("all");
+                  }}
+                  className="min-h-[40px] px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-[#7C2D48] font-semibold cursor-pointer"
+                >
+                  Ver todo el manual
+                </button>
               </div>
             )}
           </div>
 
-          {/* Right Column: Detailed Documentation Card */}
-          <div className="flex-1 bg-[#0b1020] p-4 sm:p-6 overflow-y-auto flex flex-col justify-between">
+          {/* Right Column: Detailed Documentation */}
+          <div
+            className={`${
+              mobileView === "detail" ? "flex" : "hidden md:flex"
+            } flex-1 min-w-0 bg-white flex-col overflow-hidden`}
+          >
+            {/* Mobile Back & Step Header */}
+            <div className="md:hidden px-3 py-2 bg-[#F7F8FA] border-b border-[#E2E8F0] flex items-center justify-between gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setMobileView("list")}
+                className="min-h-[40px] px-2.5 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-xs font-semibold text-[#111827] flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4 text-[#7C2D48]" />
+                <span>Lista ({filteredList.length})</span>
+              </button>
+
+              {filteredList.length > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleStepItem(-1)}
+                    className="w-10 h-10 rounded-lg bg-white border border-[#E2E8F0] text-[#374151] flex items-center justify-center cursor-pointer"
+                    aria-label="Comando anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-[11px] font-medium text-[#6B7280] px-1.5 tabular-nums">
+                    {activeIndex + 1}/{filteredList.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleStepItem(1)}
+                    className="w-10 h-10 rounded-lg bg-white border border-[#E2E8F0] text-[#374151] flex items-center justify-center cursor-pointer"
+                    aria-label="Siguiente comando"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
             {activeDoc ? (
-              <div className="space-y-4">
-                {/* Title & Category Badge */}
-                <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h1 className="font-mono font-black text-xl text-cyan-300">
+              <>
+                <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-5">
+                  {/* Title & Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-[#7C2D48]">
+                        {activeDoc.categoryLabel || activeDoc.type} ·{" "}
+                        {activeDoc.type === "keyword"
+                          ? "Palabra clave"
+                          : activeDoc.type === "function"
+                            ? "Función"
+                            : activeDoc.type === "constant"
+                              ? "Constante"
+                              : "Variable"}
+                      </div>
+                      <h3 className="font-mono font-extrabold text-xl sm:text-2xl text-[#111827] mt-0.5 break-all">
                         {activeDoc.name}
-                      </h1>
-                      <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-700/60">
-                        {activeDoc.categoryLabel || activeDoc.type}
-                      </span>
+                      </h3>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Instrucción nativa del compilador DIV Games Studio y motor Visual MDI Engine
+
+                    {insertHandler && activeDoc.syntax && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          insertHandler(activeDoc.syntax || activeDoc.name);
+                          onClose();
+                        }}
+                        className="hidden sm:inline-flex min-h-[42px] px-4 py-2 rounded-xl bg-[#7C2D48] hover:bg-[#642239] text-white font-semibold text-xs items-center gap-1.5 shadow-xs transition-colors flex-shrink-0 cursor-pointer"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        <span>Insertar en Editor</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">
+                      ¿Para qué sirve?
+                    </h4>
+                    <div className="p-3.5 rounded-xl bg-[#F7F8FA] border border-[#E2E8F0] text-xs sm:text-sm leading-relaxed text-[#374151]">
+                      {activeDoc.description}
+                    </div>
+                  </div>
+
+                  {/* Syntax & Code Snippet */}
+                  {activeDoc.syntax && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">
+                          Ejemplo listo para usar
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCode(activeDoc.syntax!, activeDoc.name)}
+                          className="min-h-[36px] px-3 py-1 rounded-lg bg-[#F7F8FA] hover:bg-slate-100 border border-[#E2E8F0] text-[#374151] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          {copiedId === activeDoc.name ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-[#2F6F4E]" />
+                              <span className="text-[#2F6F4E]">Copiado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copiar</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <pre className="p-3.5 sm:p-4 rounded-xl bg-[#0F172A] text-slate-100 font-mono text-xs overflow-x-auto whitespace-pre leading-relaxed">
+                        {activeDoc.syntax}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Beginner Friendly Note */}
+                  <div className="p-3.5 rounded-xl bg-[#FDF2F5] border border-[#F3D0DC] text-xs text-[#374151] space-y-1">
+                    <div className="font-bold text-[#7C2D48] flex items-center gap-1.5">
+                      <Lightbulb className="w-4 h-4 flex-shrink-0" />
+                      <span>Consejo rápido de sintaxis DIV</span>
+                    </div>
+                    <p className="leading-relaxed">
+                      En DIV Games Studio, el bloque <code className="font-mono font-semibold text-[#111827]">GLOBAL</code> nunca lleva <code className="font-mono font-semibold text-[#111827]">END</code>. Cada <code className="font-mono font-semibold text-[#111827]">PROCESS</code> funciona en paralelo a 60 FPS llamando a <code className="font-mono font-semibold text-[#111827]">FRAME;</code> dentro de su bucle <code className="font-mono font-semibold text-[#111827]">LOOP</code>.
                     </p>
                   </div>
-
-                  {onInsertCode && activeDoc.syntax && (
-                    <button
-                      onClick={() => {
-                        onInsertCode(activeDoc.syntax || activeDoc.name);
-                        onClose();
-                      }}
-                      className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition-all"
-                      title="Insertar este código en el editor"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      <span>Insertar en Editor</span>
-                    </button>
-                  )}
                 </div>
 
-                {/* Description */}
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Descripción & Funcionamiento:
-                  </h3>
-                  <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs leading-relaxed text-slate-200">
-                    {activeDoc.description}
+                {/* Sticky Mobile Thumb Action Bar / Desktop Shortcut Footer */}
+                <div className="px-4 sm:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#F7F8FA] border-t border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 flex-shrink-0">
+                  <div className="hidden md:flex items-center gap-3 text-[11px] font-mono text-[#6B7280]">
+                    <span><kbd className="px-1.5 py-0.5 bg-white rounded border border-[#E2E8F0] text-[#111827]">F5</kbd> Probar</span>
+                    <span><kbd className="px-1.5 py-0.5 bg-white rounded border border-[#E2E8F0] text-[#111827]">F7</kbd> Código</span>
+                    <span><kbd className="px-1.5 py-0.5 bg-white rounded border border-[#E2E8F0] text-[#111827]">Ctrl+N</kbd> Nuevo</span>
                   </div>
-                </div>
 
-                {/* Syntax & Code Snippet */}
-                {activeDoc.syntax && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Sintaxis & Ejemplo de Código DIV:
-                      </h3>
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    {activeDoc.syntax && (
                       <button
+                        type="button"
                         onClick={() => handleCopyCode(activeDoc.syntax!, activeDoc.name)}
-                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 font-mono transition-colors"
+                        className="sm:hidden min-h-[44px] flex-1 px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-semibold text-[#111827] flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         {copiedId === activeDoc.name ? (
                           <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span className="text-emerald-400">Copiado</span>
+                            <Check className="w-4 h-4 text-[#2F6F4E]" />
+                            <span className="text-[#2F6F4E]">Copiado</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-4 h-4" />
                             <span>Copiar</span>
                           </>
                         )}
                       </button>
-                    </div>
-
-                    <pre className="p-3.5 rounded-lg bg-[#070b14] border border-cyan-900/40 text-cyan-200 font-mono text-xs overflow-x-auto whitespace-pre leading-relaxed shadow-inner">
-                      {activeDoc.syntax}
-                    </pre>
+                    )}
+                    {insertHandler && activeDoc.syntax && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          insertHandler(activeDoc.syntax || activeDoc.name);
+                          onClose();
+                        }}
+                        className="sm:hidden min-h-[44px] flex-1 px-3 py-2 rounded-xl bg-[#7C2D48] hover:bg-[#642239] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        <span>Insertar en Editor</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="hidden sm:inline-flex min-h-[40px] px-4 py-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-xl text-xs font-semibold text-[#111827] cursor-pointer"
+                    >
+                      Cerrar Manual
+                    </button>
                   </div>
-                )}
-
-                {/* Quick Reference Notes */}
-                <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-700/30 text-amber-200/90 text-xs">
-                  <div className="font-bold flex items-center gap-1 mb-1">
-                    <span>💡 Nota Técnica DIV Games Studio:</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-amber-300/80">
-                    En DIV Games Studio, los bloques <code className="font-mono bg-black/40 px-1 py-0.5 rounded">GLOBAL</code> no llevan <code className="font-mono bg-black/40 px-1 py-0.5 rounded">END</code>. Cada <code className="font-mono bg-black/40 px-1 py-0.5 rounded">PROCESS</code> se ejecuta de forma pseudo-multitarea a 60 FPS llamando a <code className="font-mono bg-black/40 px-1 py-0.5 rounded">FRAME;</code> en su bucle <code className="font-mono bg-black/40 px-1 py-0.5 rounded">LOOP</code>.
-                  </p>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs">
-                Selecciona un elemento de la lista para ver su documentación completa.
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#6B7280] text-xs">
+                Selecciona un comando de la lista para ver su explicación y ejemplo.
               </div>
             )}
-
-            {/* Footer with Shortcut Cheat Sheet */}
-            <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 gap-2">
-              <div className="flex items-center gap-3">
-                <span><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">F5</kbd> Iniciar</span>
-                <span><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">F7</kbd> Código</span>
-                <span><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">Shift+F7</kbd> Diseñador Visual</span>
-                <span><kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-200">Ctrl+N</kbd> Nuevo</span>
-              </div>
-              <button
-                onClick={onClose}
-                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 font-sans"
-              >
-                Cerrar Manual
-              </button>
-            </div>
           </div>
         </div>
       </div>

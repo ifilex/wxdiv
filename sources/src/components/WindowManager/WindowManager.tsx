@@ -2475,7 +2475,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
                   onClick={() => { onOpenAiSettings(); setActiveMenu(null); }}
                   className="w-full text-left px-3 py-1.5 hover:bg-purple-600 hover:text-white flex items-center gap-2 text-purple-300"
                 >
-                  <Sliders className="w-3.5 h-3.5 text-purple-400" /> Configuración de IA (WebLLM / Llama 3 / Gemini)...
+                  <Sliders className="w-3.5 h-3.5 text-purple-400" /> Configuración de IA Local (CPU / WebLLM)...
                 </button>
               </div>
 
@@ -2894,7 +2894,7 @@ export const WindowManager: React.FC<WindowManagerProps> = ({
           <button
             onClick={onOpenAiSettings}
             className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition-colors cursor-pointer"
-            title="Ajustes de IA (WebLLM Local / Llama 3 / Gemini)"
+            title="Ajustes de IA Local (CPU instantáneo / WebLLM)"
           >
             <Sliders className="w-3.5 h-3.5" />
           </button>

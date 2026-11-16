@@ -30,6 +30,218 @@ var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_dotenv = __toESM(require("dotenv"), 1);
 
+// src/engine/ai/mode8WorkBlocks.ts
+function normalizePrompt(text) {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function extractCount(p, fallback = 1, max = 12) {
+  const m = p.match(/\b(\d{1,2})\b/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= max) return n;
+  }
+  return fallback;
+}
+function inferMode8ActionsFromPrompt(rawPrompt, sceneCtx) {
+  const p = normalizePrompt(rawPrompt);
+  const actions = [];
+  const notes = [];
+  if (sceneCtx?.customModels?.length) {
+    for (const cm of sceneCtx.customModels) {
+      const cname = normalizePrompt(cm.name);
+      if (cname.length >= 2 && p.includes(cname)) {
+        const count = extractCount(p, 1, 8);
+        const role = p.includes("enemigo") || p.includes("jefe") || p.includes("malo") ? "enemy" : p.includes("meta") ? "goal" : p.includes("aliado") ? "ally" : "prop";
+        actions.push({ type: "add_model", modelId: cm.id, role, count });
+        notes.push(`${count}\xD7 modelo importado "${cm.name}"`);
+      }
+    }
+  }
+  if (sceneCtx?.customTextures?.length) {
+    for (const ct of sceneCtx.customTextures) {
+      const tname = normalizePrompt(ct.displayName || ct.name);
+      if (tname.length >= 2 && p.includes(tname)) {
+        actions.push({
+          type: "paint_material",
+          flatTex: ct.name,
+          wallTex: ct.name,
+          scope: p.includes("todo") ? "all" : "selected"
+        });
+        notes.push(`material personalizado "${ct.displayName || ct.name}"`);
+      }
+    }
+  }
+  if (p.includes("circuito") || p.includes("obby") || p.includes("parkour") || p.includes("obstaculo")) {
+    actions.push({ type: "build_template", template: "circuito_obstaculos" });
+    notes.push("circuito 3D con plataformas, escalera y monedas");
+  } else if (p.includes("arena") || p.includes("pelea") || p.includes("combate")) {
+    actions.push({ type: "build_template", template: "arena_pelea" });
+    notes.push("arena de combate 3D");
+  } else if (p.includes("laberinto")) {
+    actions.push({ type: "build_template", template: "laberinto" });
+    notes.push("laberinto 3D");
+  }
+  if (p.includes("escalera") || p.includes("pelda") || p.includes("rampa") || p.includes("subir")) {
+    const steps = extractCount(p, 6, 12);
+    actions.push({
+      type: "add_stairs",
+      steps,
+      startHeight: 0,
+      endHeight: Number((steps * 0.25).toFixed(2)),
+      direction: p.includes("este") || p.includes("derecha") ? "east" : "north"
+    });
+    notes.push(`escalera de ${steps} pelda\xF1os`);
+  }
+  if (p.includes("plataforma") || p.includes("bloque") || p.includes("habitacion") || p.includes("sala") || p.includes("cuarto") || p.includes("torre")) {
+    let flatTex = "STUD_FLOOR_BLUE";
+    let wallTex = "STUD_WALL_BLUE";
+    if (p.includes("rojo") || p.includes("roja")) {
+      flatTex = "ROOF1";
+      wallTex = "REDWALL";
+    } else if (p.includes("verde") || p.includes("cesped") || p.includes("pasto")) {
+      flatTex = "GRASS1";
+      wallTex = "STUD_WALL_GREEN";
+    } else if (p.includes("oro") || p.includes("dorad")) {
+      flatTex = "MARBLE_GOLD";
+      wallTex = "STUD_GOLD";
+    } else if (p.includes("neon") || p.includes("cyber")) {
+      flatTex = "NEON_FLOOR";
+      wallTex = "NEON_GRID";
+    } else if (p.includes("madera") || p.includes("dojo")) {
+      flatTex = "DOJO_TATAMI";
+      wallTex = "DOJO_WALL";
+    } else if (p.includes("lava") || p.includes("fuego")) {
+      flatTex = "LAVA1";
+      wallTex = "FIREWALL1";
+    }
+    const isTower = p.includes("torre");
+    actions.push({
+      type: "add_platform",
+      width: p.includes("grande") ? 3 : 2,
+      depth: p.includes("grande") ? 3 : 2,
+      floorHeight: isTower ? 1.5 : p.includes("baj") ? 0.35 : 0.75,
+      ceilHeight: 4,
+      flatTex,
+      wallTex,
+      label: isTower ? "Torre 3D" : "Plataforma 3D"
+    });
+    notes.push(isTower ? "torre 3D elevada" : "plataforma 3D");
+  }
+  if (p.includes("moneda") || p.includes("coin") || p.includes("oro")) {
+    const count = extractCount(p, 5, 10);
+    actions.push({ type: "add_voxel", voxelId: "voxel_coin", count, spacing: 1.1 });
+    notes.push(`${count} moneda(s)`);
+  }
+  if (p.includes("vida") || p.includes("botiquin") || p.includes("curar") || p.includes("salud")) {
+    const count = extractCount(p, 2, 6);
+    actions.push({ type: "add_voxel", voxelId: "voxel_medikit", count, spacing: 1.4 });
+    notes.push(`${count} botiqu\xEDn(es)`);
+  }
+  if (p.includes("bandera") || p.includes("checkpoint") || p.includes("punto de control")) {
+    actions.push({ type: "add_voxel", voxelId: "voxel_checkpoint", count: 1 });
+    notes.push("bandera checkpoint");
+  }
+  if (p.includes("barril") || p.includes("caja")) {
+    const count = extractCount(p, 2, 6);
+    actions.push({
+      type: "add_voxel",
+      voxelId: p.includes("caja") ? "voxel_crate" : "voxel_barrel",
+      count,
+      spacing: 1.3
+    });
+    notes.push(`${count} objeto(s)`);
+  }
+  if (p.includes("samurai") || p.includes("ninja")) {
+    const count = extractCount(p, 1, 6);
+    actions.push({ type: "add_model", modelId: "samurai_fighter", role: "enemy", count });
+    notes.push(`${count} samur\xE1i 3D`);
+  } else if (p.includes("robot") || p.includes("mech")) {
+    const count = extractCount(p, 1, 6);
+    actions.push({ type: "add_model", modelId: "cyber_mech", role: "enemy", count });
+    notes.push(`${count} robot 3D`);
+  } else if (p.includes("caballero") || p.includes("enemigo") || p.includes("monstruo") || p.includes("guardian")) {
+    const count = extractCount(p, 1, 6);
+    actions.push({ type: "add_model", modelId: "blox_knight", role: "enemy", count });
+    notes.push(`${count} enemigo 3D`);
+  }
+  if (p.includes("estrella") || p.includes("meta") || p.includes("trofeo")) {
+    actions.push({ type: "add_model", modelId: "trophy_star", role: "goal", count: 1 });
+    notes.push("estrella meta");
+  }
+  if (p.includes("cristal") || p.includes("portal")) {
+    actions.push({ type: "add_model", modelId: "portal_crystal", role: "prop", count: 1 });
+    notes.push("cristal portal");
+  }
+  if (p.includes("pinta") || p.includes("color") || p.includes("textura") || p.includes("material")) {
+    let flatTex = "";
+    let wallTex = "";
+    if (p.includes("neon") || p.includes("cyber")) {
+      flatTex = "NEON_FLOOR";
+      wallTex = "NEON_GRID";
+    } else if (p.includes("lava") || p.includes("fuego")) {
+      flatTex = "LAVA1";
+      wallTex = "FIREWALL1";
+    } else if (p.includes("agua") || p.includes("mar")) {
+      flatTex = "WATER1";
+      wallTex = "SHAWN2";
+    } else if (p.includes("cesped") || p.includes("verde") || p.includes("pasto")) {
+      flatTex = "GRASS1";
+      wallTex = "STUD_WALL_GREEN";
+    } else if (p.includes("oro") || p.includes("dorad")) {
+      flatTex = "MARBLE_GOLD";
+      wallTex = "STUD_GOLD";
+    } else if (p.includes("madera") || p.includes("dojo")) {
+      flatTex = "DOJO_TATAMI";
+      wallTex = "DOJO_WALL";
+    } else if (p.includes("rojo")) {
+      flatTex = "ROOF1";
+      wallTex = "REDWALL";
+    } else if (p.includes("azul")) {
+      flatTex = "STUD_FLOOR_BLUE";
+      wallTex = "STUD_WALL_BLUE";
+    }
+    if (flatTex) {
+      actions.push({
+        type: "paint_material",
+        flatTex,
+        wallTex,
+        scope: p.includes("todo") ? "all" : "selected"
+      });
+      notes.push(`pintar con ${flatTex}`);
+    }
+  }
+  const skyPatch = {};
+  if (p.includes("noche") || p.includes("oscuro") || p.includes("espacio")) {
+    skyPatch.skyTexture = "SKY3";
+    notes.push("cielo nocturno");
+  } else if (p.includes("atardecer") || p.includes("rojo") && p.includes("cielo")) {
+    skyPatch.skyTexture = "SKY2";
+    notes.push("cielo de atardecer");
+  } else if (p.includes("dia") || p.includes("soleado") || p.includes("cielo azul")) {
+    skyPatch.skyTexture = "SKY_ROBLOX";
+    notes.push("cielo de d\xEDa");
+  }
+  if (p.includes("primera persona") || p.includes("1ra persona") || p.includes("fps")) {
+    skyPatch.cameraMode = "fps";
+    notes.push("c\xE1mara en 1\xAA persona");
+  } else if (p.includes("tercera persona") || p.includes("3ra persona")) {
+    skyPatch.cameraMode = "third_person";
+    notes.push("c\xE1mara en 3\xAA persona");
+  }
+  if (p.includes("supervivencia") || p.includes("survival")) {
+    skyPatch.gameMode = "survival";
+  } else if (p.includes("exploracion") || p.includes("aventura")) {
+    skyPatch.gameMode = "exploration";
+  }
+  if (skyPatch.skyTexture || skyPatch.cameraMode || skyPatch.gameMode) {
+    actions.push({ type: "set_sky_camera", ...skyPatch });
+  }
+  return {
+    actions,
+    summary: notes.length > 0 ? `Bloques 3D listos: ${notes.join(", ")}.` : "Sin cambios geom\xE9tricos autom\xE1ticos detectados."
+  };
+}
+
 // src/engine/ai/precodeEngine.ts
 var PRECODE_LIBRARY = [
   // Movimiento
@@ -248,12 +460,12 @@ write_int(0, 580, 20, 0, &lives);`
     snippet: `// Bloque Prec\xF3digo: Audio Retro
 sound(1, 80, 280); // Disparo / Salto`
   },
-  // Modo 8 / 3D Raycasting
+  // Modo 8 / 3D Raycasting & Bloques de Trabajo 3D
   {
     id: "pre_mode8_cam",
     category: "mode8",
     name: "Controlador C\xE1mara 3D / Modo 8",
-    description: "C\xE1mara en primera persona con giro suave y desplazamiento",
+    description: "C\xE1mara en primera o tercera persona con giro suave y desplazamiento",
     tokenSavings: "380 tokens",
     keywords: ["3d", "modo8", "mode8", "raycaster", "dungeon", "camara", "doom", "wolfenstein"],
     snippet: `// Bloque Prec\xF3digo: Controlador C\xE1mara 3D Modo 8
@@ -267,6 +479,27 @@ IF (key(_down) OR key(_s))
   x -= cos(angle) * 4;
   y -= sin(angle) * 4;
 END`
+  },
+  {
+    id: "pre_mode8_platform",
+    category: "mode8",
+    name: "3D: Plataforma / Sector Elevado",
+    description: "Crea un bloque o sala 3D elevada con textura y altura propia",
+    tokenSavings: "280 tokens",
+    keywords: ["plataforma", "bloque", "sector", "sala", "torre"],
+    snippet: `// Bloque de Trabajo 3D: Plataforma Elevada
+m8_set_doom_sector(10, 0.75, 3.50, "STUD_FLOOR_BLUE", "SKY_ROBLOX", 240, 0, 0);`
+  },
+  {
+    id: "pre_mode8_collectibles",
+    category: "mode8",
+    name: "3D: Monedas, Meta y Actores MD2/MD3",
+    description: "A\xF1ade monedas v\xF3xel, estrella meta o guardianes 3D al mapa",
+    tokenSavings: "310 tokens",
+    keywords: ["moneda", "estrella", "meta", "samurai", "robot", "enemigo", "bandera", "voxel", "modelo"],
+    snippet: `// Bloque de Trabajo 3D: Objetos y Actores
+m8_place_voxel("voxel_coin", 4.50, 5.50, 0.25, 0, 1.00);
+m8_add_model("trophy_star", 6.50, 5.50, 0.20, 0, "idle", 1.10, "goal", 100, 0, 0, "Meta");`
   },
   // Apps visuales / UI de escritorio y móvil
   {
@@ -322,7 +555,7 @@ function sanitizeProgramName(prompt, fallback = "juego_wxdiv") {
   const clean = prompt.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 26).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return clean && /^[a-z]/.test(clean) ? clean : fallback;
 }
-function generatePrecodeNeuralCode(prompt, existingCode = "") {
+function generatePrecodeNeuralCode(prompt, existingCode = "", options) {
   const rawPrompt = (prompt || "").trim();
   const p = rawPrompt.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const matchedBlocks = [];
@@ -331,6 +564,42 @@ function generatePrecodeNeuralCode(prompt, existingCode = "") {
     if (block.keywords.some((kw) => p.includes(kw))) {
       matchedBlocks.push(block);
       tokenSavingsTotal += parseInt(block.tokenSavings) || 200;
+    }
+  }
+  const isMode8Active = options?.activeTab === "mode8" || Boolean(options?.mode8Context && /\b(mapa|sector|escalera|plataforma|cielo|moneda|bandera|samurai|robot|estrella|arena|circuito|laberinto|primera persona|tercera persona|pintar|pinta|bloque)\b/i.test(p));
+  if (isMode8Active && options?.mode8Context) {
+    const inferred = inferMode8ActionsFromPrompt(rawPrompt, options.mode8Context);
+    if (inferred.actions.length > 0) {
+      const snippetLines = inferred.actions.map((act) => {
+        if (act.type === "add_platform") {
+          return `m8_set_doom_sector(${options.mode8Context.sectorCount + 1}, ${(act.floorHeight ?? 0.75).toFixed(2)}, ${(act.ceilHeight ?? 3.5).toFixed(2)}, "${act.flatTex || "STUD_FLOOR_BLUE"}", "${options.mode8Context.skyTexture}", 240, 0, 0);`;
+        }
+        if (act.type === "add_voxel") {
+          return `m8_place_voxel("${act.voxelId}", ${(options.mode8Context.playerPos.x / 64 + 1.5).toFixed(2)}, ${(options.mode8Context.playerPos.y / 64).toFixed(2)}, 0.25, 0, 1.00);`;
+        }
+        if (act.type === "add_model") {
+          return `m8_add_model("${act.modelId}", ${(options.mode8Context.playerPos.x / 64 + 2.5).toFixed(2)}, ${(options.mode8Context.playerPos.y / 64).toFixed(2)}, 0.00, 180, "idle", 1.00, "${act.role || "prop"}", 100, 1.00, 10, "${act.modelId}");`;
+        }
+        if (act.type === "paint_material") {
+          return `// Material actualizado: piso=${act.flatTex}, muro=${act.wallTex}`;
+        }
+        if (act.type === "set_sky_camera") {
+          return `// Atm\xF3sfera 3D: cielo=${act.skyTexture || options.mode8Context.skyTexture}, c\xE1mara=${act.cameraMode || options.mode8Context.cameraMode}`;
+        }
+        if (act.type === "add_stairs") {
+          return `// Escalera 3D de ${act.steps ?? 6} pelda\xF1os generada en escena`;
+        }
+        return `// Plantilla 3D generada: ${act.template}`;
+      });
+      return {
+        code: `// Acciones 3D aplicadas al mapa "${options.mode8Context.levelTitle}"
+${snippetLines.join("\n")}`,
+        matchedBlocks: matchedBlocks.length > 0 ? matchedBlocks : [PRECODE_LIBRARY.find((b) => b.id === "pre_mode8_cam")],
+        tokenSavingsTotal: Math.max(260, tokenSavingsTotal),
+        isInsertionSnippet: true,
+        mode8Actions: inferred.actions,
+        explanation: `${inferred.summary} Pulsa "Aplicar al Mapa 3D" o usa los Bloques de Trabajo 3D.`
+      };
     }
   }
   const hasExistingProgram = /\bPROGRAM\s+[a-zA-Z0-9_]+/i.test(existingCode || "");

@@ -1,6 +1,179 @@
 import { DivRuntime } from "./runtime";
-import { DivProcess } from "../types";
+import { DivProcess, Mode8CameraMode } from "../types";
 import { APP_TEMPLATES } from "./appTemplates";
+import {
+  Mode8LevelData,
+  PRESET_E1M1_HANGAR,
+  PRESET_ROBLOX_CYBER_TYCOON,
+  PRESET_ROBLOX_DOJO,
+  PRESET_ROBLOX_OBBY,
+  PRESET_ROBLOX_SKY_CITADEL,
+} from "./mode8Presets";
+import { buildTracedSectors, findSectorAtPoint, serializeMode8LevelToDivCode } from "./mode8Geometry";
+import { doomWorldState } from "./doom2Engine";
+
+function setupRobloxMode8Runtime(
+  runtime: DivRuntime,
+  level: Mode8LevelData,
+  opts?: {
+    title?: string;
+    weapon?: "shotgun" | "pistol" | "sword3d" | "staff3d";
+    cameraMode?: Mode8CameraMode;
+  }
+) {
+  runtime.reset();
+  runtime.setHtml5Mode(false);
+  runtime.setResolution("640x480");
+  const fpgId = runtime.load_fpg("dungeon.fpg");
+  const fontId = runtime.load_fnt("gothic.fnt");
+
+  const startWeapon = opts?.weapon || level.recommendedWeapon || "sword3d";
+  const startCamera: Mode8CameraMode = opts?.cameraMode || level.recommendedCamera || "third_person";
+
+  doomWorldState.health = 100;
+  doomWorldState.armor = 50;
+  doomWorldState.ammo = 30;
+  doomWorldState.kills = 0;
+
+  runtime.globalVars.salud = 100;
+  runtime.globalVars.armadura = 50;
+  runtime.globalVars.cartuchos = 30;
+  runtime.globalVars.score = 0;
+
+  runtime.m8_workers(4);
+  runtime.start_mode8_hybrid(0, 39, 44, 45);
+  runtime.m8_set_doom_map(
+    level.linedefs.map((l) => ({ ...l })),
+    level.sectors.map((s) => ({ ...s }))
+  );
+  runtime.m8_set_weapon(startWeapon);
+
+  const playerEnt = level.entities.find((e) => e.type === "player");
+  const startX = playerEnt ? playerEnt.x / 64 : 4.5;
+  const startY = playerEnt ? playerEnt.y / 64 : 7.5;
+  const traced = buildTracedSectors(level.sectors, level.linedefs);
+  const initFloor = findSectorAtPoint(startX, startY, traced)?.floorHeight ?? 0;
+
+  if (runtime.m8[0]) {
+    runtime.m8[0].engineMode = "doom2";
+    runtime.m8[0].skyTexture = level.recommendedSky || "SKY_ROBLOX";
+    runtime.m8[0].cameraMode = startCamera;
+    runtime.m8[0].playerModelId = level.recommendedPlayerModel || "blox_hero";
+    runtime.m8[0].placedModels = level.placedModels.map((m) => ({
+      ...m,
+      homeX: m.x,
+      homeY: m.y,
+    }));
+    runtime.m8[0].placedVoxels = level.placedVoxels.map((v) => ({ ...v, collected: false }));
+    runtime.m8[0].lights = level.lights.map((lt) => ({ ...lt }));
+    runtime.m8[0].entities = level.entities
+      .filter((e) => e.type !== "player")
+      .map((e) => ({ ...e }));
+    runtime.m8[0].x = startX;
+    runtime.m8[0].y = startY;
+    runtime.m8[0].z = initFloor;
+  }
+
+  runtime.registerProcess("jugador_blox", function* (proc, _, rt) {
+    proc.file = fpgId;
+    proc.x = startX * 64;
+    proc.y = startY * 64;
+    proc.z = initFloor;
+    proc.angle = 0;
+    proc.localVars.__worldScale = 64;
+    if (rt.m8[0]) rt.m8[0].camera = proc.id;
+
+    let cooldown = 0;
+    let velZ = 0;
+    let feetZ = initFloor;
+    let camLock = false;
+    const camCycle: Mode8CameraMode[] = ["third_person", "fps", "isometric", "orbit"];
+    let activeWeapon = startWeapon;
+
+    while (!proc.isDead) {
+      const turnLeft = rt.key("left") || rt.isKeyDown("ArrowLeft") || rt.key("q") || rt.isKeyDown("KeyQ");
+      const turnRight = rt.key("right") || rt.isKeyDown("ArrowRight");
+      const up = rt.key("up") || rt.key("w") || rt.isKeyDown("KeyW") || rt.isKeyDown("ArrowUp");
+      const down = rt.key("down") || rt.key("s") || rt.isKeyDown("KeyS") || rt.isKeyDown("ArrowDown");
+      const strafeL = rt.key("a") || rt.isKeyDown("KeyA");
+      const strafeR = rt.key("d") || rt.isKeyDown("KeyD");
+
+      if (turnLeft) proc.angle = (proc.angle - 3.0 + 360) % 360;
+      if (turnRight) proc.angle = (proc.angle + 3.0) % 360;
+
+      const rad = (proc.angle * Math.PI) / 180;
+      const spd = 4.0;
+      let mx = 0;
+      let my = 0;
+      if (up) { mx += Math.cos(rad) * spd; my += Math.sin(rad) * spd; }
+      if (down) { mx -= Math.cos(rad) * (spd * 0.72); my -= Math.sin(rad) * (spd * 0.72); }
+      if (strafeL) { mx += Math.sin(rad) * (spd * 0.8); my -= Math.cos(rad) * (spd * 0.8); }
+      if (strafeR) { mx -= Math.sin(rad) * (spd * 0.8); my += Math.cos(rad) * (spd * 0.8); }
+
+      if (mx !== 0 || my !== 0) {
+        const nextPos = rt.moveMode8WithCollision(proc.x / 64, proc.y / 64, mx / 64, my / 64, 0.22, feetZ);
+        proc.x = nextPos.x * 64;
+        proc.y = nextPos.y * 64;
+        if (rt.m8[0]) rt.m8[0].walkCycle = (rt.m8[0].walkCycle || 0) + 0.16;
+      }
+
+      // True vertical gravity & sector floor collision
+      const groundZ = findSectorAtPoint(proc.x / 64, proc.y / 64, traced)?.floorHeight ?? 0;
+      const onGround = feetZ <= groundZ + 0.03 && velZ <= 0;
+      if ((rt.key("space") || rt.isKeyDown("Space") || rt.key("j") || rt.isKeyDown("KeyJ")) && onGround) {
+        velZ = 0.115;
+      }
+      feetZ += velZ;
+      velZ -= 0.0062;
+      if (feetZ <= groundZ) {
+        if (velZ <= 0 || groundZ - feetZ <= 0.45) {
+          feetZ = groundZ;
+          velZ = 0;
+        }
+      }
+      if (onGround && groundZ > feetZ && groundZ - feetZ <= 0.45) {
+        feetZ = feetZ + (groundZ - feetZ) * 0.45;
+      }
+      if (rt.m8[0]) {
+        rt.m8[0].z = velZ !== 0 ? feetZ : (rt.m8[0].z || 0) + (feetZ - (rt.m8[0].z || 0)) * 0.45;
+        proc.z = rt.m8[0].z;
+      }
+
+      // Camera mode toggle (C)
+      const cDown = rt.key("c") || rt.isKeyDown("KeyC");
+      if (cDown && !camLock && rt.m8[0]) {
+        const nextIdx = (camCycle.indexOf(rt.m8[0].cameraMode || "third_person") + 1) % camCycle.length;
+        rt.m8[0].cameraMode = camCycle[nextIdx];
+      }
+      camLock = cDown;
+
+      // Weapon attack (Left click, F or Ctrl)
+      if (cooldown > 0) cooldown--;
+      if ((rt.mouseState.left || rt.key("f") || rt.isKeyDown("KeyF") || rt.key("control")) && cooldown === 0) {
+        if (activeWeapon === "sword3d" || activeWeapon === "staff3d" || rt.globalVars.cartuchos > 0) {
+          if (activeWeapon !== "sword3d" && activeWeapon !== "staff3d") {
+            rt.globalVars.cartuchos--;
+            doomWorldState.ammo = rt.globalVars.cartuchos;
+          }
+          rt.m8_attack();
+          cooldown = 16;
+        }
+      }
+
+      if (rt.key("1") || rt.isKeyDown("Digit1")) { activeWeapon = "pistol"; rt.m8_set_weapon("pistol"); }
+      if (rt.key("2") || rt.isKeyDown("Digit2")) { activeWeapon = "shotgun"; rt.m8_set_weapon("shotgun"); }
+      if (rt.key("3") || rt.isKeyDown("Digit3")) { activeWeapon = "sword3d"; rt.m8_set_weapon("sword3d"); }
+      if (rt.key("4") || rt.isKeyDown("Digit4")) { activeWeapon = "staff3d"; rt.m8_set_weapon("staff3d"); }
+      if (rt.key("e") || rt.isKeyDown("KeyE")) rt.interact_mode8();
+
+      yield;
+    }
+  });
+
+  runtime.spawn("jugador_blox");
+  runtime.write(fontId, 16, 14, 0, `${opts?.title || level.name}`);
+  runtime.write(fontId, 16, 36, 0, "WASD/Flechas: Mover | ESPACIO: Saltar | CLICK/F: Atacar | C: Cámara | TAB: Mapa");
+}
 
 export interface GamePreset {
   id: string;
@@ -1270,1219 +1443,109 @@ END
     },
   },
 
-  // 5: Dungeon Crypt 3D (Modo 8)
+  // 5: Roblox Obby Tower 3D (Modo 8)
   {
     id: "mode8_dungeon",
-    name: "Dungeon Crypt 3D (Modo 8)",
-    genre: "Raycaster FPS 2.5D",
-    description: "Motor 3D Raycasting al estilo Wolfenstein 3D y Catacomb 3D. Laberinto con paredes texturizadas, monstruos 3D, niebla, arma en primera persona y radar minimapa.",
+    name: "Roblox Obby Tower 3D (Modo 8)",
+    genre: "Aventura 3D Roblox Obby",
+    description: "Mundo 3D estilo Roblox Studs con plataformas ascendentes sin superposiciones, monedas coleccionables, checkpoints, enemigos IA activos y cámara 3ª Persona / FPS.",
     resolution: "640x480",
-    code: `PROGRAM dungeon_crypt_3d;
-
-GLOBAL
-  fpg_dungeon = 0;
-  fnt_hud = 0;
-  score = 0;
-  salud = 100;
-  municion = 40;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-
-  // Carga explícita de sprites FPG y fuentes FNT (DIV Games Studio)
-  fpg_dungeon = load_fpg("dungeon.fpg");
-  fnt_hud = load_fnt("gothic.fnt");
-
-  // Iniciar motor de Raycasting Modo 8
-  start_mode8(0, 0, 25, 0, 0, 0);
-
-  // HUD inferior estilo retro
-  write(fnt_hud, 20, 20, 0, "DUNGEON CRYPT 3D - MODO 8");
-  write(fnt_hud, 20, 45, 0, "SALUD:");
-  write_int(fnt_hud, 80, 45, 0, &salud);
-  write(fnt_hud, 20, 70, 0, "MUNICION:");
-  write_int(fnt_hud, 100, 70, 0, &municion);
-  write(fnt_hud, 20, 95, 0, "SCORE:");
-  write_int(fnt_hud, 80, 95, 0, &score);
-  write(fnt_hud, 20, 120, 0, "[E] ABRIR PUERTA/DISPOSITIVO");
-
-  // Iniciar jugador en primera persona
-  jugador_fps();
-
-  // Spawner de monstruos, antorchas y barriles en el mapa
-  antorcha_3d(192, 192);
-  antorcha_3d(448, 192);
-  barril_3d(256, 320);
-  barril_3d(512, 448);
-  tesoro_3d(320, 576);
-
-  demonio_slime(576, 256);
-  demonio_slime(448, 640);
-
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS jugador_fps()
-PRIVATE
-  vel = 3.5;
-  rot_vel = 3;
-BEGIN
-  file = fpg_dungeon;
-  x = 224; // (3.5 * 64)
-  y = 224;
-  angle = 0;
-
-  // Asignar cámara Modo 8 al jugador
-  m8[0].camera = id;
-
-  LOOP
-    // Rotación de cámara (Flechas izquierda / derecha)
-    IF (key(_left))  angle -= rot_vel; END
-    IF (key(_right)) angle += rot_vel; END
-
-    // Desplazamiento adelante / atrás (W / S / Flecha Arriba / Flecha Abajo)
-    IF (key(_up) || key(_w))
-      x += cos(angle) * vel;
-      y += sin(angle) * vel;
-    END
-    IF (key(_down) || key(_s))
-      x -= cos(angle) * (vel * 0.7);
-      y -= sin(angle) * (vel * 0.7);
-    END
-
-    // Strafe / Desplazamiento lateral (A = izquierda, D = derecha)
-    IF (key(_a))
-      x += sin(angle) * (vel * 0.8);
-      y -= cos(angle) * (vel * 0.8);
-    END
-    IF (key(_d))
-      x -= sin(angle) * (vel * 0.8);
-      y += cos(angle) * (vel * 0.8);
-    END
-
-    // Disparo con el arma de plasma
-    IF (key(_space) || key(_control) || mouse.left)
-      IF (municion > 0)
-        municion--;
-        sound(1, 95, 520); // Disparo de plasma
-        disparo_plasma(x, y, angle);
-      END
-    END
-
-    // Abrir puertas e interactuar con dispositivos / interruptores
-    IF (key(_e))
-      interact_mode8();
-    END
-
-    FRAME;
-  END
-END
-
-PROCESS demonio_slime(x, y)
-PRIVATE
-  vida = 3;
-BEGIN
-  file = fpg_dungeon;
-  graph = 27; // Monstruo Demonio / Slime 3D
-  ctype = c_m8;
-  size = 120;
-  LOOP
-    angle += 2;
-    FRAME;
-  END
-END
-
-PROCESS antorcha_3d(x, y)
-BEGIN
-  file = fpg_dungeon;
-  graph = 28; // Antorcha de pared con fuego
-  ctype = c_m8;
-  size = 100;
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS barril_3d(x, y)
-BEGIN
-  file = fpg_dungeon;
-  graph = 29; // Barril de madera
-  ctype = c_m8;
-  size = 110;
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS tesoro_3d(x, y)
-BEGIN
-  file = fpg_dungeon;
-  graph = 24; // Tesoro / Moneda
-  ctype = c_m8;
-  size = 90;
-  LOOP
-    FRAME;
-  END
-END
-`,
+    code: serializeMode8LevelToDivCode(PRESET_ROBLOX_OBBY, {
+      title: "ROBLOX OBBY TOWER 3D",
+      startingWeapon: "sword3d",
+      cameraMode: "third_person",
+      hasStartMenu: false,
+    }),
     setupRuntime: (runtime) => {
-      runtime.reset();
-      runtime.setResolution("640x480");
-      const fpgId = runtime.load_fpg("dungeon.fpg");
-      const fontId = runtime.load_fnt("gothic.fnt");
-      runtime.globalVars.fpg_dungeon = fpgId;
-      runtime.globalVars.fnt_hud = fontId;
-      runtime.start_mode8(0, 0, 25, 0, 0, 0);
-
-      runtime.globalVars.score = 0;
-      runtime.globalVars.salud = 100;
-      runtime.globalVars.municion = 40;
-
-      // Player FPS Process
-      runtime.registerProcess("jugador_fps", function* (proc, _, rt) {
-        proc.file = fpgId;
-        proc.x = 224; // 3.5 * 64
-        proc.y = 224;
-        proc.angle = 0;
-        rt.m8[0].camera = proc.id;
-        let cooldown = 0;
-
-        while (true) {
-          const up = rt.key("up") || rt.key("w") || rt.isKeyDown("KeyW") || rt.isKeyDown("ArrowUp");
-          const down = rt.key("down") || rt.key("s") || rt.isKeyDown("KeyS") || rt.isKeyDown("ArrowDown");
-          const turnLeft = rt.key("left") || rt.isKeyDown("ArrowLeft");
-          const turnRight = rt.key("right") || rt.isKeyDown("ArrowRight");
-          const strafeLeft = rt.key("a") || rt.isKeyDown("KeyA");
-          const strafeRight = rt.key("d") || rt.isKeyDown("KeyD");
-          const shoot = rt.key("space") || rt.key("control") || rt.mouseState.left;
-
-          if (turnLeft) proc.angle = (proc.angle - 3.2 + 360) % 360;
-          if (turnRight) proc.angle = (proc.angle + 3.2) % 360;
-
-          const rad = (proc.angle * Math.PI) / 180;
-          const dirX = Math.cos(rad);
-          const dirY = Math.sin(rad);
-
-          const moveSpeed = 3.8;
-          let nextX = proc.x;
-          let nextY = proc.y;
-
-          if (up) {
-            nextX += dirX * moveSpeed;
-            nextY += dirY * moveSpeed;
-          }
-          if (down) {
-            nextX -= dirX * (moveSpeed * 0.7);
-            nextY -= dirY * (moveSpeed * 0.7);
-          }
-          if (strafeLeft) {
-            nextX += Math.sin(rad) * (moveSpeed * 0.8);
-            nextY -= Math.cos(rad) * (moveSpeed * 0.8);
-          }
-          if (strafeRight) {
-            nextX -= Math.sin(rad) * (moveSpeed * 0.8);
-            nextY += Math.cos(rad) * (moveSpeed * 0.8);
-          }
-
-          // Grid wall collision check
-          const map = rt.m8[0].map;
-          const gridX = Math.floor(nextX / 64);
-          const gridY = Math.floor(nextY / 64);
-
-          if (map && map[gridY] && map[gridY][gridX] === 0) {
-            proc.x = nextX;
-            proc.y = nextY;
-          }
-
-          // Shooting plasma weapon
-          if (cooldown > 0) cooldown--;
-          if (shoot && cooldown === 0 && rt.globalVars.municion > 0) {
-            rt.globalVars.municion--;
-            cooldown = 14;
-            rt.sound(1, 90, 520);
-
-            // Hitscan check against demons
-            for (const other of rt.processes.values()) {
-              if (other.graph === 27 && !other.isDead) {
-                const edx = other.x - proc.x;
-                const edy = other.y - proc.y;
-                const dist = Math.hypot(edx, edy);
-                const enemyAngle = (Math.atan2(edy, edx) * 180) / Math.PI;
-                let diff = (enemyAngle - proc.angle + 360) % 360;
-                if (diff > 180) diff -= 360;
-
-                if (Math.abs(diff) < 18 && dist < 450) {
-                  other.isDead = true;
-                  rt.globalVars.score += 250;
-                  rt.sound(2, 90, 220);
-                }
-              }
-            }
-          }
-
-          yield;
-        }
+      setupRobloxMode8Runtime(runtime, PRESET_ROBLOX_OBBY, {
+        title: "ROBLOX OBBY TOWER 3D",
+        weapon: "sword3d",
+        cameraMode: "third_person",
       });
-
-      // Monster Demon Slime
-      runtime.registerProcess("demonio_slime", function* (proc, [mx, my], rt) {
-        proc.file = fpgId;
-        proc.graph = 27;
-        proc.ctype = 8;
-        proc.x = mx;
-        proc.y = my;
-        let step = 0;
-
-        while (true) {
-          step++;
-          proc.y += Math.sin(step * 0.05) * 0.5;
-          yield;
-        }
-      });
-
-      // 3D Objects
-      runtime.registerProcess("antorcha_3d", function* (proc, [tx, ty], rt) {
-        proc.file = fpgId;
-        proc.graph = 28;
-        proc.ctype = 8;
-        proc.x = tx;
-        proc.y = ty;
-        while (true) {
-          yield;
-        }
-      });
-
-      runtime.registerProcess("barril_3d", function* (proc, [bx, by], rt) {
-        proc.file = fpgId;
-        proc.graph = 29;
-        proc.ctype = 8;
-        proc.x = bx;
-        proc.y = by;
-        while (true) {
-          yield;
-        }
-      });
-
-      runtime.registerProcess("tesoro_3d", function* (proc, [gx, gy], rt) {
-        proc.file = fpgId;
-        proc.graph = 24;
-        proc.ctype = 8;
-        proc.x = gx;
-        proc.y = gy;
-        while (true) {
-          yield;
-        }
-      });
-
-      // Spawn entities in the dungeon
-      runtime.spawn("jugador_fps");
-      runtime.spawn("demonio_slime", [576, 256]);
-      runtime.spawn("demonio_slime", [448, 640]);
-      runtime.spawn("demonio_slime", [700, 400]);
-      runtime.spawn("antorcha_3d", [192, 192]);
-      runtime.spawn("antorcha_3d", [448, 192]);
-      runtime.spawn("antorcha_3d", [704, 384]);
-      runtime.spawn("barril_3d", [256, 320]);
-      runtime.spawn("barril_3d", [512, 448]);
-      runtime.spawn("tesoro_3d", [320, 576]);
-      runtime.spawn("tesoro_3d", [768, 640]);
-
-      runtime.write(fontId, 20, 20, 0, "DUNGEON CRYPT 3D [MODO 8]");
-      runtime.writeInt(fontId, 20, 45, 0, "salud");
-      runtime.writeInt(fontId, 110, 45, 0, "municion");
-      runtime.writeInt(fontId, 210, 45, 0, "score");
-      runtime.write(fontId, 20, 70, 0, "WASD / FLECHAS: Moverse | ESPACIO / CLICK: Disparar");
     },
   },
-  // 9: Hexen / GZDoom Hybrid 3D Citadel
+  // 9: Roblox Sky Citadel 3D (Híbrido)
   {
     id: "hexen_citadel_3d",
-    name: "Hexen Citadel 3D (Híbrido AAA)",
-    genre: "Acción RPG 3D Híbrido",
-    description: "Modo 8 avanzado estilo Hexen y GZDoom. Ray tracing dinámico, alturas de sectores, fosas de lava con partículas de fluidos, modelos 3D MD2/MD3 y voxels giratorios.",
+    name: "Roblox Sky Citadel 3D (Híbrido AAA)",
+    genre: "Acción RPG 3D Estilo Roblox",
+    description: "Ciudadela celestial de mármol y oro estilo Roblox con terrazas escalonadas, cofres, escoltas Redcliff, Titán activo y cámara 3ª Persona / FPS.",
     resolution: "640x480",
-    code: `PROGRAM hexen_citadel_3d;
-
-GLOBAL
-  fpg_dungeon = 0;
-  fnt_hud = 0;
-  salud = 100;
-  mana = 75;
-  score = 0;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-
-  fpg_dungeon = load_fpg("dungeon.fpg");
-  fnt_hud = load_fnt("gothic.fnt");
-
-  // Iniciar Motor Modo 8 Híbrido Hexen / GZDoom
-  start_mode8_hybrid(0, 26, 25, 25);
-  m8_raytracing(true);
-
-  // Configurar sectores con alturas variables y fosas de lava (Hexen)
-  m8_set_sector(7, 7, 0.6, 3.2, 26, 26, 1.2, "none");
-  m8_set_sector(8, 7, 0.6, 3.2, 26, 26, 1.2, "none");
-  m8_set_sector(7, 8, 0.6, 3.2, 26, 26, 1.2, "none");
-  m8_set_sector(8, 8, 0.6, 3.2, 26, 26, 1.2, "none");
-
-  // Fosas de lava ardiente con simulación de partículas
-  m8_set_fluid(4, 7, fluid_lava);
-  m8_set_fluid(5, 7, fluid_lava);
-  m8_set_fluid(10, 7, fluid_lava);
-  m8_set_fluid(11, 7, fluid_lava);
-
-  // Luces puntuales dinámicas con sombras ray-traced
-  m8_add_light(7.5, 7.5, 1.5, 6.5, 255, 160, 50, true, true);
-  m8_add_light(3.5, 3.5, 0.8, 4.5, 50, 180, 255, false, true);
-
-  // Modelos 3D MD2 / MD3
-  m8_add_model("md2_knight", 7.5, 7.5, 0.6, 180, "idle", 1.1);
-  m8_add_model("md3_pillar", 5.5, 5.5, 0.0, 0, "idle", 1.2);
-  m8_add_model("md3_pillar", 10.5, 5.5, 0.0, 0, "idle", 1.2);
-
-  // Objetos Voxel 3D interactivos giratorios
-  m8_add_voxel("vox_potion", 6.5, 8.5, 0.7, 1.0, 3.0);
-  m8_add_voxel("vox_skull", 8.5, 8.5, 0.7, 0.9, 2.0);
-
-  // HUD
-  write(fnt_hud, 20, 20, 0, "HEXEN CITADEL 3D [MODO 8 HIBRIDO]");
-  write(fnt_hud, 20, 45, 0, "SALUD:");
-  write_int(fnt_hud, 80, 45, 0, &salud);
-  write(fnt_hud, 20, 70, 0, "MANA:");
-  write_int(fnt_hud, 75, 70, 0, &mana);
-
-  jugador_hexen();
-
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS jugador_hexen()
-PRIVATE
-  vel = 3.8;
-  rot_vel = 3.2;
-BEGIN
-  file = fpg_dungeon;
-  x = 224; // (3.5 * 64)
-  y = 224;
-  angle = 0;
-
-  m8[0].camera = id;
-
-  LOOP
-    // Rotación con flechas izquierda / derecha
-    IF (key(_left))  angle -= rot_vel; END
-    IF (key(_right)) angle += rot_vel; END
-
-    // Desplazamiento adelante / atrás (W / S / Flechas)
-    IF (key(_up) || key(_w))
-      x += cos(angle) * vel;
-      y += sin(angle) * vel;
-    END
-    IF (key(_down) || key(_s))
-      x -= cos(angle) * (vel * 0.7);
-      y -= sin(angle) * (vel * 0.7);
-    END
-
-    // Strafe / Desplazamiento lateral (A / D)
-    IF (key(_a))
-      x += sin(angle) * (vel * 0.8);
-      y -= cos(angle) * (vel * 0.8);
-    END
-    IF (key(_d))
-      x -= sin(angle) * (vel * 0.8);
-      y += cos(angle) * (vel * 0.8);
-    END
-
-    IF (key(_e))
-      interact_mode8();
-    END
-    FRAME;
-  END
-END;
-`,
+    code: serializeMode8LevelToDivCode(PRESET_ROBLOX_SKY_CITADEL, {
+      title: "ROBLOX SKY CITADEL 3D",
+      startingWeapon: "sword3d",
+      cameraMode: "third_person",
+      hasStartMenu: false,
+    }),
     setupRuntime: (runtime) => {
-      runtime.reset();
-      runtime.setResolution("640x480");
-      const fpgId = runtime.load_fpg("dungeon.fpg");
-      const fontId = runtime.load_fnt("gothic.fnt");
-      runtime.globalVars.fpg_dungeon = fpgId;
-      runtime.globalVars.fnt_hud = fontId;
-      runtime.globalVars.salud = 100;
-      runtime.globalVars.mana = 75;
-      runtime.globalVars.score = 0;
-
-      // Start hybrid Mode 8 with ray tracing & fluids
-      runtime.start_mode8_hybrid(0, 26, 25, 25);
-      runtime.m8_raytracing(true);
-
-      // Setup sectors with heights
-      runtime.m8_set_sector(7, 7, 0.6, 3.2, 26, 26, 1.2, "none");
-      runtime.m8_set_sector(8, 7, 0.6, 3.2, 26, 26, 1.2, "none");
-      runtime.m8_set_sector(7, 8, 0.6, 3.2, 26, 26, 1.2, "none");
-      runtime.m8_set_sector(8, 8, 0.6, 3.2, 26, 26, 1.2, "none");
-
-      // Fluids
-      runtime.m8_set_fluid(4, 7, "lava");
-      runtime.m8_set_fluid(5, 7, "lava");
-      runtime.m8_set_fluid(10, 7, "lava");
-      runtime.m8_set_fluid(11, 7, "lava");
-
-      // Dynamic lights
-      runtime.m8_add_light(7.5, 7.5, 1.5, 6.5, 255, 160, 50, true, true);
-      runtime.m8_add_light(3.5, 3.5, 0.8, 4.5, 50, 180, 255, false, true);
-
-      // 3D Models
-      runtime.m8_add_model("md2_knight", 7.5, 7.5, 0.6, 180, "idle", 1.1);
-      runtime.m8_add_model("md3_pillar", 5.5, 5.5, 0.0, 0, "idle", 1.2);
-      runtime.m8_add_model("md3_pillar", 10.5, 5.5, 0.0, 0, "idle", 1.2);
-
-      // 3D Voxels
-      runtime.m8_add_voxel("vox_potion", 6.5, 8.5, 0.7, 1.0, 3.0);
-      runtime.m8_add_voxel("vox_skull", 8.5, 8.5, 0.7, 0.9, 2.0);
-
-      // Player process
-      runtime.registerProcess("jugador_hexen", function* (proc, _, rt) {
-        proc.file = fpgId;
-        proc.x = 224;
-        proc.y = 224;
-        proc.angle = 0;
-        rt.m8[0].camera = proc.id;
-
-        while (true) {
-          const turnLeft = rt.isKeyDown("ArrowLeft");
-          const turnRight = rt.isKeyDown("ArrowRight");
-          const up = rt.isKeyDown("ArrowUp") || rt.isKeyDown("KeyW");
-          const down = rt.isKeyDown("ArrowDown") || rt.isKeyDown("KeyS");
-          const strafeLeft = rt.isKeyDown("KeyA");
-          const strafeRight = rt.isKeyDown("KeyD");
-
-          if (turnLeft) proc.angle = (proc.angle - 3.2 + 360) % 360;
-          if (turnRight) proc.angle = (proc.angle + 3.2) % 360;
-
-          const rad = (proc.angle * Math.PI) / 180;
-          if (up) {
-            proc.x += Math.cos(rad) * 3.8;
-            proc.y += Math.sin(rad) * 3.8;
-          }
-          if (down) {
-            proc.x -= Math.cos(rad) * 2.6;
-            proc.y -= Math.sin(rad) * 2.6;
-          }
-          if (strafeLeft) {
-            proc.x += Math.sin(rad) * 3.0;
-            proc.y -= Math.cos(rad) * 3.0;
-          }
-          if (strafeRight) {
-            proc.x -= Math.sin(rad) * 3.0;
-            proc.y += Math.cos(rad) * 3.0;
-          }
-
-          if (rt.isKeyDown("KeyE")) {
-            rt.interact_mode8();
-          }
-
-          yield;
-        }
+      setupRobloxMode8Runtime(runtime, PRESET_ROBLOX_SKY_CITADEL, {
+        title: "ROBLOX SKY CITADEL 3D",
+        weapon: "sword3d",
+        cameraMode: "third_person",
       });
-
-      runtime.spawn("jugador_hexen");
-
-      runtime.write(fontId, 20, 20, 0, "HEXEN CITADEL 3D [MODO 8 HIBRIDO]");
-      runtime.writeInt(fontId, 20, 45, 0, "salud");
-      runtime.writeInt(fontId, 95, 45, 0, "mana");
-      runtime.write(fontId, 20, 70, 0, "WASD: Moverse | E: Interactuar | HIBRIDO 3D RAY TRACING");
     },
   },
-  // 10: DIV 2 Modo 8 Raycasting nativo (.WLD, .FMP, load_pal)
+  // 10: Roblox Dojo de Pelea 3D (DIV 2)
   {
     id: "div2_modo8_raycast",
-    name: "Modo 8 DIV 2 (start_raycast .WLD)",
-    genre: "Raycasting 3D DIV2 Clásico / Híbrido",
-    description: "Sintaxis estándar DIV Games Studio 2: start_raycast(archivo_wld, archivo_fmp, ambient_light), load_pal, advance, xadvance y control de cámara.",
-    resolution: "320x200",
-    code: `PROGRAM Ejemplo_Modo8;
-
-PRIVATE
-    camara_id = 0;
-
-BEGIN
-    // Inicializar modo gráfico de 320x200 a 256 colores
-    set_mode(m320x200);
-
-    // Cargar la paleta correspondiente al entorno 3D
-    load_pal("mundo.pal");
-
-    // Iniciar el sistema de Raycasting / Modo 8 con un archivo .wld
-    // start_raycast(archivo_wld, archivo_fmp_texturas, ambient_light)
-    start_raycast("nivel1.wld", "texturas.fmp", 16);
-
-    // Lanzar proceso del jugador o control de cámara
-    camara_id = 1; // ID o proceso que gobierna la posición X, Y, Z y ángulo (angle)
-
-    LOOP
-        // Control de movimiento básico de la cámara con colisiones
-        if (key(_up) || key(_w))    advance(4);  end;
-        if (key(_down) || key(_s))  advance(-4); end;
-        if (key(_left))  angle -= 1500; end;
-        if (key(_right)) angle += 1500; end;
-
-        if (key(_a))     xadvance(4, -90000); end;
-        if (key(_d))     xadvance(4, 90000);  end;
-        if (key(_e) || key(_space)) interact_mode8(); end;
-
-        FRAME;
-    END
-
-ONEXIT
-    stop_raycast();
-END
-`,
+    name: "Roblox Dojo de Pelea 3D (DIV 2)",
+    genre: "Acción Marcial 3D Estilo Roblox",
+    description: "Arena Dojo estilo Roblox con madera y tatami en dos alturas, antorchas, duelistas Samurái activos y cámara 3ª Persona.",
+    resolution: "640x480",
+    code: serializeMode8LevelToDivCode(PRESET_ROBLOX_DOJO, {
+      title: "ROBLOX DOJO DE PELEA 3D",
+      startingWeapon: "sword3d",
+      cameraMode: "third_person",
+      hasStartMenu: false,
+    }),
     setupRuntime: (runtime) => {
-      runtime.reset();
-      runtime.setResolution("320x200");
-      runtime.load_pal("mundo.pal");
-      runtime.start_raycast("nivel1.wld", "texturas.fmp", 16);
-      runtime.camara_id = 1;
-
-      // Register camera/player controller process
-      runtime.registerProcess("camara_proceso", function* (proc, _, rt) {
-        proc.id = 1;
-        proc.x = 3.5;
-        proc.y = 3.5;
-        proc.z = 0;
-        proc.angle = 0;
-
-        while (true) {
-          const up = rt.isKeyDown("ArrowUp") || rt.isKeyDown("KeyW");
-          const down = rt.isKeyDown("ArrowDown") || rt.isKeyDown("KeyS");
-          const turnLeft = rt.isKeyDown("ArrowLeft");
-          const turnRight = rt.isKeyDown("ArrowRight");
-          const strafeL = rt.isKeyDown("KeyA");
-          const strafeR = rt.isKeyDown("KeyD");
-
-          if (turnLeft) proc.angle = (proc.angle - 3.2 + 360) % 360;
-          if (turnRight) proc.angle = (proc.angle + 3.2) % 360;
-
-          if (up) rt.advance(4, proc);
-          if (down) rt.advance(-4, proc);
-          if (strafeL) rt.xadvance(4, -90, proc);
-          if (strafeR) rt.xadvance(4, 90, proc);
-
-          if (rt.isKeyDown("Space") || rt.isKeyDown("KeyE")) {
-            rt.interact_mode8();
-          }
-
-          yield;
-        }
+      setupRobloxMode8Runtime(runtime, PRESET_ROBLOX_DOJO, {
+        title: "ROBLOX DOJO DE PELEA 3D",
+        weapon: "sword3d",
+        cameraMode: "third_person",
       });
-
-      runtime.spawn("camara_proceso");
     },
   },
-  // 11: Modo 8 Cripta Maldita 3D - MD2 Modelos, Workers y Texturas Oscuras
+  // 11: Roblox Cyber Base 3D (MD2 + Workers)
   {
     id: "modo8_dark_md2_workers",
-    name: "Cripta Maldita 3D (MD2 + Workers + Texturas Oscuras)",
-    genre: "Acción 3D Gothic Doom / Hexen",
-    description: "Nuevo motor Modo 8 optimizado con Web Workers paralelos, modelos 3D MD2 para enemigos (Demonio Titán, Gárgolas), objetos (Cáliz Sagrado, Cofre), arma 3D en primera persona (Espada Rúnica) y nuevas texturas oscuras de obsidiana, calaveras, basalto rúnico y vitrales.",
+    name: "Roblox Cyber Base 3D (MD2 + Workers)",
+    genre: "Acción Sci-Fi 3D Estilo Roblox",
+    description: "Base futurista estilo Roblox Cyber Neón con plataforma de reactor, terminales digitales, Cyber Mechs activos y núcleo de energía.",
     resolution: "640x480",
-    code: `PROGRAM Cripta_Maldita_3D;
-
-GLOBAL
-    fpg_juego = 0;
-    fnt_gotica = 0;
-    vida_jugador = 100;
-    almas_recolectadas = 0;
-    arma_equipada = 1; // 1 = Espada Rúnica 3D, 2 = Báculo Arcano 3D
-
-BEGIN
-    set_mode(m640x480);
-    set_fps(60);
-
-    fpg_juego = load_fpg("dungeon.fpg");
-    fnt_gotica = load_fnt("gothic.fnt");
-
-    // 1. Aceleración con Web Workers multi-hilo a 60 FPS
-    m8_workers(4);
-
-    // 2. Iniciar Modo 8 Híbrido con Texturas Oscuras Góticas:
-    // Textura 39 = Obsidiana Volcánica, 44 = Losas Negras, 45 = Vigas Oscuras
-    start_mode8_hybrid(0, 39, 44, 45);
-    m8_raytracing(true);
-
-    // 3. Equipar Arma 3D Primera Persona (Modelo MD2 con balanceo y estocada)
-    m8_set_weapon("sword3d");
-
-    // 4. Configuración de Sectores y Alturas Variables (Hexen)
-    // Plataforma central elevada con altar sacrificial
-    m8_set_sector(7, 7, 0.6, 2.8, 44, 45, 1.2, "none");
-    m8_set_sector(8, 7, 0.6, 2.8, 44, 45, 1.2, "none");
-    m8_set_sector(7, 8, 0.6, 2.8, 44, 45, 1.2, "none");
-    m8_set_sector(8, 8, 0.6, 2.8, 44, 45, 1.2, "none");
-
-    // Fosas de Sangre Demoníaca circundantes con partículas
-    m8_set_fluid(5, 7, fluid_blood);
-    m8_set_fluid(6, 7, fluid_blood);
-    m8_set_fluid(9, 7, fluid_blood);
-    m8_set_fluid(10, 7, fluid_blood);
-
-    // Fosas de Lava Ardiente
-    m8_set_fluid(5, 10, fluid_lava);
-    m8_set_fluid(6, 10, fluid_lava);
-    m8_set_fluid(9, 10, fluid_lava);
-    m8_set_fluid(10, 10, fluid_lava);
-
-    // 5. Luces Dinámicas Ray-Traced con Sombras Proyectadas
-    m8_add_light(7.5, 7.5, 1.2, 7.0, 220, 38, 38, true, true);  // Luz roja sangre en el altar
-    m8_add_light(3.5, 3.5, 0.8, 5.0, 168, 85, 247, false, true); // Luz violeta rúnica
-    m8_add_light(11.5, 3.5, 0.8, 5.5, 245, 158, 11, true, true);  // Antorcha fuego ámbar
-
-    // 6. Modelos 3D MD2 de Enemigos
-    m8_add_model("demon_brute", 7.5, 7.5, 0.6, 180, "idle", 1.25); // Demonio Titán
-    m8_add_model("md2_gargoyle", 4.5, 9.5, 0.2, 90, "idle", 1.0);  // Gárgola
-    m8_add_model("md2_knight", 10.5, 9.5, 0.2, 270, "walk", 1.1);  // Caballero Maldito
-
-    // 7. Modelos 3D MD2 de Objetos Sagrados y Arquitectura
-    m8_add_model("relic_caliz", 7.5, 6.2, 0.8, 0, "spin", 0.9);   // Cáliz de Sangre
-    m8_add_model("chest_demon", 3.5, 5.5, 0.0, 45, "idle", 1.0);  // Cofre de Reliquias
-    m8_add_model("md3_pillar", 5.5, 5.5, 0.0, 0, "idle", 1.2);    // Columna gótica
-    m8_add_model("md3_pillar", 9.5, 5.5, 0.0, 0, "idle", 1.2);    // Columna gótica
-
-    // 8. Objetos Voxel 3D
-    m8_add_voxel("vox_skull", 8.5, 6.2, 0.7, 0.8, 2.5);
-    m8_add_voxel("vox_potion", 11.5, 5.5, 0.3, 1.0, 3.0);
-
-    // Lanzar proceso del Jugador con control en primera persona
-    jugador_cripta();
-
-    // HUD en pantalla
-    write(fnt_gotica, 20, 16, 0, "CRIPTA MALDITA 3D [MD2 + WORKERS]");
-    write(fnt_gotica, 20, 40, 0, "VIDA:");
-    write_int(fnt_gotica, 75, 40, 0, &vida_jugador);
-    write(fnt_gotica, 20, 64, 0, "ALMAS:");
-    write_int(fnt_gotica, 85, 64, 0, &almas_recolectadas);
-
-    LOOP
-        FRAME;
-    END
-END
-
-PROCESS jugador_cripta()
-PRIVATE
-    vel = 3.6;
-    rot_vel = 3.0;
-BEGIN
-    file = fpg_juego;
-    x = 224; // (3.5 * 64)
-    y = 224;
-    angle = 0;
-
-    m8[0].camera = id;
-
-    LOOP
-        // Rotación con flechas izquierda / derecha
-        IF (key(_left))  angle -= rot_vel; END
-        IF (key(_right)) angle += rot_vel; END
-
-        // Desplazamiento adelante / atrás (W / S / Flechas)
-        IF (key(_up) || key(_w))
-            x += cos(angle) * vel;
-            y += sin(angle) * vel;
-        END
-        IF (key(_down) || key(_s))
-            x -= cos(angle) * (vel * 0.7);
-            y -= sin(angle) * (vel * 0.7);
-        END
-
-        // Strafe / Desplazamiento lateral (A / D)
-        IF (key(_a))
-            x += sin(angle) * (vel * 0.8);
-            y -= cos(angle) * (vel * 0.8);
-        END
-        IF (key(_d))
-            x -= sin(angle) * (vel * 0.8);
-            y += cos(angle) * (vel * 0.8);
-        END
-
-        // Ataque con Espada Rúnica 3D (Espacio o Click)
-        IF (key(_space))
-            m8_attack();
-        END
-
-        // Alternar arma 3D (Tecla 1 o 2)
-        IF (key(_1)) m8_set_weapon("sword3d"); END
-        IF (key(_2)) m8_set_weapon("staff3d"); END
-
-        // Interacción con puertas y sensores (Tecla E)
-        IF (key(_e))
-            interact_mode8();
-        END
-
-        FRAME;
-    END
-END;
-`,
+    code: serializeMode8LevelToDivCode(PRESET_ROBLOX_CYBER_TYCOON, {
+      title: "ROBLOX CYBER BASE 3D",
+      startingWeapon: "pistol",
+      cameraMode: "third_person",
+      hasStartMenu: false,
+    }),
     setupRuntime: (runtime) => {
-      runtime.reset();
-      runtime.setResolution("640x480");
-      const fpgId = runtime.load_fpg("dungeon.fpg");
-      const fontId = runtime.load_fnt("gothic.fnt");
-
-      runtime.globalVars.fpg_juego = fpgId;
-      runtime.globalVars.fnt_gotica = fontId;
-      runtime.globalVars.vida_jugador = 100;
-      runtime.globalVars.almas_recolectadas = 0;
-      runtime.globalVars.arma_equipada = 1;
-
-      // 1. Worker acceleration
-      runtime.m8_workers(4);
-
-      // 2. Start hybrid Mode 8 with dark gothic textures
-      runtime.start_mode8_hybrid(0, 39, 44, 45);
-      runtime.m8_raytracing(true);
-
-      // 3. Equip 3D first person sword
-      runtime.m8_set_weapon("sword3d");
-
-      // 4. Sectors with elevated altar platform
-      runtime.m8_set_sector(7, 7, 0.6, 2.8, 44, 45, 1.2, "none");
-      runtime.m8_set_sector(8, 7, 0.6, 2.8, 44, 45, 1.2, "none");
-      runtime.m8_set_sector(7, 8, 0.6, 2.8, 44, 45, 1.2, "none");
-      runtime.m8_set_sector(8, 8, 0.6, 2.8, 44, 45, 1.2, "none");
-
-      // Fluid trenches
-      runtime.m8_set_fluid(5, 7, "blood");
-      runtime.m8_set_fluid(6, 7, "blood");
-      runtime.m8_set_fluid(9, 7, "blood");
-      runtime.m8_set_fluid(10, 7, "blood");
-
-      runtime.m8_set_fluid(5, 10, "lava");
-      runtime.m8_set_fluid(6, 10, "lava");
-      runtime.m8_set_fluid(9, 10, "lava");
-      runtime.m8_set_fluid(10, 10, "lava");
-
-      // 5. Dynamic lights
-      runtime.m8_add_light(7.5, 7.5, 1.2, 7.0, 220, 38, 38, true, true);
-      runtime.m8_add_light(3.5, 3.5, 0.8, 5.0, 168, 85, 247, false, true);
-      runtime.m8_add_light(11.5, 3.5, 0.8, 5.5, 245, 158, 11, true, true);
-
-      // 6. MD2 Enemies
-      runtime.m8_add_model("demon_brute", 7.5, 7.5, 0.6, 180, "idle", 1.25);
-      runtime.m8_add_model("md2_gargoyle", 4.5, 9.5, 0.2, 90, "idle", 1.0);
-      runtime.m8_add_model("md2_knight", 10.5, 9.5, 0.2, 270, "walk", 1.1);
-
-      // 7. MD2 Objects
-      runtime.m8_add_model("relic_caliz", 7.5, 6.2, 0.8, 0, "spin", 0.9);
-      runtime.m8_add_model("chest_demon", 3.5, 5.5, 0.0, 45, "idle", 1.0);
-      runtime.m8_add_model("md3_pillar", 5.5, 5.5, 0.0, 0, "idle", 1.2);
-      runtime.m8_add_model("md3_pillar", 9.5, 5.5, 0.0, 0, "idle", 1.2);
-
-      // 8. Voxels
-      runtime.m8_add_voxel("vox_skull", 8.5, 6.2, 0.7, 0.8, 2.5);
-      runtime.m8_add_voxel("vox_potion", 11.5, 5.5, 0.3, 1.0, 3.0);
-
-      // 9. Player process
-      runtime.registerProcess("jugador_cripta", function* (proc, _, rt) {
-        proc.file = fpgId;
-        proc.x = 224;
-        proc.y = 224;
-        proc.angle = 0;
-        rt.m8[0].camera = proc.id;
-
-        while (true) {
-          const vel = 3.6;
-          const rotVel = 3.0;
-
-          const turnLeft = rt.isKeyDown("ArrowLeft");
-          const turnRight = rt.isKeyDown("ArrowRight");
-          const up = rt.isKeyDown("ArrowUp") || rt.isKeyDown("KeyW");
-          const down = rt.isKeyDown("ArrowDown") || rt.isKeyDown("KeyS");
-          const strafeLeft = rt.isKeyDown("KeyA");
-          const strafeRight = rt.isKeyDown("KeyD");
-
-          if (turnLeft) {
-            proc.angle = (proc.angle - rotVel + 360) % 360;
-          }
-          if (turnRight) {
-            proc.angle = (proc.angle + rotVel) % 360;
-          }
-
-          const rad = (proc.angle * Math.PI) / 180;
-          let mx = 0;
-          let my = 0;
-
-          if (up) {
-            mx += Math.cos(rad) * vel;
-            my += Math.sin(rad) * vel;
-          }
-          if (down) {
-            mx -= Math.cos(rad) * (vel * 0.7);
-            my -= Math.sin(rad) * (vel * 0.7);
-          }
-          if (strafeLeft) {
-            mx += Math.sin(rad) * (vel * 0.8);
-            my -= Math.cos(rad) * (vel * 0.8);
-          }
-          if (strafeRight) {
-            mx -= Math.sin(rad) * (vel * 0.8);
-            my += Math.cos(rad) * (vel * 0.8);
-          }
-
-          if (mx !== 0 || my !== 0) {
-            const nextPos = rt.moveMode8WithCollision(proc.x / 64, proc.y / 64, mx / 64, my / 64, 0.25);
-            proc.x = nextPos.x * 64;
-            proc.y = nextPos.y * 64;
-          }
-
-          if (rt.isKeyDown("Space")) {
-            rt.m8_attack();
-          }
-
-          if (rt.isKeyDown("Digit1")) {
-            rt.m8_set_weapon("sword3d");
-          }
-          if (rt.isKeyDown("Digit2")) {
-            rt.m8_set_weapon("staff3d");
-          }
-
-          if (rt.isKeyDown("KeyE")) {
-            rt.interact_mode8();
-          }
-
-          yield;
-        }
+      setupRobloxMode8Runtime(runtime, PRESET_ROBLOX_CYBER_TYCOON, {
+        title: "ROBLOX CYBER BASE 3D",
+        weapon: "pistol",
+        cameraMode: "third_person",
       });
-
-      runtime.spawn("jugador_cripta");
     },
   },
-  // 9: DOOM 1993 Modo 8 Raycaster
+  // 12: Base Espacial Blox E1M1 (Modo 8)
   {
     id: "doom_modo8_classic",
-    name: "DOOM 1993: Hangar E1M1 (Modo 8)",
-    genre: "FPS 3D Acción Retro (Modo 8)",
-    description: "Auténtico FPS 3D estilo DOOM ejecutado sobre el motor Modo 8 de DIV Games Studio 2. Escopeta corredera con retroceso, sonido de disparo, imps demoníacos, botiquines y automapa interactivo.",
+    name: "Base Espacial Blox E1M1 (Modo 8)",
+    genre: "Shooter / Plataforma 3D Roblox",
+    description: "Patio modular estilo Roblox Studs con escalera de 4 peldaños hacia cubierta dorada, enemigos activos, escopeta 3D y cámara intercambiable.",
     resolution: "640x480",
-    code: `PROGRAM Doom_E1M1_Modo8;
-
-GLOBAL
-    fpg_doom = 0;
-    fnt_doom = 0;
-    snd_shotgun = 0;
-    snd_door = 0;
-    salud = 100;
-    armadura = 50;
-    cartuchos = 16;
-    arma = 2; // 1: Pistola, 2: Escopeta
-    kills = 0;
-
-BEGIN
-    set_mode(m640x480);
-    set_fps(60);
-
-    // Cargar librerías y recursos
-    fpg_doom = load_fpg("dungeon.fpg");
-    fnt_doom = load_fnt("gothic.fnt");
-    snd_shotgun = load_wav("shotgun.wav");
-    snd_door = load_wav("door.wav");
-
-    // Iniciar Raycasting Modo 8 (DOOM 2.5D con texturas de piedra y metal)
-    start_mode8(0, 0, 39, 44, 45, 0, 0);
-
-    // Activar aceleración multi-hilo en workers y trazado de rayos
-    m8_workers(4);
-    m8_raytracing(true);
-
-    // Equipar escopeta en 1ª persona
-    m8_set_weapon("shotgun");
-
-    // Luces atmosféricas dinámicas
-    m8_add_light(7.5, 7.5, 1.2, 7.0, 220, 100, 38, true, true);
-    m8_add_light(3.5, 3.5, 0.8, 5.0, 100, 150, 255, false, true);
-
-    // HUD Retro Superior
-    write(fnt_doom, 20, 20, 0, "DOOM E1M1 - HANGAR [MODO 8 DIV]");
-    write(fnt_doom, 20, 45, 0, "SALUD:");
-    write_int(fnt_doom, 85, 45, 0, &salud);
-    write(fnt_doom, 20, 70, 0, "ARMADURA:");
-    write_int(fnt_doom, 110, 70, 0, &armadura);
-    write(fnt_doom, 20, 95, 0, "CARTUCHOS:");
-    write_int(fnt_doom, 125, 95, 0, &cartuchos);
-    write(fnt_doom, 20, 120, 0, "[WASD/Flechas] Moverse | [ESPACIO/Click] Disparar | [1/2] Arma | [TAB] Mapa");
-
-    // Lanzar Marine Jugador
-    jugador_marine();
-
-    // Spawners de monstruos y suministros
-    demonio_imp(576, 256);
-    demonio_imp(448, 640);
-    botiquin_salud(320, 320);
-    caja_cartuchos(256, 448);
-
-    LOOP
-        FRAME;
-    END
-END
-
-PROCESS jugador_marine()
-PRIVATE
-    vel = 3.8;
-    rot_vel = 3.2;
-    cooldown = 0;
-BEGIN
-    file = fpg_doom;
-    x = 224;
-    y = 224;
-    angle = 0;
-    m8[0].camera = id;
-
-    LOOP
-        // Rotación con flechas izquierda / derecha
-        IF (key(_left))  angle -= rot_vel; END
-        IF (key(_right)) angle += rot_vel; END
-
-        // Desplazamiento adelante/atrás (W / S / Flechas)
-        IF (key(_up) || key(_w))
-            x += cos(angle) * vel;
-            y += sin(angle) * vel;
-        END
-        IF (key(_down) || key(_s))
-            x -= cos(angle) * (vel * 0.7);
-            y -= sin(angle) * (vel * 0.7);
-        END
-
-        // Strafe lateral (A / D)
-        IF (key(_a))
-            x += sin(angle) * (vel * 0.8);
-            y -= cos(angle) * (vel * 0.8);
-        END
-        IF (key(_d))
-            x -= sin(angle) * (vel * 0.8);
-            y += cos(angle) * (vel * 0.8);
-        END
-
-        // Disparo de escopeta / pistola
-        IF (key(_space) || mouse.left)
-            IF (cooldown == 0 && cartuchos > 0)
-                cartuchos--;
-                m8_attack();
-                cooldown = 18;
-            END
-        END
-
-        IF (cooldown > 0) cooldown--; END
-
-        // Cambiar de arma (1: Pistola, 2: Escopeta)
-        IF (key(_1))
-            arma = 1;
-            m8_set_weapon("pistol");
-        END
-        IF (key(_2))
-            arma = 2;
-            m8_set_weapon("shotgun");
-        END
-
-        // Abrir puertas e interactuar
-        IF (key(_e))
-            interact_mode8();
-        END
-
-        FRAME;
-    END
-END
-
-PROCESS demonio_imp(x, y)
-PRIVATE
-    vida = 4;
-BEGIN
-    file = fpg_doom;
-    graph = 27;
-    ctype = c_m8;
-    size = 125;
-    LOOP
-        angle += 1;
-        FRAME;
-    END
-END
-
-PROCESS botiquin_salud(x, y)
-BEGIN
-    file = fpg_doom;
-    graph = 24;
-    ctype = c_m8;
-    size = 90;
-    LOOP
-        FRAME;
-    END
-END
-
-PROCESS caja_cartuchos(x, y)
-BEGIN
-    file = fpg_doom;
-    graph = 29;
-    ctype = c_m8;
-    size = 100;
-    LOOP
-        FRAME;
-    END
-END
-`,
+    code: serializeMode8LevelToDivCode(PRESET_E1M1_HANGAR, {
+      title: "BASE ESPACIAL BLOX E1M1",
+      startingWeapon: "shotgun",
+      cameraMode: "third_person",
+      hasStartMenu: false,
+    }),
     setupRuntime: (runtime) => {
-      runtime.reset();
-      runtime.setResolution("640x480");
-      const fpgId = runtime.load_fpg("dungeon.fpg");
-      const fontId = runtime.load_fnt("gothic.fnt");
-
-      runtime.globalVars.fpg_doom = fpgId;
-      runtime.globalVars.fnt_doom = fontId;
-      runtime.globalVars.salud = 100;
-      runtime.globalVars.armadura = 50;
-      runtime.globalVars.cartuchos = 16;
-      runtime.globalVars.arma = 2;
-      runtime.globalVars.kills = 0;
-
-      // 1. Worker acceleration & hybrid raycaster
-      runtime.m8_workers(4);
-      runtime.start_mode8_hybrid(0, 39, 44, 45);
-      runtime.m8_raytracing(true);
-
-      // 2. Equip shotgun
-      runtime.m8_set_weapon("shotgun");
-
-      // 3. Sectors with elevated platform & stairs
-      runtime.m8_set_sector(7, 7, 0.5, 2.6, 44, 45, 1.3, "none");
-      runtime.m8_set_sector(8, 7, 0.5, 2.6, 44, 45, 1.3, "none");
-      runtime.m8_set_sector(7, 8, 0.5, 2.6, 44, 45, 1.3, "none");
-      runtime.m8_set_sector(8, 8, 0.5, 2.6, 44, 45, 1.3, "none");
-
-      // Toxic sludge & acid pits
-      runtime.m8_set_fluid(5, 7, "acid");
-      runtime.m8_set_fluid(6, 7, "acid");
-      runtime.m8_set_fluid(9, 7, "blood");
-      runtime.m8_set_fluid(10, 7, "blood");
-
-      // 4. Dynamic lights
-      runtime.m8_add_light(7.5, 7.5, 1.2, 7.5, 240, 120, 40, true, true);
-      runtime.m8_add_light(3.5, 3.5, 0.8, 5.0, 80, 160, 255, false, true);
-      runtime.m8_add_light(11.5, 3.5, 0.8, 5.5, 255, 60, 60, true, true);
-
-      // 5. MD2 Enemies (Imps / Demons)
-      runtime.m8_add_model("demon_brute", 7.5, 7.5, 0.5, 180, "idle", 1.2);
-      runtime.m8_add_model("md2_gargoyle", 4.5, 9.5, 0.1, 90, "walk", 1.0);
-      runtime.m8_add_model("md2_knight", 10.5, 9.5, 0.1, 270, "walk", 1.1);
-
-      // 6. Placed Voxels & Props
-      runtime.m8_add_voxel("vox_potion", 6.5, 3.5, 0.3, 1.0, 3.0);
-      runtime.m8_add_voxel("vox_skull", 8.5, 6.2, 0.7, 0.8, 2.5);
-
-      // 7. HUD text displays
-      runtime.write(fontId, 20, 20, 0, "DOOM E1M1 - HANGAR [MODO 8]");
-      runtime.write(fontId, 20, 45, 0, "SALUD: 100%   ARMADURA: 50%   CARTUCHOS: 16");
-      runtime.write(fontId, 20, 70, 0, "[WASD / Flechas] Mover  |  [ESPACIO / Click] Disparar  |  [1/2] Arma  |  [TAB] Mapa");
-
-      // 8. Marine Player Process
-      runtime.registerProcess("jugador_marine", function* (proc, _, rt) {
-        proc.file = fpgId;
-        proc.x = 224; // 3.5 * 64
-        proc.y = 224;
-        proc.angle = 0;
-        rt.m8[0].camera = proc.id;
-        let shootCooldown = 0;
-
-        while (true) {
-          const vel = 4.0;
-          const rotVel = 3.2;
-
-          const turnLeft = rt.key("left") || rt.isKeyDown("ArrowLeft");
-          const turnRight = rt.key("right") || rt.isKeyDown("ArrowRight");
-          const up = rt.key("up") || rt.key("w") || rt.isKeyDown("KeyW") || rt.isKeyDown("ArrowUp");
-          const down = rt.key("down") || rt.key("s") || rt.isKeyDown("KeyS") || rt.isKeyDown("ArrowDown");
-          const strafeLeft = rt.key("a") || rt.isKeyDown("KeyA");
-          const strafeRight = rt.key("d") || rt.isKeyDown("KeyD");
-
-          // Rotation (Left / Right arrows)
-          if (turnLeft) {
-            proc.angle = (proc.angle - rotVel + 360) % 360;
-          }
-          if (turnRight) {
-            proc.angle = (proc.angle + rotVel) % 360;
-          }
-
-          // Movement (WASD + Arrows) with smooth wall sliding
-          const rad = (proc.angle * Math.PI) / 180;
-          const dirX = Math.cos(rad);
-          const dirY = Math.sin(rad);
-
-          let mx = 0;
-          let my = 0;
-
-          if (up) {
-            mx += dirX * vel;
-            my += dirY * vel;
-          }
-          if (down) {
-            mx -= dirX * (vel * 0.7);
-            my -= dirY * (vel * 0.7);
-          }
-          if (strafeLeft) {
-            mx += Math.sin(rad) * (vel * 0.8);
-            my -= Math.cos(rad) * (vel * 0.8);
-          }
-          if (strafeRight) {
-            mx -= Math.sin(rad) * (vel * 0.8);
-            my += Math.cos(rad) * (vel * 0.8);
-          }
-
-          if (mx !== 0 || my !== 0) {
-            const nextPos = rt.moveMode8WithCollision(proc.x / 64, proc.y / 64, mx / 64, my / 64, 0.25);
-            proc.x = nextPos.x * 64;
-            proc.y = nextPos.y * 64;
-          }
-
-          // Toggle Automap radar on Tab
-          if (rt.isKeyDown("Tab")) {
-            rt.toggleMode8Automap();
-          }
-
-          // Shooting
-          if (shootCooldown > 0) shootCooldown--;
-
-          const isShooting = rt.key("space") || rt.key("control") || rt.mouseState.left;
-          if (isShooting && shootCooldown === 0) {
-            if (rt.globalVars.cartuchos > 0) {
-              rt.globalVars.cartuchos--;
-              rt.m8_attack();
-              shootCooldown = 16;
-            }
-          }
-
-          // Weapon switching
-          if (rt.key("1") || rt.key("digit1")) {
-            rt.globalVars.arma = 1;
-            rt.m8_set_weapon("pistol");
-          }
-          if (rt.key("2") || rt.key("digit2")) {
-            rt.globalVars.arma = 2;
-            rt.m8_set_weapon("shotgun");
-          }
-
-          // Interact
-          if (rt.key("e")) {
-            rt.interact_mode8();
-          }
-
-          yield;
-        }
+      setupRobloxMode8Runtime(runtime, PRESET_E1M1_HANGAR, {
+        title: "BASE ESPACIAL BLOX E1M1",
+        weapon: "shotgun",
+        cameraMode: "third_person",
       });
-
-      runtime.spawn("jugador_marine");
     },
   },
   // Multiplatform App Templates mapped to Presets for direct execution in GameStage

@@ -63,6 +63,7 @@ export const PaletteEditor: React.FC<PaletteEditorProps> = ({
 
   // Status message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<"palette" | "editor">("palette");
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -132,7 +133,6 @@ export const PaletteEditor: React.FC<PaletteEditorProps> = ({
           const max = Math.max(rollStartIdx, rollEndIdx);
           if (max <= min) return prev;
 
-          // Shift one step cyclically
           const lastColor = next[max];
           for (let i = max; i > min; i--) {
             next[i] = next[i - 1];
@@ -154,7 +154,7 @@ export const PaletteEditor: React.FC<PaletteEditorProps> = ({
   const handleApplyToRuntime = () => {
     if (runtime) {
       runtime.setPalette?.(currentPalette);
-      showToast("Paleta sincronizada con el motor DIV Games Studio");
+      showToast("Paleta sincronizada con el motor DIV");
     }
     if (onApplyPaletteToRuntime) {
       onApplyPaletteToRuntime(currentPalette);
@@ -165,10 +165,7 @@ export const PaletteEditor: React.FC<PaletteEditorProps> = ({
   const handleInsertDivCode = () => {
     const preset = PALETTE_PRESETS.find((p) => p.id === selectedPresetId);
     const filename = preset ? preset.filename : "juego.pal";
-    const snippet = `// ==========================================
-// CONFIGURACIÓN DE PALETA DIV GAMES STUDIO
-// ==========================================
-// Cargar archivo de paleta en memoria
+    const snippet = `// CONFIGURACIÓN DE PALETA DIV GAMES STUDIO
 load_pal("${filename}");
 
 // Efecto de ciclo de paleta (ej: agua o fuego)
@@ -188,7 +185,6 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
 
   // Download .PAL file (DIV Games Studio Text / Binary Compatible)
   const handleDownloadPal = () => {
-    // Generate text representation of 256 colors (R G B 0..63)
     let content = `// DIV Games Studio 256 VGA Palette File (.PAL)\n`;
     content += `// 256 Entries: R(0..63) G(0..63) B(0..63)\n`;
     currentPalette.forEach((hex, idx) => {
@@ -207,19 +203,19 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
   };
 
   return (
-    <div className="h-full w-full flex-1 flex-grow min-h-0 bg-[#080d1a] text-slate-200 flex flex-col select-none font-sans overflow-hidden">
+    <div className="h-full w-full flex-1 min-h-0 bg-[#F7F8FA] text-[#111827] flex flex-col select-none font-sans overflow-hidden">
       {/* Top Controls Toolbar */}
-      <div className="p-2.5 bg-[#0a1226] border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+      <div className="px-3 py-2 bg-white border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
         {/* Preset Selector */}
-        <div className="flex items-center gap-2">
-          <Palette className="w-4 h-4 text-cyan-400" />
-          <span className="text-xs font-mono font-bold text-slate-300">
-            PALETA DIV:
-          </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-[#FDF2F5] text-[#7C2D48] flex items-center justify-center flex-shrink-0">
+            <Palette className="w-4 h-4" />
+          </div>
           <select
+            aria-label="Seleccionar paleta predefinida"
             value={selectedPresetId}
             onChange={(e) => handleSelectPreset(e.target.value)}
-            className="bg-[#050914] border border-slate-700 text-cyan-300 text-xs rounded px-2.5 py-1 font-mono focus:border-cyan-500 focus:outline-none"
+            className="min-h-[38px] bg-[#F7F8FA] border border-[#CBD5E1] text-[#111827] text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:border-[#7C2D48] focus:outline-none max-w-[200px] truncate cursor-pointer"
           >
             {PALETTE_PRESETS.map((p) => (
               <option key={p.id} value={p.id}>
@@ -230,59 +226,99 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
+            type="button"
             onClick={handleApplyToRuntime}
-            className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-mono font-semibold rounded flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+            className="min-h-[38px] px-3 py-1.5 bg-[#2F6F4E] hover:bg-[#265A3F] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
             title="Sincronizar esta paleta con el motor runtime DIV"
           >
-            <Zap className="w-3 h-3 fill-current" />
-            <span>APLICAR AL JUEGO</span>
+            <Zap className="w-3.5 h-3.5" />
+            <span>Aplicar al Juego</span>
           </button>
 
           <button
+            type="button"
             onClick={handleInsertDivCode}
-            className="px-2.5 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-300 text-xs font-mono font-semibold rounded flex items-center gap-1.5 transition-all"
-            title="Pegar load_pal, roll_palette y set_color en el editor"
+            className="min-h-[38px] px-2.5 py-1.5 bg-[#FDF2F5] hover:bg-[#FCE7EF] border border-[#7C2D48]/30 text-[#7C2D48] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+            title="Insertar load_pal, roll_palette y set_color en el editor"
           >
-            <Code2 className="w-3 h-3" />
-            <span>CÓDIGO DIV</span>
+            <Code2 className="w-3.5 h-3.5" />
+            <span>Código DIV</span>
           </button>
 
           <button
+            type="button"
             onClick={handleDownloadPal}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-mono font-semibold rounded flex items-center gap-1.5 transition-all"
+            className="min-h-[38px] px-2.5 py-1.5 bg-[#F1F5F9] hover:bg-slate-200 border border-[#E2E8F0] text-[#374151] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
             title="Descargar archivo .PAL compatible"
           >
-            <Download className="w-3 h-3" />
-            <span>DESCARGAR .PAL</span>
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Descargar .PAL</span>
+            <span className="sm:hidden">.PAL</span>
           </button>
         </div>
       </div>
 
+      {/* Mobile Tab Switcher */}
+      <div className="flex md:hidden border-b border-[#E2E8F0] bg-white px-2 py-1.5 gap-1.5 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => setMobileTab("palette")}
+          className={`flex-1 min-h-[40px] rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === "palette"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F1F5F9] text-[#4B5563]"
+          }`}
+        >
+          <Palette className="w-3.5 h-3.5" />
+          <span>Paleta 256</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab("editor")}
+          className={`flex-1 min-h-[40px] rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === "editor"
+              ? "bg-[#7C2D48] text-white"
+              : "bg-[#F1F5F9] text-[#4B5563]"
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>Editor RGB #{selectedIndex}</span>
+        </button>
+      </div>
+
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="bg-cyan-950 border-b border-cyan-600/60 px-3 py-1 text-center text-xs font-mono text-cyan-300 flex items-center justify-center gap-1.5 animate-in fade-in">
-          <Sparkles className="w-3.5 h-3.5" />
+        <div className="bg-[#EEF6F1] border-b border-[#2F6F4E]/30 px-3 py-1.5 text-center text-xs font-medium text-[#2F6F4E] flex items-center justify-center gap-1.5 flex-shrink-0">
+          <Check className="w-3.5 h-3.5" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Main Content: Left Palette Grid (256 colors), Right Inspector & Tools */}
-      <div className="flex-1 flex-grow min-h-0 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
         {/* Left: 256 VGA Color Grid */}
-        <div className="flex-1 p-3 flex flex-col items-center justify-center bg-[#060913] overflow-y-auto">
-          <div className="w-full max-w-xl">
-            <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1.5">
-              <span>256 COLORES INDEXADOS (16 x 16)</span>
-              <span className="text-cyan-400">
-                Seleccionado: #{selectedIndex} ({currentPalette[selectedIndex]})
+        <div
+          className={`${
+            mobileTab === "palette" ? "flex" : "hidden"
+          } md:flex flex-1 min-h-0 p-3 sm:p-4 flex-col items-center justify-start md:justify-center overflow-y-auto`}
+        >
+          <div className="w-full max-w-xl bg-white p-3 sm:p-4 rounded-2xl border border-[#E2E8F0] shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#4B5563] mb-2.5">
+              <span className="font-bold text-[#111827]">256 Colores VGA (16 × 16)</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-[#F7F8FA] px-2 py-0.5 rounded-md border border-[#E2E8F0]">
+                <span
+                  className="w-3 h-3 rounded-xs border border-black/20 inline-block"
+                  style={{ backgroundColor: currentPalette[selectedIndex] }}
+                />
+                <span>#{selectedIndex} · {currentPalette[selectedIndex].toUpperCase()}</span>
               </span>
             </div>
 
             {/* 16x16 Grid */}
             <div
-              className="grid grid-cols-16 gap-1 p-2 bg-[#091124] border-2 border-slate-800 rounded shadow-inner"
+              className="grid gap-1 sm:gap-1.5 p-2 bg-[#0F172A] border border-[#CBD5E1] rounded-xl shadow-inner touch-manipulation"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(16, minmax(0, 1fr))",
@@ -298,15 +334,16 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
                 return (
                   <button
                     key={idx}
+                    type="button"
                     id={`palette-color-${idx}`}
                     onClick={() => setSelectedIndex(idx)}
-                    title={`Índice #${idx}\nHex: ${hex}\nDIV DOS R:${hexToDivColor(hex).r63} G:${hexToDivColor(hex).g63} B:${hexToDivColor(hex).b63}`}
-                    className={`aspect-square rounded-xs relative transition-transform ${
+                    title={`Índice #${idx} | Hex: ${hex}`}
+                    className={`aspect-square rounded-[2px] relative transition-transform cursor-pointer ${
                       isSelected
                         ? "ring-2 ring-white scale-125 z-10 shadow-lg"
                         : inRollRange
                         ? "ring-1 ring-amber-400 scale-105"
-                        : "hover:scale-110 hover:z-5"
+                        : "hover:scale-110"
                     }`}
                     style={{ backgroundColor: hex }}
                   >
@@ -320,87 +357,95 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
               })}
             </div>
 
-            <div className="mt-2 text-[11px] font-mono text-slate-500 text-center">
-              Haz clic en cualquier muestra de color para editar sus componentes RGB o generar gradientes
+            <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-[#6B7280]">
+              <span>Toca cualquier color para editar sus canales RGB o generar degradados.</span>
+              <button
+                type="button"
+                onClick={() => setMobileTab("editor")}
+                className="md:hidden px-2.5 py-1 rounded-lg bg-[#FDF2F5] text-[#7C2D48] font-semibold whitespace-nowrap cursor-pointer"
+              >
+                Editar color →
+              </button>
             </div>
           </div>
         </div>
 
         {/* Right Sidebar: Color Inspector & Palette Tools */}
-        <div className="w-full md:w-80 p-3 bg-[#0a1226] border-t md:border-t-0 md:border-l border-slate-800 flex flex-col gap-3 overflow-y-auto font-mono text-xs">
+        <div
+          className={`${
+            mobileTab === "editor" ? "flex w-full" : "hidden"
+          } md:flex md:w-80 lg:w-88 p-3 bg-white border-t md:border-t-0 md:border-l border-[#E2E8F0] flex-col gap-3 overflow-y-auto text-xs flex-shrink-0`}
+        >
           {/* 1. Selected Color Inspector */}
-          <div className="p-2.5 bg-[#060b18] border border-slate-800 rounded space-y-2.5 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
-              <span className="font-bold text-slate-200">
-                COLOR SELECCIONADO #{selectedIndex}
+          <div className="p-3 bg-[#F7F8FA] border border-[#E2E8F0] rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+              <span className="font-bold text-[#111827]">
+                Color Seleccionado #{selectedIndex}
               </span>
               <div
-                className="w-6 h-6 rounded border border-white/40 shadow-sm"
+                className="w-7 h-7 rounded-lg border border-black/15 shadow-2xs"
                 style={{ backgroundColor: selectedColor.hex }}
               />
             </div>
 
             {/* Hex Input */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-400 text-[11px]">HEXADECIMAL:</span>
+              <span className="text-[#4B5563] text-[11px] font-medium">Código Hex:</span>
               <input
                 type="text"
                 value={selectedColor.hex.toUpperCase()}
                 onChange={(e) => handleUpdateHex(e.target.value)}
-                className="w-24 px-2 py-0.5 bg-[#03060f] border border-slate-700 rounded text-right text-cyan-300 font-mono text-xs focus:border-cyan-500 focus:outline-none"
+                className="w-28 min-h-[36px] px-2.5 py-1 bg-white border border-[#CBD5E1] rounded-lg text-right text-[#7C2D48] font-mono font-bold text-xs focus:border-[#7C2D48] focus:outline-none"
               />
             </div>
 
             {/* DIV DOS 0..63 RGB Sliders */}
-            <div className="space-y-1.5 pt-1">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">
-                COMPATIBILIDAD DIV DOS (RGB 0..63):
+            <div className="space-y-2 pt-1">
+              <div className="text-[10px] text-[#6B7280] font-bold uppercase tracking-wider">
+                Canales VGA DIV (0..63)
               </div>
 
-              {/* Red Slider */}
-              <div className="flex items-center gap-2">
-                <span className="w-4 text-red-400 font-bold">R</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-4 text-rose-600 font-bold">R</span>
                 <input
                   type="range"
                   min={0}
                   max={63}
                   value={selectedColor.r63}
                   onChange={(e) => handleUpdateR63(Number(e.target.value))}
-                  className="flex-1 accent-red-500 h-1.5 bg-slate-800 rounded cursor-pointer"
+                  className="flex-1 accent-rose-600 h-2 bg-slate-200 rounded cursor-pointer"
                 />
-                <span className="w-8 text-right text-slate-300 font-mono text-[11px]">
+                <span className="w-7 text-right text-[#111827] font-mono font-semibold text-xs">
                   {selectedColor.r63}
                 </span>
               </div>
 
-              {/* Green Slider */}
-              <div className="flex items-center gap-2">
-                <span className="w-4 text-emerald-400 font-bold">G</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-4 text-[#2F6F4E] font-bold">G</span>
                 <input
                   type="range"
                   min={0}
                   max={63}
                   value={selectedColor.g63}
                   onChange={(e) => handleUpdateG63(Number(e.target.value))}
-                  className="flex-1 accent-emerald-500 h-1.5 bg-slate-800 rounded cursor-pointer"
+                  className="flex-1 accent-[#2F6F4E] h-2 bg-slate-200 rounded cursor-pointer"
                 />
-                <span className="w-8 text-right text-slate-300 font-mono text-[11px]">
+                <span className="w-7 text-right text-[#111827] font-mono font-semibold text-xs">
                   {selectedColor.g63}
                 </span>
               </div>
 
-              {/* Blue Slider */}
-              <div className="flex items-center gap-2">
-                <span className="w-4 text-cyan-400 font-bold">B</span>
+              <div className="flex items-center gap-2.5">
+                <span className="w-4 text-sky-600 font-bold">B</span>
                 <input
                   type="range"
                   min={0}
                   max={63}
                   value={selectedColor.b63}
                   onChange={(e) => handleUpdateB63(Number(e.target.value))}
-                  className="flex-1 accent-cyan-500 h-1.5 bg-slate-800 rounded cursor-pointer"
+                  className="flex-1 accent-sky-600 h-2 bg-slate-200 rounded cursor-pointer"
                 />
-                <span className="w-8 text-right text-slate-300 font-mono text-[11px]">
+                <span className="w-7 text-right text-[#111827] font-mono font-semibold text-xs">
                   {selectedColor.b63}
                 </span>
               </div>
@@ -408,129 +453,135 @@ set_color(${selectedIndex}, ${selectedColor.r63}, ${selectedColor.g63}, ${select
           </div>
 
           {/* 2. Color Ramp / Gradient Generator */}
-          <div className="p-2.5 bg-[#060b18] border border-slate-800 rounded space-y-2">
-            <div className="flex items-center gap-1.5 font-bold text-slate-200 border-b border-slate-800/80 pb-1">
-              <Sliders className="w-3.5 h-3.5 text-amber-400" />
-              <span>GENERADOR DE DEGRADADOS</span>
+          <div className="p-3 bg-[#F7F8FA] border border-[#E2E8F0] rounded-xl space-y-2.5">
+            <div className="flex items-center gap-1.5 font-bold text-[#111827] border-b border-[#E2E8F0] pb-1.5">
+              <Sliders className="w-3.5 h-3.5 text-[#7C2D48]" />
+              <span>Generador de Degradados</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div>
-                <label className="text-slate-400 text-[10px]">DESDE ÍNDICE:</label>
+                <label className="text-[#4B5563] text-[10px] font-medium block mb-1">Desde índice:</label>
                 <input
                   type="number"
                   min={0}
                   max={255}
                   value={rampStartIdx}
                   onChange={(e) => setRampStartIdx(Number(e.target.value))}
-                  className="w-full px-2 py-0.5 bg-[#03060f] border border-slate-700 rounded text-slate-200 font-mono"
+                  className="w-full min-h-[36px] px-2 py-1 bg-white border border-[#CBD5E1] rounded-lg text-[#111827] font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 text-[10px]">HASTA ÍNDICE:</label>
+                <label className="text-[#4B5563] text-[10px] font-medium block mb-1">Hasta índice:</label>
                 <input
                   type="number"
                   min={0}
                   max={255}
                   value={rampEndIdx}
                   onChange={(e) => setRampEndIdx(Number(e.target.value))}
-                  className="w-full px-2 py-0.5 bg-[#03060f] border border-slate-700 rounded text-slate-200 font-mono"
+                  className="w-full min-h-[36px] px-2 py-1 bg-white border border-[#CBD5E1] rounded-lg text-[#111827] font-mono"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 bg-white px-2 py-1.5 rounded-lg border border-[#E2E8F0]">
                 <input
                   type="color"
                   value={rampStartColor}
                   onChange={(e) => setRampStartColor(e.target.value)}
-                  className="w-6 h-6 p-0 border border-slate-700 rounded bg-transparent cursor-pointer"
+                  className="w-7 h-7 p-0 border border-[#CBD5E1] rounded bg-transparent cursor-pointer"
                 />
-                <span className="text-[10px] text-slate-300">Color Inicio</span>
+                <span className="text-[11px] text-[#374151] font-medium">Inicio</span>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 bg-white px-2 py-1.5 rounded-lg border border-[#E2E8F0]">
                 <input
                   type="color"
                   value={rampEndColor}
                   onChange={(e) => setRampEndColor(e.target.value)}
-                  className="w-6 h-6 p-0 border border-slate-700 rounded bg-transparent cursor-pointer"
+                  className="w-7 h-7 p-0 border border-[#CBD5E1] rounded bg-transparent cursor-pointer"
                 />
-                <span className="text-[10px] text-slate-300">Color Fin</span>
+                <span className="text-[11px] text-[#374151] font-medium">Fin</span>
               </div>
             </div>
 
             <button
+              type="button"
               onClick={handleApplyRamp}
-              className="w-full py-1 bg-amber-950 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+              className="w-full min-h-[40px] py-1.5 bg-[#FDF2F5] hover:bg-[#FCE7EF] border border-[#7C2D48]/30 text-[#7C2D48] rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Sparkles className="w-3 h-3" />
-              <span>GENERAR RAMPA DE COLOR</span>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Generar Rampa de Color</span>
             </button>
           </div>
 
           {/* 3. Palette Cycling (roll_palette) */}
-          <div className="p-2.5 bg-[#060b18] border border-slate-800 rounded space-y-2">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
-              <div className="flex items-center gap-1.5 font-bold text-slate-200">
-                <RotateCw className={`w-3.5 h-3.5 text-cyan-400 ${isRolling ? "animate-spin" : ""}`} />
-                <span>ROTACIÓN (ROLL_PALETTE)</span>
+          <div className="p-3 bg-[#F7F8FA] border border-[#E2E8F0] rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-[#111827]">
+                <RotateCw className="w-3.5 h-3.5 text-[#7C2D48]" />
+                <span>Ciclo (roll_palette)</span>
               </div>
-              <span className={`text-[9px] px-1 rounded font-bold ${isRolling ? "bg-emerald-950 text-emerald-300 border border-emerald-700" : "bg-slate-900 text-slate-500"}`}>
-                {isRolling ? "ACTIVO" : "PAUSA"}
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                  isRolling
+                    ? "bg-[#EEF6F1] text-[#2F6F4E] border border-[#2F6F4E]/30"
+                    : "bg-slate-200 text-[#6B7280]"
+                }`}
+              >
+                {isRolling ? "Activo" : "Pausa"}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div>
-                <label className="text-slate-400 text-[10px]">RANGO INICIAL:</label>
+                <label className="text-[#4B5563] text-[10px] font-medium block mb-1">Inicio:</label>
                 <input
                   type="number"
                   min={0}
                   max={255}
                   value={rollStartIdx}
                   onChange={(e) => setRollStartIdx(Number(e.target.value))}
-                  className="w-full px-2 py-0.5 bg-[#03060f] border border-slate-700 rounded text-slate-200 font-mono"
+                  className="w-full min-h-[36px] px-2 py-1 bg-white border border-[#CBD5E1] rounded-lg text-[#111827] font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 text-[10px]">RANGO FINAL:</label>
+                <label className="text-[#4B5563] text-[10px] font-medium block mb-1">Fin:</label>
                 <input
                   type="number"
                   min={0}
                   max={255}
                   value={rollEndIdx}
                   onChange={(e) => setRollEndIdx(Number(e.target.value))}
-                  className="w-full px-2 py-0.5 bg-[#03060f] border border-slate-700 rounded text-slate-200 font-mono"
+                  className="w-full min-h-[36px] px-2 py-1 bg-white border border-[#CBD5E1] rounded-lg text-[#111827] font-mono"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsRolling(!isRolling)}
-                className={`flex-1 py-1 rounded font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors ${
-                  isRolling
-                    ? "bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-200"
-                    : "bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-200"
-                }`}
-              >
-                {isRolling ? (
-                  <>
-                    <Pause className="w-3 h-3 fill-current" />
-                    <span>DETENER CICLO</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3 h-3 fill-current" />
-                    <span>SIMULAR EN VIVO</span>
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsRolling(!isRolling)}
+              className={`w-full min-h-[40px] py-1.5 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                isRolling
+                  ? "bg-rose-600 hover:bg-rose-700 text-white"
+                  : "bg-[#7C2D48] hover:bg-[#642239] text-white"
+              }`}
+            >
+              {isRolling ? (
+                <>
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                  <span>Detener Simulación</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Simular Ciclo en Vivo</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

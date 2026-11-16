@@ -27,17 +27,22 @@ class SoundEngine {
   private masterVolume: number = 1.0;
 
   private initCtx() {
-    if (!this.ctx && typeof window !== "undefined") {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        this.ctx = new AudioCtx();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
-        this.masterGain.connect(this.ctx.destination);
+    try {
+      if (!this.ctx && typeof window !== "undefined") {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.ctx = new AudioCtx();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+        }
       }
-    }
-    if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume().catch(() => {});
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      this.ctx = null;
+      this.masterGain = null;
     }
   }
 
@@ -99,29 +104,33 @@ class SoundEngine {
    */
   public playSound(id: number, volume: number = 100, frequency: number = 256): number {
     if (this.isMuted) return 0;
-    this.initCtx();
-    if (!this.ctx) return 0;
+    try {
+      this.initCtx();
+      if (!this.ctx) return 0;
 
-    const channelId = this.nextChannelId++;
-    const normalizedVol = Math.max(0, Math.min(1, volume / 100));
-    const normalizedPitch = Math.max(0.2, Math.min(4, frequency / 256));
+      const channelId = this.nextChannelId++;
+      const normalizedVol = Math.max(0, Math.min(1, volume / 100));
+      const normalizedPitch = Math.max(0.2, Math.min(4, frequency / 256));
 
-    const synth = this.soundCache.get(id);
-    let channel: ActiveChannel | void;
-    if (synth) {
-      channel = synth(normalizedVol, normalizedPitch, channelId);
-    } else {
-      channel = this.playTone(440 * normalizedPitch, 0.12, "square", normalizedVol, channelId);
+      const synth = this.soundCache.get(id);
+      let channel: ActiveChannel | void;
+      if (synth) {
+        channel = synth(normalizedVol, normalizedPitch, channelId);
+      } else {
+        channel = this.playTone(440 * normalizedPitch, 0.12, "square", normalizedVol, channelId);
+      }
+
+      if (channel) {
+        this.activeChannels.set(channelId, channel);
+        setTimeout(() => {
+          this.activeChannels.delete(channelId);
+        }, (channel.duration + 0.1) * 1000);
+      }
+
+      return channelId;
+    } catch {
+      return 0;
     }
-
-    if (channel) {
-      this.activeChannels.set(channelId, channel);
-      setTimeout(() => {
-        this.activeChannels.delete(channelId);
-      }, (channel.duration + 0.1) * 1000);
-    }
-
-    return channelId;
   }
 
   /**

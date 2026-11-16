@@ -611,10 +611,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
   if (codeViewMode === "blocks") {
     return (
-      <div
-        className="w-full h-full flex-1 flex-grow flex flex-col min-h-0 bg-[#f3f3f3] overflow-hidden"
-        style={{ height: "100%", width: "100%", flexGrow: 1, minHeight: 0 }}
-      >
+      <div className="w-full h-full flex-1 flex-grow flex flex-col min-h-0 bg-[#f3f3f3] overflow-hidden">
         <AppInventorWorkspace
           initialCode={code}
           projectName={fileName?.replace(/\.[^/.]+$/, "") || "Juego_DIV"}
@@ -627,18 +624,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }
 
   return (
-    <div
-      className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#080d1a] border border-slate-800 rounded-lg overflow-hidden relative"
-      style={{ height: "100%", width: "100%", flexGrow: 1, minHeight: 0 }}
-    >
+    <div className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#080d1a] border border-slate-800 rounded-lg overflow-hidden relative">
       {/* Visual MDI engine Object & Procedure Bar */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0f172a] border-b border-slate-700/80 text-xs flex-shrink-0">
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">Objeto:</span>
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 px-3 py-1.5 bg-[#0f172a] border-b border-slate-700/80 text-xs flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-1 min-w-[140px]">
+          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase shrink-0">Objeto:</span>
           <select
             value={selectedObject}
             onChange={(e) => handleSelectObjectAndProc(e.target.value, selectedProcedure)}
-            className="flex-1 max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-400"
+            className="flex-1 min-h-[34px] max-w-full sm:max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-400"
           >
             {detectedObjects.map((obj) => (
               <option key={obj} value={obj}>
@@ -648,12 +642,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </select>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">Procedimiento:</span>
+        <div className="flex items-center gap-1.5 flex-1 min-w-[140px]">
+          <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase shrink-0">Procedimiento:</span>
           <select
             value={selectedProcedure}
             onChange={(e) => handleSelectObjectAndProc(selectedObject, e.target.value)}
-            className="flex-1 max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
+            className="flex-1 min-h-[34px] max-w-full sm:max-w-[200px] bg-[#1e293b] border border-slate-600 rounded px-2 py-0.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
           >
             {availableProcedures.map((proc) => (
               <option key={proc} value={proc}>
@@ -868,21 +862,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       )}
 
       {/* Editor Main Split Workspace (Code Editor Left + Android Studio AI Panel Right) */}
-      <div
-        className="flex-1 flex-grow flex overflow-hidden min-h-0 w-full relative"
-        style={{ flexGrow: 1, minHeight: 0 }}
-      >
+      <div className="flex-1 flex-grow flex overflow-hidden min-h-0 w-full relative">
         {/* Editor Body with Synchronized Line Numbers */}
         <div
           ref={editorBodyRef}
           className="relative flex-1 flex-grow flex overflow-hidden w-full h-full min-h-0 min-w-0 font-mono text-xs"
-          style={{ height: "100%", width: "100%", flexGrow: 1, minHeight: 0 }}
         >
           {/* Line Numbers Gutter */}
           <div
             ref={gutterRef}
             className="w-11 sm:w-14 py-3 bg-[#0a1020] border-r border-slate-800/80 text-right select-none text-slate-500 overflow-hidden font-mono leading-6 flex-shrink-0 h-full group"
-            style={{ height: "100%" }}
           >
             {lines.map((_, idx) => {
               const lineNum = idx + 1;
@@ -968,10 +957,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           </div>
 
           {/* Code Input Area with Layered Syntax Highlighting */}
-          <div
-            className="relative flex-1 flex-grow w-full h-full min-h-0 min-w-0 overflow-hidden"
-            style={{ height: "100%", width: "100%", flexGrow: 1, minHeight: 0 }}
-          >
+          <div className="relative flex-1 flex-grow w-full h-full min-h-0 min-w-0 overflow-hidden">
             {/* Active Paused Line Background Highlight */}
             {effectiveExecutionLine && (
               <div
@@ -994,7 +980,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               aria-hidden="true"
               dangerouslySetInnerHTML={{ __html: highlightedHtml + "\n" }}
               className="absolute inset-0 w-full h-full py-3 px-3.5 m-0 bg-transparent pointer-events-none font-mono text-xs leading-6 overflow-hidden whitespace-pre select-none text-slate-300"
-              style={{ height: "100%", width: "100%" }}
             />
           )}
 
@@ -1032,7 +1017,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             className={`w-full h-full py-3 px-3.5 bg-transparent resize-none outline-none leading-6 overflow-auto whitespace-pre font-mono text-xs selection:bg-emerald-600/30 ${
               syntaxHighlight ? "text-transparent caret-white" : "text-slate-100"
             }`}
-            style={{ height: "100%", width: "100%" }}
             placeholder="PROGRAM mi_juego;\nBEGIN\n  set_mode(m640x480);\n  LOOP\n    FRAME;\n  END\nEND"
           />
 

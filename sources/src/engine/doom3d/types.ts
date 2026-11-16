@@ -5,7 +5,7 @@ export interface LumpEntry {
   filePos: number;
   size: number;
   index: number;
-  buffer?: ArrayBuffer;
+  buffer?: ArrayBufferLike;
 }
 
 export interface DoomVertex {

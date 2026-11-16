@@ -524,18 +524,18 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
   return (
     <div
       id="div-sprite-generator-window"
-      className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#303848] text-slate-100 font-sans select-none overflow-hidden border-2 border-[#162238] shadow-2xl"
+      className="flex flex-col flex-1 flex-grow w-full h-full min-h-0 bg-[#F7F8FA] text-[#111827] font-sans select-none overflow-hidden"
     >
-      {/* Authentic DIV Games Studio 2 Title Bar */}
-      <div className="h-7 bg-[#1c2e78] border-b-2 border-[#0e163c] px-2 flex items-center justify-between flex-shrink-0 text-white font-bold text-xs tracking-wider">
+      {/* Top Bar */}
+      <div className="bg-white border-b border-[#E2E8F0] px-3 py-2 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Film className="w-4 h-4 text-cyan-300" />
-          <span>Generador de sprites</span>
+          <Film className="w-4 h-4 text-[#7C2D48]" />
+          <span className="font-bold text-xs tracking-wide text-[#111827]">Generador de Sprites 3D → 2D</span>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="w-4 h-4 bg-[#2b419c] hover:bg-rose-600 border border-white/50 text-white flex items-center justify-center font-bold text-[10px] rounded-xs"
+            className="min-w-[34px] min-h-[34px] bg-[#F8FAFC] hover:bg-rose-50 border border-[#E2E8F0] text-[#4B5563] hover:text-rose-600 flex items-center justify-center font-bold text-sm rounded-lg"
             title="Cerrar ventana"
           >
             ×
@@ -544,23 +544,22 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
       </div>
 
       {acceptedToast && (
-        <div className="bg-emerald-900 border-b border-emerald-600 text-emerald-100 text-xs px-3 py-1 flex items-center justify-between">
+        <div className="bg-[#ECFDF5] border-b border-[#A7F3D0] text-[#2F6F4E] text-xs px-3 py-2 flex items-center justify-between flex-shrink-0 font-medium">
           <span>{acceptedToast}</span>
-          <button onClick={() => setAcceptedToast(null)} className="font-bold text-emerald-300">×</button>
+          <button onClick={() => setAcceptedToast(null)} className="font-bold px-2">×</button>
         </div>
       )}
 
-      {/* Main Container - Exact Layout from Screenshot */}
-      <div className="flex-1 flex-grow min-h-0 w-full h-full p-3 flex flex-col gap-2 overflow-y-auto bg-[#303848]">
-        {/* Top Split: Left Skin Texture / Right 3D Viewport */}
-        <div className="grid grid-cols-2 gap-2 h-44 flex-shrink-0">
-          {/* Left: Texture Skin Mapping Viewport */}
-          <div className="border-2 border-[#162238] bg-[#1a2230] p-1 flex flex-col relative">
-            <div className="text-[10px] text-slate-400 font-semibold mb-0.5 px-1 flex items-center justify-between">
+      {/* Main Scrollable Container */}
+      <div className="flex-1 flex-grow min-h-0 w-full h-full p-3 flex flex-col gap-3 overflow-y-auto bg-[#F7F8FA]">
+        {/* Top Split: Skin Texture + 3D Viewport */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-shrink-0">
+          <div className="border border-[#E2E8F0] bg-white rounded-xl p-2 flex flex-col shadow-xs">
+            <div className="text-[11px] text-[#4B5563] font-semibold mb-1.5 px-1 flex items-center justify-between">
               <span>Textura / Skin Map</span>
-              <span className="text-cyan-400 font-mono">128x128</span>
+              <span className="text-[#7C2D48] font-mono font-bold">128x128</span>
             </div>
-            <div className="flex-1 flex items-center justify-center bg-[#101722] overflow-hidden border border-black/40">
+            <div className="h-32 sm:h-36 flex items-center justify-center bg-[#0F172A] rounded-lg overflow-hidden border border-[#CBD5E1]">
               <canvas
                 ref={skinCanvasRef}
                 width={128}
@@ -570,19 +569,18 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
             </div>
           </div>
 
-          {/* Right: 3D Interactive Viewport (DIV Style) */}
-          <div className="border-2 border-[#162238] bg-[#1a2230] p-1 flex flex-col relative">
-            <div className="text-[10px] text-slate-400 font-semibold mb-0.5 px-1 flex items-center justify-between">
-              <span>Vista 3D: {selectedAnimName}</span>
+          <div className="border border-[#E2E8F0] bg-white rounded-xl p-2 flex flex-col shadow-xs">
+            <div className="text-[11px] text-[#4B5563] font-semibold mb-1.5 px-1 flex items-center justify-between">
+              <span>Vista 3D: <strong className="text-[#7C2D48]">{selectedAnimName}</strong></span>
               <button
                 onClick={() => setIsPlaying(!isPlaying)}
-                className="text-cyan-400 hover:text-white font-mono text-[10px] flex items-center gap-1"
+                className="px-2 py-0.5 rounded-md bg-[#FDF2F4] text-[#7C2D48] font-bold font-mono text-[11px] flex items-center gap-1"
               >
                 {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                <span>{isPlaying ? "Animando" : "Pausa"}</span>
+                <span>{isPlaying ? "Pausar" : "Reproducir"}</span>
               </button>
             </div>
-            <div className="flex-1 flex items-center justify-center bg-[#3a4454] overflow-hidden border border-black/40 relative">
+            <div className="h-32 sm:h-36 flex items-center justify-center bg-[#3a4454] rounded-lg overflow-hidden border border-[#CBD5E1] relative">
               <canvas
                 ref={previewCanvasRef}
                 width={160}
@@ -593,12 +591,11 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
           </div>
         </div>
 
-        {/* Middle Controls Row 1: Tamaño (%) & Imágenes with Stepper Buttons */}
-        <div className="grid grid-cols-2 gap-3 items-center bg-[#252c3a] p-2 border border-[#1c2432] rounded">
-          {/* Tamaño (%) */}
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-200 whitespace-nowrap">
-              Tamaño (%)
+        {/* Scale & Image Count */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center bg-white p-3 border border-[#E2E8F0] rounded-xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-bold text-[#374151] whitespace-nowrap">
+              Tamaño (%):
             </label>
             <input
               type="number"
@@ -607,17 +604,17 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
               step={10}
               value={scalePercent}
               onChange={(e) => setScalePercent(Math.max(25, Math.min(300, parseInt(e.target.value) || 100)))}
-              className="w-20 bg-[#161c28] border border-[#3e485e] text-white px-2 py-1 text-xs font-mono font-bold rounded outline-none focus:border-cyan-400"
+              className="w-20 h-9 bg-[#F8FAFC] border border-[#CBD5E1] text-[#111827] px-2 text-xs font-mono font-bold rounded-lg outline-none focus:border-[#7C2D48]"
             />
             <div className="flex gap-1">
               {[50, 100, 150].map((val) => (
                 <button
                   key={val}
                   onClick={() => setScalePercent(val)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded border ${
+                  className={`px-2.5 min-h-[34px] text-xs rounded-lg border font-semibold ${
                     scalePercent === val
-                      ? "bg-cyan-700 border-cyan-400 text-white font-bold"
-                      : "bg-[#182030] border-slate-700 text-slate-400 hover:text-white"
+                      ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                      : "bg-[#F8FAFC] border-[#E2E8F0] text-[#4B5563]"
                   }`}
                 >
                   {val}%
@@ -626,10 +623,9 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
             </div>
           </div>
 
-          {/* Imágenes with << and >> */}
-          <div className="flex items-center gap-2 justify-end">
-            <label className="text-xs font-semibold text-slate-200 whitespace-nowrap">
-              Imágenes
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <label className="text-xs font-bold text-[#374151] whitespace-nowrap">
+              Imágenes:
             </label>
             <input
               type="number"
@@ -637,29 +633,29 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
               max={64}
               value={numImages}
               onChange={(e) => setNumImages(Math.max(1, Math.min(64, parseInt(e.target.value) || 16)))}
-              className="w-16 bg-[#161c28] border border-[#3e485e] text-white px-2 py-1 text-xs font-mono font-bold rounded outline-none focus:border-cyan-400"
+              className="w-16 h-9 bg-[#F8FAFC] border border-[#CBD5E1] text-[#111827] px-2 text-xs font-mono font-bold rounded-lg outline-none focus:border-[#7C2D48]"
             />
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setNumImages((prev) => Math.max(1, prev - 2))}
-                className="px-2 py-1 bg-[#1a2336] hover:bg-[#25324c] border border-slate-600 text-slate-200 rounded text-xs font-bold font-mono"
+                className="min-w-[38px] min-h-[36px] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#374151] rounded-lg text-xs font-bold font-mono"
                 title="Menos imágenes"
               >
-                &lt;&lt;
+                -2
               </button>
               <button
                 onClick={() => setNumImages((prev) => Math.min(64, prev + 2))}
-                className="px-2 py-1 bg-[#1a2336] hover:bg-[#25324c] border border-slate-600 text-slate-200 rounded text-xs font-bold font-mono"
+                className="min-w-[38px] min-h-[36px] bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#374151] rounded-lg text-xs font-bold font-mono"
                 title="Más imágenes"
               >
-                &gt;&gt;
+                +2
               </button>
             </div>
           </div>
         </div>
 
-        {/* Character Archetype Checkboxes (Hombre, Mujer, Niño, Armado) */}
-        <div className="flex items-center gap-4 py-1 px-2 bg-[#283244] border border-[#1e2636] rounded text-xs font-semibold">
+        {/* Character Archetype Selector */}
+        <div className="flex flex-wrap items-center gap-2 p-2.5 bg-white border border-[#E2E8F0] rounded-xl text-xs font-semibold">
           {[
             { id: "hombre", label: "Hombre" },
             { id: "mujer", label: "Mujer" },
@@ -670,43 +666,45 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
           ].map((arch) => {
             const isSelected = selectedArchetype === arch.id;
             return (
-              <label
+              <button
                 key={arch.id}
                 onClick={() => setSelectedArchetype(arch.id as any)}
-                className="flex items-center gap-1.5 cursor-pointer hover:text-cyan-300 transition-colors"
+                className={`flex items-center gap-1.5 px-3 min-h-[36px] rounded-lg border transition-colors ${
+                  isSelected
+                    ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                    : "bg-[#F8FAFC] border-[#E2E8F0] text-[#4B5563] hover:text-[#111827]"
+                }`}
               >
                 {isSelected ? (
-                  <CheckSquare className="w-3.5 h-3.5 text-cyan-400 fill-cyan-950" />
+                  <CheckSquare className="w-3.5 h-3.5" />
                 ) : (
-                  <Square className="w-3.5 h-3.5 text-slate-400" />
+                  <Square className="w-3.5 h-3.5 text-[#9CA3AF]" />
                 )}
                 <span>{arch.label}</span>
-              </label>
+              </button>
             );
           })}
         </div>
 
-        {/* Middle Controls Row 2: Animación Label & List Box + Rotac. & Persp. */}
-        <div className="grid grid-cols-2 gap-3 flex-1 min-h-[140px]">
-          {/* Left: Animation List Box */}
-          <div className="flex flex-col bg-[#222a38] border border-[#161e2c] p-2 rounded">
-            <div className="text-xs font-bold text-slate-200 mb-1.5 flex items-center justify-between">
-              <span>Animación: <strong className="text-cyan-400">{selectedAnimName}</strong></span>
-              <span className="text-[10px] text-slate-400 font-mono">10 secuencias</span>
+        {/* Animation Sequence + Angles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="flex flex-col bg-white border border-[#E2E8F0] p-3 rounded-xl">
+            <div className="text-xs font-bold text-[#111827] mb-2 flex items-center justify-between">
+              <span>Animación: <strong className="text-[#7C2D48]">{selectedAnimName}</strong></span>
+              <span className="text-[11px] text-[#6B7280] font-mono">10 secuencias</span>
             </div>
 
-            {/* Scrollable list of animations */}
-            <div className="flex-1 overflow-y-auto bg-[#141b26] border border-slate-700 rounded p-1 space-y-0.5">
+            <div className="max-h-44 overflow-y-auto bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-1.5 grid grid-cols-2 gap-1">
               {divAnimationsList.map((animName) => {
                 const isSelected = selectedAnimName === animName;
                 return (
                   <button
                     key={animName}
                     onClick={() => setSelectedAnimName(animName)}
-                    className={`w-full text-left px-2 py-1 rounded text-xs font-mono font-bold transition-colors ${
+                    className={`text-left px-2.5 min-h-[34px] rounded-md text-xs font-mono font-bold transition-colors ${
                       isSelected
-                        ? "bg-[#183a78] text-cyan-200 border border-cyan-400"
-                        : "text-slate-300 hover:bg-[#1f2a3c] hover:text-white"
+                        ? "bg-[#7C2D48] text-white"
+                        : "text-[#4B5563] hover:bg-white hover:text-[#111827]"
                     }`}
                   >
                     {animName}
@@ -716,13 +714,11 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
             </div>
           </div>
 
-          {/* Right: Rotac. (0..360) and Persp. (0..90) Sliders & Directions */}
-          <div className="flex flex-col justify-between bg-[#222a38] border border-[#161e2c] p-2.5 rounded gap-2 text-xs">
-            {/* Rotation Control */}
+          <div className="flex flex-col justify-between bg-white border border-[#E2E8F0] p-3 rounded-xl gap-3 text-xs">
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-slate-200">Rotac. (0..360)</span>
-                <span className="font-mono font-bold text-cyan-400">{rotationAngle}°</span>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-bold text-[#374151]">Rotación (0..360°)</span>
+                <span className="font-mono font-bold text-[#7C2D48]">{rotationAngle}°</span>
               </div>
               <input
                 type="range"
@@ -731,15 +727,14 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
                 step={5}
                 value={rotationAngle}
                 onChange={(e) => setRotationAngle(parseInt(e.target.value))}
-                className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-slate-800 rounded"
+                className="w-full accent-[#7C2D48] cursor-pointer h-2 bg-[#E2E8F0] rounded"
               />
             </div>
 
-            {/* Perspective Control */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-slate-200">Persp. (0..90)</span>
-                <span className="font-mono font-bold text-cyan-400">{perspectiveAngle}°</span>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-bold text-[#374151]">Perspectiva (0..90°)</span>
+                <span className="font-mono font-bold text-[#7C2D48]">{perspectiveAngle}°</span>
               </div>
               <input
                 type="range"
@@ -748,40 +743,39 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
                 step={5}
                 value={perspectiveAngle}
                 onChange={(e) => setPerspectiveAngle(parseInt(e.target.value))}
-                className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-slate-800 rounded"
+                className="w-full accent-[#7C2D48] cursor-pointer h-2 bg-[#E2E8F0] rounded"
               />
             </div>
 
-            {/* Multi-angle Direction Mode */}
-            <div className="bg-[#141b26] p-1.5 rounded border border-slate-700">
-              <span className="text-[10px] text-slate-400 block mb-1">Modo de Generación:</span>
-              <div className="grid grid-cols-3 gap-1">
+            <div className="bg-[#F8FAFC] p-2 rounded-lg border border-[#E2E8F0]">
+              <span className="text-[11px] font-semibold text-[#6B7280] block mb-1.5">Direcciones de captura:</span>
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   onClick={() => setDirectionMode("1_dir")}
-                  className={`py-1 rounded text-[10px] font-bold border ${
+                  className={`min-h-[36px] rounded-md text-xs font-bold border ${
                     directionMode === "1_dir"
-                      ? "bg-cyan-700 border-cyan-400 text-white"
-                      : "bg-[#1e2838] border-slate-700 text-slate-300"
+                      ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                      : "bg-white border-[#E2E8F0] text-[#4B5563]"
                   }`}
                 >
                   1 Ángulo
                 </button>
                 <button
                   onClick={() => setDirectionMode("4_dir")}
-                  className={`py-1 rounded text-[10px] font-bold border ${
+                  className={`min-h-[36px] rounded-md text-xs font-bold border ${
                     directionMode === "4_dir"
-                      ? "bg-cyan-700 border-cyan-400 text-white"
-                      : "bg-[#1e2838] border-slate-700 text-slate-300"
+                      ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                      : "bg-white border-[#E2E8F0] text-[#4B5563]"
                   }`}
                 >
                   4 Direc.
                 </button>
                 <button
                   onClick={() => setDirectionMode("8_dir")}
-                  className={`py-1 rounded text-[10px] font-bold border ${
+                  className={`min-h-[36px] rounded-md text-xs font-bold border ${
                     directionMode === "8_dir"
-                      ? "bg-cyan-700 border-cyan-400 text-white"
-                      : "bg-[#1e2838] border-slate-700 text-slate-300"
+                      ? "bg-[#7C2D48] border-[#7C2D48] text-white"
+                      : "bg-white border-[#E2E8F0] text-[#4B5563]"
                   }`}
                   title="8 Direcciones estilo DIV / Doom / Hexen"
                 >
@@ -792,27 +786,25 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
           </div>
         </div>
 
-        {/* Filmstrip Preview of Generated Frames */}
-        <div className="bg-[#18202e] border border-[#141a24] p-2 rounded flex flex-col gap-1">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Tira de Sprites Generados ({bakedFrames.length} cuadros):</span>
-            <div className="flex gap-2">
-              <button
-                onClick={handleDownloadSpriteSheet}
-                className="text-cyan-400 hover:text-white font-medium flex items-center gap-1"
-                title="Descargar hoja de sprites PNG"
-              >
-                <Download className="w-3 h-3" />
-                <span>Hoja PNG</span>
-              </button>
-            </div>
+        {/* Filmstrip Preview */}
+        <div className="bg-white border border-[#E2E8F0] p-3 rounded-xl flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs text-[#4B5563]">
+            <span className="font-semibold">Sprites Generados ({bakedFrames.length} cuadros)</span>
+            <button
+              onClick={handleDownloadSpriteSheet}
+              className="px-2.5 min-h-[32px] rounded-lg bg-[#ECFDF5] border border-[#A7F3D0] text-[#2F6F4E] font-bold flex items-center gap-1 text-xs"
+              title="Descargar hoja de sprites PNG"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Hoja PNG</span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto py-1 h-14 bg-[#0d131d] rounded px-1.5 border border-slate-800">
+          <div className="flex items-center gap-2 overflow-x-auto py-1.5 bg-[#0F172A] rounded-lg px-2 border border-[#CBD5E1]">
             {bakedFrames.map((src, i) => (
               <div
                 key={i}
-                className="w-10 h-10 flex-shrink-0 bg-[#161e2a] border border-slate-700 rounded flex items-center justify-center relative overflow-hidden"
+                className="w-12 h-12 flex-shrink-0 bg-[#161e2a] border border-slate-700 rounded flex items-center justify-center relative overflow-hidden"
                 style={{
                   backgroundImage: `linear-gradient(45deg, #18202c 25%, transparent 25%), linear-gradient(-45deg, #18202c 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #18202c 75%), linear-gradient(-45deg, transparent 75%, #18202c 75%)`,
                   backgroundSize: "8px 8px",
@@ -820,7 +812,7 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
                 }}
               >
                 <img src={src} alt={`frame ${i}`} className="w-full h-full object-contain pixelated" />
-                <span className="absolute bottom-0 right-0 bg-black/80 text-[8px] font-mono text-cyan-400 px-0.5">
+                <span className="absolute bottom-0 right-0 bg-black/80 text-[9px] font-mono text-amber-300 px-1">
                   {i + 1}
                 </span>
               </div>
@@ -828,25 +820,24 @@ export const SpriteGenerator: React.FC<SpriteGeneratorProps> = ({
           </div>
         </div>
 
-        {/* Bottom Authentic Action Buttons: Aceptar and Cancelar */}
-        <div className="flex items-center justify-end gap-3 pt-1 border-t border-[#202938]">
-          <button
-            onClick={handleAcceptAndAddToFpg}
-            disabled={isBaking || bakedFrames.length === 0}
-            className="px-6 py-1.5 bg-[#183a78] hover:bg-[#204a99] active:bg-[#122e60] border-2 border-[#4570c0] hover:border-cyan-400 text-white font-bold text-xs rounded shadow transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Check className="w-4 h-4 text-cyan-300" />
-            <span>Aceptar</span>
-          </button>
-
+        {/* Bottom Action Buttons */}
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
           {onClose && (
             <button
               onClick={onClose}
-              className="px-6 py-1.5 bg-[#252c3a] hover:bg-[#343e52] border border-slate-600 text-slate-300 font-bold text-xs rounded transition-colors cursor-pointer"
+              className="px-5 min-h-[42px] bg-white hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#374151] font-bold text-xs rounded-xl transition-colors"
             >
               Cancelar
             </button>
           )}
+          <button
+            onClick={handleAcceptAndAddToFpg}
+            disabled={isBaking || bakedFrames.length === 0}
+            className="flex-1 sm:flex-initial px-6 min-h-[42px] bg-[#7C2D48] hover:bg-[#66233A] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Check className="w-4 h-4" />
+            <span>Añadir {bakedFrames.length} Sprites al FPG</span>
+          </button>
         </div>
       </div>
     </div>
