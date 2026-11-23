@@ -198,7 +198,7 @@ wxdiv es un proyecto en crecimiento. Si querés contribuir:
 - **Traducí la documentación** a otros idiomas
 - **Compartí el proyecto** con quien le pueda interesar
 
-El código estará disponible públicamente cuando la documentación esté lista.
+El código se encuentra públicado continuamente en este repositorio.
 
 ---
 
