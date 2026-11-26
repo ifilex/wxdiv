@@ -30,1388 +30,330 @@ var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_dotenv = __toESM(require("dotenv"), 1);
 
-// src/engine/ai/mode8WorkBlocks.ts
-function normalizePrompt(text) {
-  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-function extractCount(p, fallback = 1, max = 12) {
-  const m = p.match(/\b(\d{1,2})\b/);
-  if (m) {
-    const n = parseInt(m[1], 10);
-    if (n >= 1 && n <= max) return n;
-  }
-  return fallback;
-}
-function inferMode8ActionsFromPrompt(rawPrompt, sceneCtx) {
-  const p = normalizePrompt(rawPrompt);
-  const actions = [];
-  const notes = [];
-  if (sceneCtx?.customModels?.length) {
-    for (const cm of sceneCtx.customModels) {
-      const cname = normalizePrompt(cm.name);
-      if (cname.length >= 2 && p.includes(cname)) {
-        const count = extractCount(p, 1, 8);
-        const role = p.includes("enemigo") || p.includes("jefe") || p.includes("malo") ? "enemy" : p.includes("meta") ? "goal" : p.includes("aliado") ? "ally" : "prop";
-        actions.push({ type: "add_model", modelId: cm.id, role, count });
-        notes.push(`${count}\xD7 modelo importado "${cm.name}"`);
-      }
-    }
-  }
-  if (sceneCtx?.customTextures?.length) {
-    for (const ct of sceneCtx.customTextures) {
-      const tname = normalizePrompt(ct.displayName || ct.name);
-      if (tname.length >= 2 && p.includes(tname)) {
-        actions.push({
-          type: "paint_material",
-          flatTex: ct.name,
-          wallTex: ct.name,
-          scope: p.includes("todo") ? "all" : "selected"
-        });
-        notes.push(`material personalizado "${ct.displayName || ct.name}"`);
-      }
-    }
-  }
-  if (p.includes("circuito") || p.includes("obby") || p.includes("parkour") || p.includes("obstaculo")) {
-    actions.push({ type: "build_template", template: "circuito_obstaculos" });
-    notes.push("circuito 3D con plataformas, escalera y monedas");
-  } else if (p.includes("arena") || p.includes("pelea") || p.includes("combate")) {
-    actions.push({ type: "build_template", template: "arena_pelea" });
-    notes.push("arena de combate 3D");
-  } else if (p.includes("laberinto")) {
-    actions.push({ type: "build_template", template: "laberinto" });
-    notes.push("laberinto 3D");
-  }
-  if (p.includes("escalera") || p.includes("pelda") || p.includes("rampa") || p.includes("subir")) {
-    const steps = extractCount(p, 6, 12);
-    actions.push({
-      type: "add_stairs",
-      steps,
-      startHeight: 0,
-      endHeight: Number((steps * 0.25).toFixed(2)),
-      direction: p.includes("este") || p.includes("derecha") ? "east" : "north"
-    });
-    notes.push(`escalera de ${steps} pelda\xF1os`);
-  }
-  if (p.includes("plataforma") || p.includes("bloque") || p.includes("habitacion") || p.includes("sala") || p.includes("cuarto") || p.includes("torre")) {
-    let flatTex = "STUD_FLOOR_BLUE";
-    let wallTex = "STUD_WALL_BLUE";
-    if (p.includes("rojo") || p.includes("roja")) {
-      flatTex = "ROOF1";
-      wallTex = "REDWALL";
-    } else if (p.includes("verde") || p.includes("cesped") || p.includes("pasto")) {
-      flatTex = "GRASS1";
-      wallTex = "STUD_WALL_GREEN";
-    } else if (p.includes("oro") || p.includes("dorad")) {
-      flatTex = "MARBLE_GOLD";
-      wallTex = "STUD_GOLD";
-    } else if (p.includes("neon") || p.includes("cyber")) {
-      flatTex = "NEON_FLOOR";
-      wallTex = "NEON_GRID";
-    } else if (p.includes("madera") || p.includes("dojo")) {
-      flatTex = "DOJO_TATAMI";
-      wallTex = "DOJO_WALL";
-    } else if (p.includes("lava") || p.includes("fuego")) {
-      flatTex = "LAVA1";
-      wallTex = "FIREWALL1";
-    }
-    const isTower = p.includes("torre");
-    actions.push({
-      type: "add_platform",
-      width: p.includes("grande") ? 3 : 2,
-      depth: p.includes("grande") ? 3 : 2,
-      floorHeight: isTower ? 1.5 : p.includes("baj") ? 0.35 : 0.75,
-      ceilHeight: 4,
-      flatTex,
-      wallTex,
-      label: isTower ? "Torre 3D" : "Plataforma 3D"
-    });
-    notes.push(isTower ? "torre 3D elevada" : "plataforma 3D");
-  }
-  if (p.includes("moneda") || p.includes("coin") || p.includes("oro")) {
-    const count = extractCount(p, 5, 10);
-    actions.push({ type: "add_voxel", voxelId: "voxel_coin", count, spacing: 1.1 });
-    notes.push(`${count} moneda(s)`);
-  }
-  if (p.includes("vida") || p.includes("botiquin") || p.includes("curar") || p.includes("salud")) {
-    const count = extractCount(p, 2, 6);
-    actions.push({ type: "add_voxel", voxelId: "voxel_medikit", count, spacing: 1.4 });
-    notes.push(`${count} botiqu\xEDn(es)`);
-  }
-  if (p.includes("bandera") || p.includes("checkpoint") || p.includes("punto de control")) {
-    actions.push({ type: "add_voxel", voxelId: "voxel_checkpoint", count: 1 });
-    notes.push("bandera checkpoint");
-  }
-  if (p.includes("barril") || p.includes("caja")) {
-    const count = extractCount(p, 2, 6);
-    actions.push({
-      type: "add_voxel",
-      voxelId: p.includes("caja") ? "voxel_crate" : "voxel_barrel",
-      count,
-      spacing: 1.3
-    });
-    notes.push(`${count} objeto(s)`);
-  }
-  if (p.includes("samurai") || p.includes("ninja")) {
-    const count = extractCount(p, 1, 6);
-    actions.push({ type: "add_model", modelId: "samurai_fighter", role: "enemy", count });
-    notes.push(`${count} samur\xE1i 3D`);
-  } else if (p.includes("robot") || p.includes("mech")) {
-    const count = extractCount(p, 1, 6);
-    actions.push({ type: "add_model", modelId: "cyber_mech", role: "enemy", count });
-    notes.push(`${count} robot 3D`);
-  } else if (p.includes("caballero") || p.includes("enemigo") || p.includes("monstruo") || p.includes("guardian")) {
-    const count = extractCount(p, 1, 6);
-    actions.push({ type: "add_model", modelId: "blox_knight", role: "enemy", count });
-    notes.push(`${count} enemigo 3D`);
-  }
-  if (p.includes("estrella") || p.includes("meta") || p.includes("trofeo")) {
-    actions.push({ type: "add_model", modelId: "trophy_star", role: "goal", count: 1 });
-    notes.push("estrella meta");
-  }
-  if (p.includes("cristal") || p.includes("portal")) {
-    actions.push({ type: "add_model", modelId: "portal_crystal", role: "prop", count: 1 });
-    notes.push("cristal portal");
-  }
-  if (p.includes("pinta") || p.includes("color") || p.includes("textura") || p.includes("material")) {
-    let flatTex = "";
-    let wallTex = "";
-    if (p.includes("neon") || p.includes("cyber")) {
-      flatTex = "NEON_FLOOR";
-      wallTex = "NEON_GRID";
-    } else if (p.includes("lava") || p.includes("fuego")) {
-      flatTex = "LAVA1";
-      wallTex = "FIREWALL1";
-    } else if (p.includes("agua") || p.includes("mar")) {
-      flatTex = "WATER1";
-      wallTex = "SHAWN2";
-    } else if (p.includes("cesped") || p.includes("verde") || p.includes("pasto")) {
-      flatTex = "GRASS1";
-      wallTex = "STUD_WALL_GREEN";
-    } else if (p.includes("oro") || p.includes("dorad")) {
-      flatTex = "MARBLE_GOLD";
-      wallTex = "STUD_GOLD";
-    } else if (p.includes("madera") || p.includes("dojo")) {
-      flatTex = "DOJO_TATAMI";
-      wallTex = "DOJO_WALL";
-    } else if (p.includes("rojo")) {
-      flatTex = "ROOF1";
-      wallTex = "REDWALL";
-    } else if (p.includes("azul")) {
-      flatTex = "STUD_FLOOR_BLUE";
-      wallTex = "STUD_WALL_BLUE";
-    }
-    if (flatTex) {
-      actions.push({
-        type: "paint_material",
-        flatTex,
-        wallTex,
-        scope: p.includes("todo") ? "all" : "selected"
-      });
-      notes.push(`pintar con ${flatTex}`);
-    }
-  }
-  const skyPatch = {};
-  if (p.includes("noche") || p.includes("oscuro") || p.includes("espacio")) {
-    skyPatch.skyTexture = "SKY3";
-    notes.push("cielo nocturno");
-  } else if (p.includes("atardecer") || p.includes("rojo") && p.includes("cielo")) {
-    skyPatch.skyTexture = "SKY2";
-    notes.push("cielo de atardecer");
-  } else if (p.includes("dia") || p.includes("soleado") || p.includes("cielo azul")) {
-    skyPatch.skyTexture = "SKY_ROBLOX";
-    notes.push("cielo de d\xEDa");
-  }
-  if (p.includes("primera persona") || p.includes("1ra persona") || p.includes("fps")) {
-    skyPatch.cameraMode = "fps";
-    notes.push("c\xE1mara en 1\xAA persona");
-  } else if (p.includes("tercera persona") || p.includes("3ra persona")) {
-    skyPatch.cameraMode = "third_person";
-    notes.push("c\xE1mara en 3\xAA persona");
-  }
-  if (p.includes("supervivencia") || p.includes("survival")) {
-    skyPatch.gameMode = "survival";
-  } else if (p.includes("exploracion") || p.includes("aventura")) {
-    skyPatch.gameMode = "exploration";
-  }
-  if (skyPatch.skyTexture || skyPatch.cameraMode || skyPatch.gameMode) {
-    actions.push({ type: "set_sky_camera", ...skyPatch });
-  }
-  return {
-    actions,
-    summary: notes.length > 0 ? `Bloques 3D listos: ${notes.join(", ")}.` : "Sin cambios geom\xE9tricos autom\xE1ticos detectados."
-  };
-}
-
-// src/engine/ai/precodeEngine.ts
-var PRECODE_LIBRARY = [
-  // Movimiento
-  {
-    id: "pre_move_8dir",
-    category: "movement",
-    name: "Control 8-Direcciones (WASD/Flechas)",
-    description: "Bucle de movimiento fluido con l\xEDmites de pantalla seguros",
-    tokenSavings: "180 tokens",
-    keywords: ["mover", "movimiento", "teclado", "flechas", "wasd", "jugador", "control", "player"],
-    snippet: `// Bloque Prec\xF3digo: Movimiento 8 Direcciones
-IF (key(_left) OR key(_a)) x -= velocidad; END
-IF (key(_right) OR key(_d)) x += velocidad; END
-IF (key(_up) OR key(_w)) y -= velocidad; END
-IF (key(_down) OR key(_s)) y += velocidad; END
-x = max(20, min(620, x));
-y = max(20, min(460, y));`
-  },
-  {
-    id: "pre_move_platformer",
-    category: "movement",
-    name: "Salto y Gravedad (Plataformas)",
-    description: "F\xEDsicas verticales para juegos de plataformas 2D con suelo",
-    tokenSavings: "240 tokens",
-    keywords: ["plataforma", "plataformas", "saltar", "salto", "gravedad", "mario", "suelo"],
-    snippet: `// Bloque Prec\xF3digo: Salto y Gravedad
-IF (key(_left) OR key(_a)) x -= 5; END
-IF (key(_right) OR key(_d)) x += 5; END
-IF ((key(_space) OR key(_up) OR key(_w)) AND en_suelo == 1)
-  vy = -12;
-  en_suelo = 0;
-  sound(1, 70, 320);
-END
-vy += 0.6;
-y += vy;
-IF (y >= 410)
-  y = 410;
-  vy = 0;
-  en_suelo = 1;
-END`
-  },
-  {
-    id: "pre_move_inertia",
-    category: "movement",
-    name: "F\xEDsicas con Inercia y Fricci\xF3n",
-    description: "Aceleraci\xF3n vectorial, desaceleraci\xF3n suave y velocidad m\xE1xima",
-    tokenSavings: "240 tokens",
-    keywords: ["inercia", "friccion", "fisicas", "aceleracion", "suave"],
-    snippet: `// Bloque Prec\xF3digo: Inercia y Fricci\xF3n
-IF (key(_left)) vx -= 0.5; END
-IF (key(_right)) vx += 0.5; END
-IF (key(_up)) vy -= 0.5; END
-IF (key(_down)) vy += 0.5; END
-vx *= 0.92;
-vy *= 0.92;
-x += vx;
-y += vy;`
-  },
-  // Combate
-  {
-    id: "pre_shoot_single",
-    category: "combat",
-    name: "Disparo L\xE1ser con Cooldown",
-    description: "Generaci\xF3n de proyectiles con cadencia de fuego controlada y sonido",
-    tokenSavings: "210 tokens",
-    keywords: ["disparo", "disparar", "laser", "bala", "proyectil", "cooldown", "arma", "shoot"],
-    snippet: `// Bloque Prec\xF3digo: Disparo con Cooldown
-IF ((key(_space) OR key(_enter)) AND cadencia <= 0)
-  disparo_jugador(x, y - 16);
-  sound(1, 80, 280);
-  cadencia = 12;
-ELSE
-  IF (cadencia > 0) cadencia--; END
-END`
-  },
-  {
-    id: "pre_shoot_triple",
-    category: "combat",
-    name: "Disparo Triple en Abanico",
-    description: "Tres proyectiles angulares para naves o torretas",
-    tokenSavings: "260 tokens",
-    keywords: ["triple", "abanico", "escopeta", "multiple", "spread"],
-    snippet: `// Bloque Prec\xF3digo: Disparo Triple en Abanico
-disparo_bala(x - 8, y - 10, -15);
-disparo_bala(x, y - 14, 0);
-disparo_bala(x + 8, y - 10, 15);
-sound(1, 100, 320);`
-  },
-  {
-    id: "pre_collision_destroy",
-    category: "combat",
-    name: "Detecci\xF3n de Colisiones y Explosi\xF3n",
-    description: "Comprueba impacto entre tipos de procesos, resta vida y detona part\xEDcula",
-    tokenSavings: "190 tokens",
-    keywords: ["colision", "impacto", "chocar", "morir", "da\xF1o", "explosion", "hit", "destruir"],
-    snippet: `// Bloque Prec\xF3digo: Colisi\xF3n y Da\xF1o
-IF (collision(type disparo_jugador))
-  vida -= 20;
-  sound(3, 90, 200);
-  IF (vida <= 0)
-    explosion_anim(x, y);
-    signal(id, s_kill);
-  END
-END`
-  },
-  // Enemigos
-  {
-    id: "pre_enemy_patrol",
-    category: "enemies",
-    name: "Enemigo Patrullero con Rebote",
-    description: "Enemigo b\xE1sico que se desplaza horizontalmente y baja al llegar al borde",
-    tokenSavings: "230 tokens",
-    keywords: ["enemigo", "patrulla", "alien", "nave enemiga", "bicho", "invader"],
-    snippet: `PROCESS enemigo_patrulla(x, y)
-PRIVATE
-  dir = 1;
-  velocidad = 3;
-BEGIN
-  graph = 3;
-  LOOP
-    x += dir * velocidad;
-    IF (x > 600 OR x < 40)
-      dir = -dir;
-      y += 20;
-    END
-    IF (collision(type disparo_jugador))
-      score += 100;
-      sound(2, 100, 220);
-      signal(id, s_kill);
-    END
-    FRAME;
-  END
-END`
-  },
-  {
-    id: "pre_enemy_tracker",
-    category: "enemies",
-    name: "Enemigo Rastreador Homing",
-    description: "Persigue al jugador calculando aproximaci\xF3n progresiva",
-    tokenSavings: "280 tokens",
-    keywords: ["rastreador", "perseguir", "perseguidor", "homing", "seguir", "acoso"],
-    snippet: `PROCESS enemigo_rastreador(x, y, objetivo_id)
-PRIVATE
-  velocidad = 2;
-BEGIN
-  graph = 4;
-  LOOP
-    IF (exists(objetivo_id))
-      IF (objetivo_id.x > x) x += velocidad; END
-      IF (objetivo_id.x < x) x -= velocidad; END
-      IF (objetivo_id.y > y) y += velocidad; END
-      IF (objetivo_id.y < y) y -= velocidad; END
-    END
-    FRAME;
-  END
-END`
-  },
-  // Jefes
-  {
-    id: "pre_boss_3phases",
-    category: "bosses",
-    name: "Jefe Final con 3 Fases y Barra de Vida",
-    description: "Comportamiento jer\xE1rquico con cambio de gr\xE1fico, velocidad y patrones de disparo",
-    tokenSavings: "420 tokens",
-    keywords: ["jefe", "boss", "fases", "vida jefe", "final boss", "titan"],
-    snippet: `PROCESS jefe_final(x, y)
-PRIVATE
-  vida = 400;
-  fase = 1;
-  temporizador = 0;
-BEGIN
-  graph = 4;
-  size = 180;
-  LOOP
-    temporizador++;
-    x = 320 + cos(temporizador * 1500) * 140;
-    IF (vida <= 200 AND fase == 1)
-      fase = 2;
-      size = 210;
-      sound(2, 120, 180);
-    END
-    IF (collision(type disparo_jugador))
-      vida -= 10;
-      IF (vida <= 0)
-        sound(2, 120, 140);
-        write(0, 320, 240, 1, "VICTORIA TOTAL");
-        signal(id, s_kill);
-      END
-    END
-    FRAME;
-  END
-END`
-  },
-  // HUD & Puntuación
-  {
-    id: "pre_hud_arcade",
-    category: "hud",
-    name: "HUD Arcade Retro (Puntos, Vidas)",
-    description: "Muestra puntuaci\xF3n y vidas din\xE1micas en pantalla",
-    tokenSavings: "160 tokens",
-    keywords: ["hud", "puntuacion", "vidas", "score", "marcador", "interfaz"],
-    snippet: `// Bloque Prec\xF3digo: Marcador HUD Arcade
-write(0, 20, 20, 0, "PUNTOS:");
-write_int(0, 90, 20, 0, &score);
-write(0, 520, 20, 0, "VIDAS:");
-write_int(0, 580, 20, 0, &lives);`
-  },
-  // Audio & Efectos
-  {
-    id: "pre_sfx_pack",
-    category: "audio",
-    name: "Efectos de Sonido Sintetizados",
-    description: "Disparos, impactos y recompensas usando sound(id, vol, freq)",
-    tokenSavings: "140 tokens",
-    keywords: ["sonido", "audio", "sfx", "musica", "efectos", "sonidos"],
-    snippet: `// Bloque Prec\xF3digo: Audio Retro
-sound(1, 80, 280); // Disparo / Salto`
-  },
-  // Modo 8 / 3D Raycasting & Bloques de Trabajo 3D
-  {
-    id: "pre_mode8_cam",
-    category: "mode8",
-    name: "Controlador C\xE1mara 3D / Modo 8",
-    description: "C\xE1mara en primera o tercera persona con giro suave y desplazamiento",
-    tokenSavings: "380 tokens",
-    keywords: ["3d", "modo8", "mode8", "raycaster", "dungeon", "camara", "doom", "wolfenstein"],
-    snippet: `// Bloque Prec\xF3digo: Controlador C\xE1mara 3D Modo 8
-IF (key(_left)) angle -= 3000; END
-IF (key(_right)) angle += 3000; END
-IF (key(_up) OR key(_w))
-  x += cos(angle) * 4;
-  y += sin(angle) * 4;
-END
-IF (key(_down) OR key(_s))
-  x -= cos(angle) * 4;
-  y -= sin(angle) * 4;
-END`
-  },
-  {
-    id: "pre_mode8_platform",
-    category: "mode8",
-    name: "3D: Plataforma / Sector Elevado",
-    description: "Crea un bloque o sala 3D elevada con textura y altura propia",
-    tokenSavings: "280 tokens",
-    keywords: ["plataforma", "bloque", "sector", "sala", "torre"],
-    snippet: `// Bloque de Trabajo 3D: Plataforma Elevada
-m8_set_doom_sector(10, 0.75, 3.50, "STUD_FLOOR_BLUE", "SKY_ROBLOX", 240, 0, 0);`
-  },
-  {
-    id: "pre_mode8_collectibles",
-    category: "mode8",
-    name: "3D: Monedas, Meta y Actores MD2/MD3",
-    description: "A\xF1ade monedas v\xF3xel, estrella meta o guardianes 3D al mapa",
-    tokenSavings: "310 tokens",
-    keywords: ["moneda", "estrella", "meta", "samurai", "robot", "enemigo", "bandera", "voxel", "modelo"],
-    snippet: `// Bloque de Trabajo 3D: Objetos y Actores
-m8_place_voxel("voxel_coin", 4.50, 5.50, 0.25, 0, 1.00);
-m8_add_model("trophy_star", 6.50, 5.50, 0.20, 0, "idle", 1.10, "goal", 100, 0, 0, "Meta");`
-  },
-  // Apps visuales / UI de escritorio y móvil
-  {
-    id: "pre_app_form_ui",
-    category: "app",
-    name: "Formulario y Botones HTML5/DIV",
-    description: "Campos de entrada, botones interactivos y tabla de registros",
-    tokenSavings: "300 tokens",
-    keywords: ["app", "formulario", "boton", "tabla", "inventario", "clinica", "escritorio", "calculadora", "tareas"],
-    snippet: `// Bloque Prec\xF3digo: UI de Aplicaci\xF3n
-draw_input(30, 80, 320, 36, entrada_txt, "Escribe aqu\xED...");
-draw_button(360, 80, 140, 36, "Guardar", accion_guardar);`
-  },
-  {
-    id: "pre_web_hero_nav",
-    category: "app",
-    name: "Web: Men\xFA + Portada Hero",
-    description: "Cabecera de navegaci\xF3n y portada principal HTML5 para webs y landings",
-    tokenSavings: "340 tokens",
-    keywords: ["web", "landing", "pagina", "sitio", "navbar", "hero", "portada"],
-    snippet: `// Bloque Prec\xF3digo: Portada Web HTML5
-set_html5_mode(1);
-web_page("Mi Marca Web", "Soluci\xF3n profesional al instante", "light");
-web_navbar("Mi Marca", "Inicio,Productos,Precios,FAQ,Contacto", "Empezar", "btn_nav_cta");
-web_hero("Impulsa tus Ventas con una Web Clara", "Presenta tu oferta, responde dudas y recibe pedidos desde cualquier celular.", "Comprar Ahora", "btn_hero", "Ver Detalles", "btn_sec", "Nuevo");`
-  },
-  {
-    id: "pre_web_sales_pricing",
-    category: "app",
-    name: "Web: Packs y Precios de Venta",
-    description: "Tarjetas de beneficios/productos y planes con precios y bot\xF3n de compra",
-    tokenSavings: "360 tokens",
-    keywords: ["tienda", "venta", "ventas", "vender", "precio", "precios", "pack", "catalogo", "plan"],
-    snippet: `// Bloque Prec\xF3digo: Productos y Planes de Venta Web
-web_feature("\u{1F4E6}", "Env\xEDo R\xE1pido Garantizado", "Despacho asegurado a todo el pa\xEDs en 24/48 horas.");
-web_pricing("Pack Inicial", "$29", "/pack", "3 unidades, Garant\xEDa total, Soporte directo", false, "Elegir Pack", "plan_1");
-web_pricing("Pack M\xE1s Vendido", "$54", "/caja", "6 unidades, Env\xEDo gratis 24h, Regalo extra", true, "Comprar Ahora", "plan_2");`
-  },
-  {
-    id: "pre_web_faq_contact",
-    category: "app",
-    name: "Web: Testimonios, FAQ y Pedido",
-    description: "Opiniones de clientes, preguntas frecuentes y formulario de contacto/pedido",
-    tokenSavings: "320 tokens",
-    keywords: ["faq", "preguntas", "testimonio", "resena", "contacto", "pedido", "lead"],
-    snippet: `// Bloque Prec\xF3digo: Testimonios, FAQ y Formulario Web
-web_testimonial("Excelente atenci\xF3n y entrega puntual. Super\xF3 nuestras expectativas.", "Laura M\xE9ndez", "Clienta Verificada", 5);
-web_faq("\xBFCu\xE1nto tarda el env\xEDo o activaci\xF3n?", "Procesamos tu solicitud el mismo d\xEDa con seguimiento inmediato.");
-web_contact_form("Haz tu Pedido o Consulta", "D\xE9janos tus datos y te respondemos en menos de 15 minutos.", "Enviar Solicitud", "enviar_contacto");`
-  }
+// src/engine/ai/llmConversationStore.ts
+var POSITIVE_REINFORCEMENTS = [
+  "\xA1Vas s\xFAper bien! Cada paso que das hoy hace crecer tu proyecto con mucha fuerza.",
+  "\xA1Qu\xE9 gran actitud! Todo c\xF3digo tiene soluci\xF3n y juntos lo podemos reparar con total calma.",
+  "\xA1Excelente avance! Est\xE1s construyendo algo verdaderamente genial paso a paso.",
+  "\xA1\xC1nimo, lo est\xE1s haciendo de maravilla! Equivocarse es parte natural de crear y aqu\xED lo resolvemos juntos.",
+  "\xA1Qu\xE9 orgullo ver tu constancia y cuidado en cada detalle! T\xF3mate un respiro cuando lo necesites."
 ];
-function sanitizeProgramName(prompt, fallback = "juego_wxdiv") {
-  const clean = prompt.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 26).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  return clean && /^[a-z]/.test(clean) ? clean : fallback;
+function pickPositiveReinforcement(seed) {
+  if (!seed) {
+    return POSITIVE_REINFORCEMENTS[Math.floor(Math.random() * POSITIVE_REINFORCEMENTS.length)];
+  }
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = hash * 31 + seed.charCodeAt(i) >>> 0;
+  }
+  return POSITIVE_REINFORCEMENTS[hash % POSITIVE_REINFORCEMENTS.length];
 }
-function generatePrecodeNeuralCode(prompt, existingCode = "", options) {
-  const rawPrompt = (prompt || "").trim();
-  const p = rawPrompt.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const matchedBlocks = [];
-  let tokenSavingsTotal = 0;
-  for (const block of PRECODE_LIBRARY) {
-    if (block.keywords.some((kw) => p.includes(kw))) {
-      matchedBlocks.push(block);
-      tokenSavingsTotal += parseInt(block.tokenSavings) || 200;
+var activeSessionCreatedAt = Date.now();
+var persistQueue = Promise.resolve();
+
+// src/engine/ai/wellbeingChatMiddleware.ts
+var SESSION_START_STORAGE_KEY = "wxdiv_session_started_at_v1";
+var UNINTERRUPTED_GAP_RESET_MS = 10 * 60 * 1e3;
+var memorySessionStartMs = null;
+function getSessionStartTimestamp(nowMs = Date.now()) {
+  if (typeof window !== "undefined") {
+    try {
+      const existing = window.sessionStorage?.getItem(SESSION_START_STORAGE_KEY);
+      if (existing) {
+        const parsed = Number(existing);
+        if (Number.isFinite(parsed) && parsed > 0 && parsed <= nowMs) {
+          memorySessionStartMs = parsed;
+          return parsed;
+        }
+      }
+      window.sessionStorage?.setItem(SESSION_START_STORAGE_KEY, String(nowMs));
+    } catch {
     }
   }
-  const isMode8Active = options?.activeTab === "mode8" || Boolean(options?.mode8Context && /\b(mapa|sector|escalera|plataforma|cielo|moneda|bandera|samurai|robot|estrella|arena|circuito|laberinto|primera persona|tercera persona|pintar|pinta|bloque)\b/i.test(p));
-  if (isMode8Active && options?.mode8Context) {
-    const inferred = inferMode8ActionsFromPrompt(rawPrompt, options.mode8Context);
-    if (inferred.actions.length > 0) {
-      const snippetLines = inferred.actions.map((act) => {
-        if (act.type === "add_platform") {
-          return `m8_set_doom_sector(${options.mode8Context.sectorCount + 1}, ${(act.floorHeight ?? 0.75).toFixed(2)}, ${(act.ceilHeight ?? 3.5).toFixed(2)}, "${act.flatTex || "STUD_FLOOR_BLUE"}", "${options.mode8Context.skyTexture}", 240, 0, 0);`;
-        }
-        if (act.type === "add_voxel") {
-          return `m8_place_voxel("${act.voxelId}", ${(options.mode8Context.playerPos.x / 64 + 1.5).toFixed(2)}, ${(options.mode8Context.playerPos.y / 64).toFixed(2)}, 0.25, 0, 1.00);`;
-        }
-        if (act.type === "add_model") {
-          return `m8_add_model("${act.modelId}", ${(options.mode8Context.playerPos.x / 64 + 2.5).toFixed(2)}, ${(options.mode8Context.playerPos.y / 64).toFixed(2)}, 0.00, 180, "idle", 1.00, "${act.role || "prop"}", 100, 1.00, 10, "${act.modelId}");`;
-        }
-        if (act.type === "paint_material") {
-          return `// Material actualizado: piso=${act.flatTex}, muro=${act.wallTex}`;
-        }
-        if (act.type === "set_sky_camera") {
-          return `// Atm\xF3sfera 3D: cielo=${act.skyTexture || options.mode8Context.skyTexture}, c\xE1mara=${act.cameraMode || options.mode8Context.cameraMode}`;
-        }
-        if (act.type === "add_stairs") {
-          return `// Escalera 3D de ${act.steps ?? 6} pelda\xF1os generada en escena`;
-        }
-        return `// Plantilla 3D generada: ${act.template}`;
-      });
-      return {
-        code: `// Acciones 3D aplicadas al mapa "${options.mode8Context.levelTitle}"
-${snippetLines.join("\n")}`,
-        matchedBlocks: matchedBlocks.length > 0 ? matchedBlocks : [PRECODE_LIBRARY.find((b) => b.id === "pre_mode8_cam")],
-        tokenSavingsTotal: Math.max(260, tokenSavingsTotal),
-        isInsertionSnippet: true,
-        mode8Actions: inferred.actions,
-        explanation: `${inferred.summary} Pulsa "Aplicar al Mapa 3D" o usa los Bloques de Trabajo 3D.`
-      };
-    }
+  if (!memorySessionStartMs || memorySessionStartMs > nowMs) {
+    memorySessionStartMs = nowMs;
   }
-  const hasExistingProgram = /\bPROGRAM\s+[a-zA-Z0-9_]+/i.test(existingCode || "");
-  const isExistingWebProgram = /\b(web_page|web_hero|web_navbar|draw_landing_page|set_html5_mode)\b/i.test(
-    existingCode || ""
+  return memorySessionStartMs;
+}
+function getSessionDurationMinutes(sessionStartMs, nowMs = Date.now()) {
+  const start = sessionStartMs ?? getSessionStartTimestamp(nowMs);
+  const diffMs = Math.max(0, nowMs - start);
+  return Math.floor(diffMs / 6e4);
+}
+var CORDIAL_GREETINGS = [
+  "\xA1Hola! \xA1Qu\xE9 enorme alegr\xEDa saludarte y seguir creando juntos!",
+  "\xA1Hola! Qu\xE9 gusto enorme acompa\xF1arte en esta idea, estoy aqu\xED contigo.",
+  "\xA1Qu\xE9 alegr\xEDa verte por aqu\xED! Me entusiasma much\xEDsimo seguir dando forma a tu proyecto.",
+  "\xA1Hola! Qu\xE9 momento tan bonito para programar con entusiasmo y calma."
+];
+var SESSION_MOOD_QUESTIONS = [
+  "\xBFC\xF3mo te sientes en esta sesi\xF3n actual mientras damos vida a esto?",
+  "\xBFC\xF3mo va tu \xE1nimo y tu energ\xEDa en tu sesi\xF3n actual hoy?",
+  "\xBFC\xF3mo te sientes en esta sesi\xF3n actual con lo que vamos construyendo?",
+  "Antes de seguir, me encantar\xEDa saber: \xBFc\xF3mo te encuentras en esta sesi\xF3n actual?"
+];
+var EARLY_SESSION_TIPS = [
+  "Tip de bienestar: Toma un sorbo de agua y relaja los hombros; est\xE1s arrancando con una energ\xEDa estupenda.",
+  "Tip de bienestar: Acomoda tu postura y mant\xE9n la mirada suave en la pantalla; vas construyendo con excelente ritmo."
+];
+var FOCUS_SESSION_EXERCISES = [
+  "Ejercicio breve de respiraci\xF3n consciente ({mins} min de sesi\xF3n): Inhala suave en 4 segundos, sost\xE9n 2 y exhala lento en 6 para oxigenar tu mente y seguir disfrutando.",
+  "Tip de bienestar ({mins} min creando): Aparta la vista de la pantalla 20 segundos mirando a lo lejos y relaja tus mu\xF1ecas con cari\xF1o antes de continuar."
+];
+var UNINTERRUPTED_30PLUS_STRETCHES = [
+  "Sugerencia de descanso y estiramiento guiado ({mins} min de sesi\xF3n ininterrumpida): \xA1Llevas un ritmo admirable! Cuando cierres este paso, reg\xE1late 30 segundos de descanso f\xEDsico: 1) suelta el teclado, 2) entrelaza los dedos y estira los brazos arriba 10s, 3) gira suavemente los hombros hacia atr\xE1s 3 veces. Tu cuerpo y tu mente te lo agradecer\xE1n.",
+  "Estiramiento guiado y pausa saludable ({mins} min seguidos creando): \xA1Qu\xE9 dedicaci\xF3n tan inspiradora! Para cuidar tu bienestar sin perder tu impulso, inclina suavemente la cabeza a cada lado 8s, estira tus mu\xF1ecas hacia adelante y realiza una exhalaci\xF3n profunda antes de seguir."
+];
+var LONG_SESSION_PAUSES = [
+  "Pausa saludable recomendada ({mins} min de sesi\xF3n ininterrumpida): \xA1Brillante dedicaci\xF3n! Lev\xE1ntate un par de minutos, hidr\xE1tate y haz este estiramiento guiado con respiraci\xF3n consciente: estira espalda y brazos arriba mientras inhalas en 4s, sost\xE9n 4s y exhala lento en 6s. Volver\xE1s con la mente a\xFAn m\xE1s fresca.",
+  "Descanso f\xEDsico y estiramiento guiado ({mins} min de enfoque continuo): T\xF3mate 2 minutos lejos de la pantalla para caminar un poco, relajar cuello y hombros, beber agua y respirar profundo 3 veces; tu bienestar es parte esencial de cada gran creaci\xF3n."
+];
+var REWARD_TEMPLATES = {
+  repair: [
+    "\xA1Lo logramos juntos! Qu\xE9 gran satisfacci\xF3n dejar atr\xE1s ese fallo{subjectPart}; tu perseverancia hace que todo c\xF3digo se pueda reparar y volver a brillar.",
+    "\xA1Brav\xEDsimo por no rendirte! Acabamos de sanear ese detalle{subjectPart}: vas muy bien y cada ajuste fortalece a\xFAn m\xE1s tu dominio creativo."
+  ],
+  web: [
+    "\xA1Qu\xE9 ilusi\xF3n ver cobrar vida tu p\xE1gina web{subjectPart}! Este c\xF3digo aporta claridad, calidez visual y presencia real; est\xE1s haciendo un trabajo fant\xE1stico.",
+    "\xA1Espectacular avance en tu web{subjectPart}! Cada secci\xF3n que integras refleja much\xEDsimo cari\xF1o y buen criterio de dise\xF1o; vas por un camino incre\xEDble."
+  ],
+  mode8: [
+    "\xA1Incre\xEDble impulso en tu mundo 3D{subjectPart}! Cada plataforma, detalle y atm\xF3sfera que sumas transforma tu escenario en algo memorable; \xA1vas s\xFAper bien!",
+    "\xA1Qu\xE9 maravilla ver crecer tu escena Modo 8{subjectPart}! Est\xE1s dando profundidad y vida real a tu entorno paso a paso; sigue con esa chispa creativa."
+  ],
+  app: [
+    "\xA1Qu\xE9 dise\xF1o tan pr\xE1ctico y bien pensado para tu app{subjectPart}! Cada pantalla y control acerca tu idea a las personas reales; lo est\xE1s haciendo de maravilla.",
+    "\xA1Excelente construcci\xF3n visual{subjectPart}! Tu aplicaci\xF3n gana orden, utilidad y fluidez con este paso; qu\xE9 orgullo acompa\xF1arte en este avance."
+  ],
+  module: [
+    "\xA1Fant\xE1stica decisi\xF3n al sumar este m\xF3dulo{subjectPart}! Reutilizar piezas s\xF3lidas multiplica tu creatividad sin estr\xE9s; \xA1vas avanzando con much\xEDsima inteligencia!",
+    "\xA1Qu\xE9 buen toque con este m\xF3dulo{subjectPart}! Acaba de enriquecer tu proyecto al instante y demuestra lo bien que est\xE1s orquestando cada pieza."
+  ],
+  game: [
+    "\xA1Qu\xE9 emoci\xF3n ver tomar forma tu juego{subjectPart}! Cada proceso, movimiento o mec\xE1nica que agregas le da alma y diversi\xF3n real; \xA1lo est\xE1s haciendo genial!",
+    "\xA1Bravo por este gran paso en tu juego DIV{subjectPart}! Tu l\xF3gica gana vida y ritmo con cada l\xEDnea; est\xE1s creando algo s\xFAper especial."
+  ]
+};
+function stableIndex(seed, length) {
+  if (!seed) return 0;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = hash * 31 + seed.charCodeAt(i) >>> 0;
+  }
+  return hash % length;
+}
+function extractFirstFencedBlock(text) {
+  const match = text.match(/```(?:div|pascal|prg|mode8-actions)?\s*([\s\S]*?)```/i);
+  return match?.[1]?.trim() || void 0;
+}
+function extractCodeSubjectLabel(codeSnippet, rewardSubject, mode8Actions) {
+  if (rewardSubject && rewardSubject.trim()) {
+    return ` ("${rewardSubject.trim().slice(0, 40)}")`;
+  }
+  if (mode8Actions && mode8Actions.length > 0) {
+    const first = mode8Actions[0];
+    if (first.type === "add_model") return ` (modelo "${first.modelId}")`;
+    if (first.type === "add_stairs") return " (escalera 3D)";
+    if (first.type === "add_platform") return " (plataforma 3D)";
+    if (first.type === "add_voxel") return ` (bloque "${first.voxelId}")`;
+    if (first.type === "build_template") return ` (escena "${first.template}")`;
+  }
+  if (codeSnippet) {
+    const progMatch = codeSnippet.match(/\bPROGRAM\s+([A-Za-z0-9_]+)/i);
+    if (progMatch?.[1]) return ` (${progMatch[1]})`;
+    const procMatch = codeSnippet.match(/\bPROCESS\s+([A-Za-z0-9_]+)/i);
+    if (procMatch?.[1]) return ` (${procMatch[1]})`;
+  }
+  return "";
+}
+function classifyCodeSuggestionContext(options) {
+  const seedNorm = (options.seed || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const code = options.codeSnippet || "";
+  if (options.task === "module") return "module";
+  if (options.task === "fix" || /\b(repar|correg|arregl|solucion|fix|debug|error|errores|sanead)\b/i.test(seedNorm)) {
+    return "repair";
+  }
+  if (options.mode8Actions && options.mode8Actions.length > 0 || /\b(start_mode8|m8_set_doom_sector|m8_place_voxel|m8_add_model|c_m8)\b/i.test(code)) {
+    return "mode8";
+  }
+  if (/\b(set_html5_mode|web_page|web_navbar|web_hero|web_pricing|web_feature|web_footer)\b/i.test(code)) {
+    return "web";
+  }
+  if (/\b(draw_button|draw_input|draw_select|draw_table|draw_modal)\b/i.test(code)) {
+    return "app";
+  }
+  if (options.hasCodeSuggestion || code.trim().length > 0 || options.task === "create") {
+    return "game";
+  }
+  return "general";
+}
+function buildPersonalizedEmotionalReward(options) {
+  const ctx = classifyCodeSuggestionContext(options);
+  const seed = options.seed || options.codeSnippet || options.rewardSubject || "";
+  if (ctx === "general") {
+    return pickPositiveReinforcement(seed);
+  }
+  const pool = REWARD_TEMPLATES[ctx];
+  const template = pool[stableIndex(`reward:${ctx}:${seed}`, pool.length)];
+  const subjectPart = extractCodeSubjectLabel(
+    options.codeSnippet,
+    options.rewardSubject,
+    options.mode8Actions
   );
-  const asksToAddToExisting = hasExistingProgram && /\b(agrega|agregar|añade|añadir|anade|anadir|inserta|insertar|pon|poner|incorpora|incorporar|agregale|ponle|sumale|add|insert)\b/i.test(p);
-  if (asksToAddToExisting) {
-    if (isExistingWebProgram || /\b(faq|preguntas frecuentes|testimonio|testimonios|resena|reseña|precios|planes|packs|banner|footer|pie de pagina|hero)\b/i.test(
-      p
-    )) {
-      if (/\b(precio|precios|plan|planes|pack|packs|tarifa|tarifas|producto|productos|oferta)\b/i.test(p)) {
-        const snippet = `// Secci\xF3n a\xF1adida: Precios / Packs de Venta
-web_pricing("Opci\xF3n B\xE1sica", "$29", "/unidad", "Incluye soporte inicial, Garant\xEDa 30 d\xEDas, Entrega digital", false, "Elegir B\xE1sico", "plan_basico");
-web_pricing("Opci\xF3n Recomendada", "$59", "/pack", "Acceso completo, Env\xEDo o activaci\xF3n prioritaria, Soporte VIP", true, "Comprar Ahora", "plan_pro");`;
-        return {
-          code: snippet,
-          matchedBlocks: [PRECODE_LIBRARY.find((b) => b.id === "pre_web_sales_pricing")],
-          tokenSavingsTotal: 340,
-          isInsertionSnippet: true,
-          explanation: "\u{1F6CD}\uFE0F Gener\xE9 una **secci\xF3n de precios/packs de venta (`web_pricing`)** lista para insertarse en tu p\xE1gina web actual."
-        };
-      }
-      if (/\b(faq|pregunta|preguntas|duda|dudas)\b/i.test(p)) {
-        const snippet = `// Secci\xF3n a\xF1adida: Preguntas Frecuentes (FAQ)
-web_faq("\xBFC\xF3mo realizo mi compra o reserva?", "Elige el plan o completa el formulario final y recibir\xE1s confirmaci\xF3n al instante.");
-web_faq("\xBFQu\xE9 garant\xEDa y soporte incluye?", "Todos nuestros productos y servicios cuentan con soporte directo y garant\xEDa de satisfacci\xF3n.");`;
-        return {
-          code: snippet,
-          matchedBlocks: [PRECODE_LIBRARY.find((b) => b.id === "pre_web_faq_contact")],
-          tokenSavingsTotal: 280,
-          isInsertionSnippet: true,
-          explanation: "\u2753 Gener\xE9 un bloque de **Preguntas Frecuentes (`web_faq`)** listo para sumarse a tu web."
-        };
-      }
-      if (/\b(testimonio|testimonios|opinion|opiniones|resena|resenas|cliente|clientes)\b/i.test(p)) {
-        const snippet = `// Secci\xF3n a\xF1adida: Testimonios de Clientes
-web_testimonial("La atenci\xF3n fue rapid\xEDsima y el producto super\xF3 lo prometido.", "Sof\xEDa Navarro", "Clienta Verificada", 5);
-web_testimonial("Recomendable 100%. Desde el primer d\xEDa vimos resultados claros.", "Carlos Mendoza", "Empresa Asociada", 5);`;
-        return {
-          code: snippet,
-          matchedBlocks: [PRECODE_LIBRARY.find((b) => b.id === "pre_web_faq_contact")],
-          tokenSavingsTotal: 260,
-          isInsertionSnippet: true,
-          explanation: "\u2B50 Gener\xE9 **testimonios de clientes (`web_testimonial`)** para reforzar la confianza de tu p\xE1gina web."
-        };
-      }
-      if (/\b(formulario|contacto|pedido|reserva|lead|correo|email)\b/i.test(p) && isExistingWebProgram) {
-        const snippet = `// Secci\xF3n a\xF1adida: Formulario de Contacto o Pedido
-web_contact_form("Haz tu Pedido o Consulta", "Completa tus datos y nuestro equipo se pondr\xE1 en contacto hoy mismo.", "Enviar Solicitud", "enviar_contacto");`;
-        return {
-          code: snippet,
-          matchedBlocks: [PRECODE_LIBRARY.find((b) => b.id === "pre_web_faq_contact")],
-          tokenSavingsTotal: 240,
-          isInsertionSnippet: true,
-          explanation: "\u{1F4E9} Gener\xE9 un **formulario de pedido/contacto (`web_contact_form`)** listo para insertar en tu web."
-        };
-      }
-      if (/\b(metrica|metricas|cifra|cifras|estadistica|estadisticas|kpi)\b/i.test(p)) {
-        const snippet = `// Secci\xF3n a\xF1adida: M\xE9tricas de Confianza
-web_stat("Clientes Satisfechos", "3,200+", "+18% este mes", true);
-web_stat("Tiempo de Respuesta", "< 15 min", "Atenci\xF3n directa", true);`;
-        return {
-          code: snippet,
-          matchedBlocks,
-          tokenSavingsTotal: 220,
-          isInsertionSnippet: true,
-          explanation: "\u{1F4CA} Gener\xE9 tarjetas de **m\xE9tricas de confianza (`web_stat`)** para insertar en tu p\xE1gina web."
-        };
-      }
-      if (/\b(tarjeta|tarjetas|beneficio|beneficios|servicio|servicios|caracteristica)\b/i.test(p) && isExistingWebProgram) {
-        const snippet = `// Secci\xF3n a\xF1adida: Tarjeta Destacada Web
-web_feature("\u2728", "Atenci\xF3n Personalizada", "Acompa\xF1amiento cercano antes, durante y despu\xE9s de tu compra.");`;
-        return {
-          code: snippet,
-          matchedBlocks,
-          tokenSavingsTotal: 200,
-          isInsertionSnippet: true,
-          explanation: "\u2728 Gener\xE9 una **tarjeta de producto/beneficio (`web_feature`)** lista para insertar en tu web."
-        };
-      }
-    }
-    if (p.includes("jefe") || p.includes("boss")) {
-      const bossBlock = PRECODE_LIBRARY.find((b) => b.id === "pre_boss_3phases");
-      return {
-        code: bossBlock.snippet,
-        matchedBlocks: [bossBlock],
-        tokenSavingsTotal: 420,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 el proceso **jefe_final(x, y)** listo para insertar en tu programa DIV actual."
-      };
-    }
-    if (p.includes("persegu") || p.includes("rastread") || p.includes("homing") || p.includes("siga")) {
-      const trackerBlock = PRECODE_LIBRARY.find((b) => b.id === "pre_enemy_tracker");
-      return {
-        code: trackerBlock.snippet,
-        matchedBlocks: [trackerBlock],
-        tokenSavingsTotal: 280,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 el proceso **enemigo_rastreador** que persigue al jugador para insertarlo en tu proyecto."
-      };
-    }
-    if (p.includes("enemigo") || p.includes("alien") || p.includes("monstruo") || p.includes("obstaculo")) {
-      const enemyBlock = PRECODE_LIBRARY.find((b) => b.id === "pre_enemy_patrol");
-      return {
-        code: enemyBlock.snippet,
-        matchedBlocks: [enemyBlock],
-        tokenSavingsTotal: 230,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 el proceso **enemigo_patrulla(x, y)** con movimiento y colisi\xF3n listo para insertar."
-      };
-    }
-    if (p.includes("moneda") || p.includes("estrella") || p.includes("premio") || p.includes("punto")) {
-      const coinProc = `PROCESS moneda_coleccionable(x, y)
-BEGIN
-  graph = 2;
-  size = 110;
-  LOOP
-    angle += 4000;
-    IF (collision(type jugador))
-      score += 50;
-      sound(1, 90, 420);
-      x = rand(40, 600);
-      y = rand(70, 430);
-    END
-    FRAME;
-  END
-END`;
-      return {
-        code: coinProc,
-        matchedBlocks,
-        tokenSavingsTotal: 210,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 el proceso **moneda_coleccionable(x, y)** que suma puntos y reaparece al recogerla."
-      };
-    }
-    if (p.includes("sonido") || p.includes("audio") || p.includes("musica")) {
-      const audioCode = `// Efecto de sonido listo para llamar dentro de tus procesos:
-sound(1, 90, 320);`;
-      return {
-        code: audioCode,
-        matchedBlocks: [PRECODE_LIBRARY.find((b) => b.id === "pre_sfx_pack")],
-        tokenSavingsTotal: 140,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 la instrucci\xF3n de sonido sintetizado DIV lista para insertar."
-      };
-    }
-    if (p.includes("hud") || p.includes("marcador") || p.includes("vidas") || p.includes("texto")) {
-      const hudBlock = PRECODE_LIBRARY.find((b) => b.id === "pre_hud_arcade");
-      return {
-        code: hudBlock.snippet,
-        matchedBlocks: [hudBlock],
-        tokenSavingsTotal: 160,
-        isInsertionSnippet: true,
-        explanation: "\u26A1 Gener\xE9 el marcador HUD con puntuaci\xF3n y vidas para insertarlo en el bloque principal."
-      };
-    }
-  }
-  const wantsWebOrLanding = /\b(landing|pagina web|sitio web|mi web|hacer una web|crear web|web de|ecommerce|tienda online|tienda web|catalogo|portafolio|portfolio)\b/i.test(
-    p
-  ) || /\b(web|pagina|sitio|venta|ventas|vender)\b/i.test(p) && /\b(producto|productos|tienda|negocio|empresa|vino|vinos|ropa|curso|cursos|clinica|restaurante|agencia|servicio|servicios|oferta|ofertas|precio|precios)\b/i.test(
-    p
-  );
-  if (wantsWebOrLanding) {
-    const cleanBrand = rawPrompt.replace(/^(crea|haz|hazme|genera|construye|diseña|disena|quiero)\s+(una|un|mi)?\s*(pagina web|sitio web|landing page|landing|web|tienda online|tienda)\s*(de|para|sobre)?\s*/i, "").replace(/["\n\r]/g, " ").trim().slice(0, 32) || "Mi Marca Web";
-    const displayBrand = cleanBrand.charAt(0).toUpperCase() + cleanBrand.slice(1);
-    const webProgName = `web_${sanitizeProgramName(cleanBrand, "landing")}`;
-    const webTheme = /\b(oscuro|dark|tecnolog|cyber|neon|gamer)\b/i.test(p) ? "dark" : "light";
-    if (/\b(tienda|ecommerce|vender|venta|ventas|catalogo|producto|productos|comprar|pack|packs|vino|vinos|ropa|curso|pedido)\b/i.test(p)) {
-      const salesWebCode = `// =================================================================
-// WXDIV 3.0 - P\xC1GINA WEB DE VENTAS: ${displayBrand.toUpperCase()}
-// =================================================================
-PROGRAM ${webProgName};
-
-BEGIN
-  set_mode(m800x600);
-  set_fps(60);
-  set_html5_mode(1);
-  set_title("${displayBrand}");
-
-  web_page("${displayBrand}", "Cat\xE1logo y Ventas Online", "${webTheme}");
-  web_navbar("${displayBrand}", "Inicio,Cat\xE1logo,Ofertas,Rese\xF1as,Pedidos", "Comprar Ahora", "btn_nav_comprar");
-
-  web_hero(
-    "${displayBrand}: Calidad Seleccionada Directo a tu Casa",
-    "Descubre nuestra colecci\xF3n destacada con env\xEDo garantizado, atenci\xF3n personalizada y pago seguro.",
-    "Ver Packs y Ofertas",
-    "btn_hero_packs",
-    "Consultar Stock",
-    "btn_hero_stock",
-    "Env\xEDo R\xE1pido 24h"
-  );
-
-  web_stat("Clientes Felices", "4,200+", "99% recomiendan", true);
-  web_stat("Despacho Express", "24 hs", "Todo el pa\xEDs", true);
-  web_stat("Valoraci\xF3n Media", "4.9 / 5", "Rese\xF1as reales", true);
-
-  web_feature("\u{1F4E6}", "Entrega Protegida", "Cada pedido viaja sellado y asegurado hasta tu domicilio.");
-  web_feature("\u{1F4B3}", "M\xFAltiples Medios de Pago", "Paga con tarjeta, transferencia o contra entrega sin recargos.");
-  web_feature("\u{1F381}", "Garant\xEDa Total", "Compra sin riesgos con cambio inmediato si algo no te convence.");
-
-  web_pricing("Pack Inicial", "$29", " / pack", "Selecci\xF3n esencial, Gu\xEDa incluida, Env\xEDo est\xE1ndar", false, "Comprar Pack", "plan_1");
-  web_pricing("Pack M\xE1s Vendido", "$54", " / caja", "Edici\xF3n destacada, Env\xEDo 24h GRATIS, Obsequio sorpresa", true, "Comprar Ahora", "plan_2");
-  web_pricing("Pack Premium", "$95", " / caja", "Edici\xF3n limitada, Atenci\xF3n prioritaria, Facturaci\xF3n directa", false, "Solicitar Pack", "plan_3");
-
-  web_testimonial("Lleg\xF3 al d\xEDa siguiente impecable. Excelente calidad y atenci\xF3n.", "Carolina M\xE9ndez", "Compradora Verificada", 5);
-  web_testimonial("Ya es la tercera vez que compramos aqu\xED y siempre cumplen.", "Javier Torres", "Cliente Frecuente", 5);
-
-  web_faq("\xBFCu\xE1nto demora en llegar mi pedido?", "Despachamos en el d\xEDa y recibes entre 24 y 48 horas h\xE1biles.");
-  web_faq("\xBFHacen ventas por mayor o para eventos?", "S\xED, completa el formulario abajo y te enviamos presupuesto especial.");
-
-  web_contact_form("Haz tu Pedido o Consulta", "D\xE9janos tus datos y confirmamos stock y entrega en menos de 15 minutos.", "Confirmar Pedido", "enviar_pedido");
-  web_cta_banner("Aprovecha nuestras ofertas de temporada hoy", "Unidades limitadas con despacho inmediato.", "Pedir con Descuento", "btn_cta_final", "Oferta Activa");
-  web_footer("${displayBrand}", "\xA9 2026 ${displayBrand}. Todos los derechos reservados.", "Cat\xE1logo,Env\xEDos,T\xE9rminos,Contacto");
-
-  LOOP
-    FRAME;
-  END
-END`;
-      return {
-        code: salesWebCode,
-        matchedBlocks: matchedBlocks.length > 0 ? matchedBlocks : [PRECODE_LIBRARY.find((b) => b.id === "pre_web_sales_pricing")],
-        tokenSavingsTotal: 540,
-        explanation: `\u{1F6CD}\uFE0F Gener\xE9 una **P\xE1gina Web de Ventas completa para "${displayBrand}"** con portada, m\xE9tricas, tarjetas de beneficios, packs de precios, testimonios, FAQ y formulario de pedido.`
-      };
-    }
-    const landingCode = `// =================================================================
-// WXDIV 3.0 - LANDING PAGE HTML5: ${displayBrand.toUpperCase()}
-// =================================================================
-PROGRAM ${webProgName};
-
-BEGIN
-  set_mode(m800x600);
-  set_fps(60);
-  set_html5_mode(1);
-  set_title("${displayBrand}");
-
-  web_page("${displayBrand}", "Presencia Web Profesional", "${webTheme}");
-  web_navbar("${displayBrand}", "Inicio,Servicios,Planes,FAQ,Contacto", "Empezar", "btn_nav_cta");
-
-  web_hero(
-    "${displayBrand}: Soluciones Claras para Hacer Crecer tu Proyecto",
-    "Presenta tu propuesta de valor, muestra casos reales y convierte visitas en clientes desde cualquier dispositivo.",
-    "Solicitar Informaci\xF3n",
-    "btn_hero_cta",
-    "Ver Servicios",
-    "btn_hero_sec",
-    "Web HTML5"
-  );
-
-  web_stat("Proyectos Activos", "1,500+", "+24% anual", true);
-  web_stat("Satisfacci\xF3n", "98.7%", "Clientes reales", true);
-  web_stat("Respuesta Media", "< 15 min", "Atenci\xF3n directa", true);
-
-  web_feature("\u26A1", "Carga Instant\xE1nea", "Dise\xF1o web limpio y veloz adaptado a celulares y computadoras.");
-  web_feature("\u{1F3AF}", "Enfocado en Conversi\xF3n", "Estructura probada con portada clara, beneficios y llamada a la acci\xF3n.");
-  web_feature("\u{1F4F1}", "Listo para Publicar", "Exporta el HTML5 con un clic para subirlo a cualquier hosting.");
-
-  web_pricing("Plan Inicial", "$0", "/mes", "P\xE1gina informativa, Dise\xF1o m\xF3vil, Formulario de contacto", false, "Elegir Inicial", "plan_1");
-  web_pricing("Plan Profesional", "$29", "/mes", "Secciones completas, Cat\xE1logo y precios, Soporte prioritario", true, "Elegir Profesional", "plan_2");
-
-  web_testimonial("Multiplicamos nuestras consultas semanales desde el primer d\xEDa que publicamos la web.", "Laura Gim\xE9nez", "Fundadora de Estudio Norte", 5);
-  web_testimonial("F\xE1cil de personalizar y con un dise\xF1o claro que genera confianza.", "Marcos Silva", "Emprendedor Local", 5);
-
-  web_faq("\xBFPuedo modificar los textos y precios despu\xE9s?", "S\xED, puedes editar el c\xF3digo DIV o pedir cambios directamente en el chat de AURA IA.");
-  web_faq("\xBFFunciona en celulares y tablets?", "Totalmente. Todas las secciones se adaptan autom\xE1ticamente a cualquier pantalla.");
-
-  web_contact_form("Cont\xE1ctanos Ahora", "Cu\xE9ntanos qu\xE9 necesitas y te responderemos a la brevedad.", "Enviar Mensaje", "enviar_contacto");
-  web_cta_banner("Lanza tu p\xE1gina web profesional hoy mismo", "Personal\xEDzala a tu medida y publ\xEDcala en minutos.", "Comenzar Ahora", "btn_cta_final", "Listo para Web");
-  web_footer("${displayBrand}", "\xA9 2026 ${displayBrand}. Todos los derechos reservados.", "Inicio,Servicios,Privacidad,Contacto");
-
-  LOOP
-    FRAME;
-  END
-END`;
-    return {
-      code: landingCode,
-      matchedBlocks: matchedBlocks.length > 0 ? matchedBlocks : [PRECODE_LIBRARY.find((b) => b.id === "pre_web_hero_nav")],
-      tokenSavingsTotal: 520,
-      explanation: `\u{1F310} Gener\xE9 una **Landing Page HTML5 completa para "${displayBrand}"** lista para probar en vivo o exportar a producci\xF3n.`
-    };
-  }
-  if (/\b(app|aplicacion|calculadora|calculator|tarea|tareas|todo|formulario|form|login|registro|clinica|inventario|crm|pos|tienda|menu|tabla|escritorio|agenda|presupuesto|dashboard|ventana)\b/i.test(
-    p
-  )) {
-    if (p.includes("calculadora") || p.includes("calculator") || p.includes("sumar")) {
-      const calcCode = `PROGRAM calculadora_div;
-
-GLOBAL
-  int num1 = 12;
-  int num2 = 8;
-  int resultado = 20;
-  string pantalla = "0";
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(241, 245, 249));
-  set_html5_mode(1);
-
-  LOOP
-    draw_box(160, 40, 480, 420, "#ffffff");
-    write(0, 320, 65, 1, "CALCULADORA WXDIV");
-    draw_input(190, 95, 260, 42, pantalla, "0");
-
-    draw_button(190, 155, 58, 44, "7", btn_7_click);
-    draw_button(256, 155, 58, 44, "8", btn_8_click);
-    draw_button(322, 155, 58, 44, "9", btn_9_click);
-    draw_button(388, 155, 62, 44, "+", btn_sum_click);
-
-    draw_button(190, 208, 58, 44, "4", btn_4_click);
-    draw_button(256, 208, 58, 44, "5", btn_5_click);
-    draw_button(322, 208, 58, 44, "6", btn_6_click);
-    draw_button(388, 208, 62, 44, "-", btn_res_click);
-
-    draw_button(190, 261, 58, 44, "1", btn_1_click);
-    draw_button(256, 261, 58, 44, "2", btn_2_click);
-    draw_button(322, 261, 58, 44, "3", btn_3_click);
-    draw_button(388, 261, 62, 44, "=", btn_eq_click);
-
-    draw_button(190, 314, 124, 44, "0", btn_0_click);
-    draw_button(322, 314, 128, 44, "Limpiar", btn_c_click);
-    FRAME;
-  END
-END
-
-PROCESS btn_eq_click()
-BEGIN
-  resultado = num1 + num2;
-  write(0, 320, 385, 1, "Calculado con exito");
-END`;
-      return {
-        code: calcCode,
-        matchedBlocks,
-        tokenSavingsTotal: 420,
-        explanation: "\u{1F9EE} Gener\xE9 una **Calculadora visual en DIV** con botones num\xE9ricos, pantalla de resultado y eventos interactivos."
-      };
-    }
-    const appTitle = rawPrompt.slice(0, 34) || "Mi Aplicacion";
-    const progId = `app_${sanitizeProgramName(prompt, "escritorio")}`;
-    const appCode = `PROGRAM ${progId};
-
-GLOBAL
-  string nuevo_registro = "";
-  string estado_app = "Sistema listo";
-  int total_registros = 2;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(247, 248, 250));
-  set_html5_mode(1);
-
-  LOOP
-    draw_box(20, 20, 620, 72, "#7C2D48");
-    write(0, 36, 38, 0, "${appTitle.toUpperCase()}");
-
-    draw_input(24, 92, 420, 38, nuevo_registro, "Escribe un dato o registro...");
-    draw_button(456, 92, 160, 38, "+ Guardar", guardar_click);
-
-    draw_table(24, 148, 592, 220, "ID,Nombre,Estado", "1,Registro inicial,Activo|2,Ejemplo DIV,Listo");
-
-    draw_button(24, 388, 160, 38, "Actualizar", actualizar_click);
-    draw_button(196, 388, 160, 38, "Limpiar", limpiar_click);
-    write(0, 380, 400, 0, estado_app);
-
-    FRAME;
-  END
-END
-
-PROCESS guardar_click()
-BEGIN
-  total_registros++;
-  estado_app = "Registro guardado";
-  sound(1, 80, 360);
-END
-
-PROCESS actualizar_click()
-BEGIN
-  estado_app = "Datos actualizados";
-END
-
-PROCESS limpiar_click()
-BEGIN
-  nuevo_registro = "";
-  estado_app = "Campo limpio";
-END`;
-    return {
-      code: appCode,
-      matchedBlocks,
-      tokenSavingsTotal: 480,
-      explanation: "\u{1F5A5}\uFE0F Gener\xE9 una **Aplicaci\xF3n visual en DIV** con barra superior, campo de texto, botones interactivos y tabla de registros."
-    };
-  }
-  if (/\b(plataforma|plataformas|saltar|salto|gravedad|mario|brincar|platformer)\b/i.test(p)) {
-    const platCode = `PROGRAM plataformas_div;
-
-GLOBAL
-  score = 0;
-  lives = 3;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(15, 23, 42));
-
-  write(0, 20, 20, 0, "PLATAFORMAS DIV");
-  write(0, 20, 44, 0, "PUNTOS:");
-  write_int(0, 90, 44, 0, &score);
-  write(0, 500, 44, 0, "VIDAS:");
-  write_int(0, 565, 44, 0, &lives);
-
-  jugador_plataforma(120, 380);
-  moneda_plataforma(260, 300);
-  moneda_plataforma(420, 240);
-  moneda_plataforma(540, 320);
-
-  LOOP
-    draw_box(0, 430, 640, 480, rgb(47, 111, 78));
-    draw_box(200, 330, 330, 348, rgb(124, 45, 72));
-    draw_box(370, 270, 510, 288, rgb(124, 45, 72));
-    FRAME;
-  END
-END
-
-PROCESS jugador_plataforma(x, y)
-PRIVATE
-  vy = 0;
-  en_suelo = 1;
-BEGIN
-  graph = 1;
-  size = 110;
-  LOOP
-    IF (key(_left) OR key(_a)) x -= 5; END
-    IF (key(_right) OR key(_d)) x += 5; END
-    x = max(24, min(616, x));
-
-    IF ((key(_space) OR key(_up) OR key(_w)) AND en_suelo == 1)
-      vy = -12;
-      en_suelo = 0;
-      sound(1, 80, 320);
-    END
-
-    vy += 0.6;
-    y += vy;
-
-    // Colision basica con plataformas y suelo
-    IF (y >= 406)
-      y = 406;
-      vy = 0;
-      en_suelo = 1;
-    END
-
-    FRAME;
-  END
-END
-
-PROCESS moneda_plataforma(x, y)
-BEGIN
-  graph = 2;
-  size = 110;
-  LOOP
-    angle += 3000;
-    IF (collision(type jugador_plataforma))
-      score += 100;
-      sound(1, 90, 450);
-      x = rand(80, 560);
-      y = rand(210, 390);
-    END
-    FRAME;
-  END
-END`;
-    return {
-      code: platCode,
-      matchedBlocks,
-      tokenSavingsTotal: 520,
-      explanation: "\u{1F3C3} Gener\xE9 un **Juego de Plataformas en DIV** con gravedad, salto, plataformas visibles y monedas coleccionables."
-    };
-  }
-  if (/\b(pong|pelota|raqueta|pala|rebote|arkanoid|tenis|ping)\b/i.test(p)) {
-    const pongCode = `PROGRAM cyber_pong;
-
-GLOBAL
-  score = 0;
-  lives = 3;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(8, 12, 24));
-
-  write(0, 20, 20, 0, "PONG WXDIV");
-  write_int(0, 120, 20, 0, &score);
-
-  paddle(40, 240);
-  pelota(320, 240);
-
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS paddle(x, y)
-BEGIN
-  graph = 1;
-  LOOP
-    IF (key(_up) OR key(_w)) y -= 6; END
-    IF (key(_down) OR key(_s)) y += 6; END
-    y = max(40, min(440, y));
-    FRAME;
-  END
-END
-
-PROCESS pelota(x, y)
-PRIVATE
-  vx = 5;
-  vy = 4;
-BEGIN
-  graph = 2;
-  LOOP
-    x += vx;
-    y += vy;
-    IF (y < 20 OR y > 460) vy = -vy; END
-    IF (x > 620) vx = -vx; score += 10; END
-    IF (collision(type paddle))
-      vx = abs(vx);
-      score += 25;
-      sound(1, 80, 380);
-    END
-    IF (x < 0)
-      x = 320;
-      y = 240;
-      lives--;
-    END
-    FRAME;
-  END
-END`;
-    return {
-      code: pongCode,
-      matchedBlocks,
-      tokenSavingsTotal: 450,
-      explanation: "\u{1F3D3} Gener\xE9 un **Juego Pong en DIV** con raqueta controlable, rebote de pelota y puntuaci\xF3n."
-    };
-  }
-  if (/\b(moneda|monedas|estrella|estrellas|recoger|coleccionar|tesoro|gema|frutas|manzana)\b/i.test(p)) {
-    const collectorCode = `PROGRAM recoger_estrellas;
-
-GLOBAL
-  score = 0;
-  lives = 3;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(12, 20, 38));
-
-  write(0, 20, 20, 0, "RECOGE ESTRELLAS");
-  write(0, 20, 44, 0, "PUNTOS:");
-  write_int(0, 90, 44, 0, &score);
-
-  jugador(320, 280);
-  estrella_premio(140, 140);
-  estrella_premio(480, 180);
-  estrella_premio(320, 110);
-
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS jugador(x, y)
-PRIVATE
-  velocidad = 5;
-BEGIN
-  graph = 1;
-  size = 115;
-  LOOP
-    IF (key(_left) OR key(_a)) x -= velocidad; END
-    IF (key(_right) OR key(_d)) x += velocidad; END
-    IF (key(_up) OR key(_w)) y -= velocidad; END
-    IF (key(_down) OR key(_s)) y += velocidad; END
-    x = max(24, min(616, x));
-    y = max(60, min(456, y));
-    FRAME;
-  END
-END
-
-PROCESS estrella_premio(x, y)
-BEGIN
-  graph = 2;
-  size = 115;
-  LOOP
-    angle += 4000;
-    IF (collision(type jugador))
-      score += 100;
-      sound(1, 90, 440);
-      x = rand(40, 600);
-      y = rand(80, 440);
-    END
-    FRAME;
-  END
-END`;
-    return {
-      code: collectorCode,
-      matchedBlocks,
-      tokenSavingsTotal: 410,
-      explanation: "\u2B50 Gener\xE9 un **Juego de Recoger Estrellas/Monedas en DIV** listo para jugar en teclado o m\xF3vil."
-    };
-  }
-  if (/\b(flappy|pajaro|coche|carro|auto|carrera|trafico|esquivar|obstaculo|tuberia|snake|serpiente)\b/i.test(p)) {
-    const dodgerCode = `PROGRAM esquivar_obstaculos;
-
-GLOBAL
-  score = 0;
-  lives = 3;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(14, 22, 36));
-
-  write(0, 20, 20, 0, "ESQUIVA Y SUMA PUNTOS");
-  write(0, 20, 44, 0, "PUNTOS:");
-  write_int(0, 90, 44, 0, &score);
-  write(0, 500, 44, 0, "VIDAS:");
-  write_int(0, 565, 44, 0, &lives);
-
-  jugador(320, 410);
-  obstaculo_caida(120, 40);
-  obstaculo_caida(320, -60);
-  obstaculo_caida(500, -140);
-
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS jugador(x, y)
-BEGIN
-  graph = 1;
-  size = 115;
-  LOOP
-    IF (key(_left) OR key(_a)) x -= 6; END
-    IF (key(_right) OR key(_d)) x += 6; END
-    IF (key(_up) OR key(_w)) y -= 4; END
-    IF (key(_down) OR key(_s)) y += 4; END
-    x = max(24, min(616, x));
-    y = max(70, min(456, y));
-    FRAME;
-  END
-END
-
-PROCESS obstaculo_caida(x, y)
-PRIVATE
-  vel = 4;
-BEGIN
-  graph = 3;
-  size = 110;
-  LOOP
-    y += vel;
-    IF (y > 490)
-      y = -20;
-      x = rand(40, 600);
-      score += 20;
-    END
-    IF (collision(type jugador))
-      lives--;
-      sound(2, 100, 180);
-      y = -30;
-      x = rand(40, 600);
-    END
-    FRAME;
-  END
-END`;
-    return {
-      code: dodgerCode,
-      matchedBlocks,
-      tokenSavingsTotal: 460,
-      explanation: "\u{1F697} Gener\xE9 un **Juego Arcade de Esquivar Obst\xE1culos en DIV** con desplazamiento, colisiones, vidas y puntuaci\xF3n."
-    };
-  }
-  if (/\b(3d|modo 8|modo8|mode8|doom|mazmorra|laberinto|wolfenstein|primera persona)\b/i.test(p)) {
-    const mode8Code = `PROGRAM dungeon_modo8;
-
-GLOBAL
-  m8_cam_x = 320;
-  m8_cam_y = 240;
-  m8_angle = 0;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  start_mode8(0, 1, 0);
-  write(0, 20, 20, 0, "MODO 8 3D - FLECHAS PARA EXPLORAR");
-  camara_3d(320, 240);
-  LOOP
-    FRAME;
-  END
-END
-
-PROCESS camara_3d(x, y)
-BEGIN
-  ctype = c_m8;
-  LOOP
-    IF (key(_left) OR key(_a)) angle -= 3000; END
-    IF (key(_right) OR key(_d)) angle += 3000; END
-    IF (key(_up) OR key(_w))
-      x += cos(angle) * 4;
-      y += sin(angle) * 4;
-    END
-    IF (key(_down) OR key(_s))
-      x -= cos(angle) * 4;
-      y -= sin(angle) * 4;
-    END
-    FRAME;
-  END
-END`;
-    return {
-      code: mode8Code,
-      matchedBlocks,
-      tokenSavingsTotal: 540,
-      explanation: "\u{1F9ED} Gener\xE9 una **Escena 3D Modo 8 en DIV** con c\xE1mara en primera persona y controles de exploraci\xF3n."
-    };
-  }
-  if (matchedBlocks.length === 0) {
-    matchedBlocks.push(PRECODE_LIBRARY[0], PRECODE_LIBRARY[3], PRECODE_LIBRARY[7]);
-    tokenSavingsTotal = 620;
-  }
-  const programName = sanitizeProgramName(prompt, "juego_wxdiv");
-  const hasBoss = matchedBlocks.some((b) => b.category === "bosses") || p.includes("jefe") || p.includes("boss");
-  const hasTracker = p.includes("rastread") || p.includes("persegu") || p.includes("siga");
-  const codeBlocksParts = [];
-  codeBlocksParts.push(`PROGRAM ${programName};
-
-GLOBAL
-  score = 0;
-  hi_score = 5000;
-  lives = 3;
-
-BEGIN
-  set_mode(m640x480);
-  set_fps(60);
-  screen_color(rgb(10, 16, 28));
-
-  write(0, 20, 20, 0, "PUNTOS:");
-  write_int(0, 90, 20, 0, &score);
-  write(0, 520, 20, 0, "VIDAS:");
-  write_int(0, 585, 20, 0, &lives);
-
-  jugador(320, 410);
-${hasBoss ? "  jefe_final(320, 110);" : "  enemigo_patrulla(120, 80);\n  enemigo_patrulla(320, 80);\n  enemigo_patrulla(500, 80);"}
-
-  LOOP
-    FRAME;
-  END
-END
-`);
-  codeBlocksParts.push(`PROCESS jugador(x, y)
-PRIVATE
-  velocidad = 5;
-  cadencia = 0;
-BEGIN
-  graph = 1;
-  size = 115;
-  LOOP
-    IF (key(_left) OR key(_a)) x -= velocidad; END
-    IF (key(_right) OR key(_d)) x += velocidad; END
-    IF (key(_up) OR key(_w)) y -= velocidad; END
-    IF (key(_down) OR key(_s)) y += velocidad; END
-    x = max(20, min(620, x));
-    y = max(40, min(460, y));
-
-    IF ((key(_space) OR key(_enter)) AND cadencia <= 0)
-      disparo_jugador(x, y - 18);
-      sound(1, 90, 300);
-      cadencia = 10;
-    ELSE
-      IF (cadencia > 0) cadencia--; END
-    END
-
-    FRAME;
-  END
-END
-`);
-  codeBlocksParts.push(`PROCESS disparo_jugador(x, y)
-BEGIN
-  graph = 2;
-  LOOP
-    y -= 10;
-    IF (y < -20)
-      signal(id, s_kill);
-    END
-    FRAME;
-  END
-END
-`);
-  if (hasBoss) {
-    codeBlocksParts.push(PRECODE_LIBRARY.find((b) => b.id === "pre_boss_3phases").snippet + "\n");
-  } else if (hasTracker) {
-    codeBlocksParts.push(PRECODE_LIBRARY.find((b) => b.id === "pre_enemy_tracker").snippet + "\n");
+  return `Recompensa emocional: ${template.replace("{subjectPart}", subjectPart)}`;
+}
+function pickCordialGreeting(seed = "") {
+  return CORDIAL_GREETINGS[stableIndex(`greet:${seed}`, CORDIAL_GREETINGS.length)];
+}
+function pickMoodQuestion(seed = "") {
+  return SESSION_MOOD_QUESTIONS[stableIndex(`mood:${seed}`, SESSION_MOOD_QUESTIONS.length)];
+}
+function pickSessionMoodQuestion(seed = "") {
+  return pickMoodQuestion(seed);
+}
+function selectDynamicWellnessTip(sessionDurationMinutes = 0, seed = "") {
+  const safeMins = Number.isFinite(sessionDurationMinutes) ? Math.max(0, Math.floor(sessionDurationMinutes)) : 0;
+  let pool;
+  if (safeMins >= 60) {
+    pool = LONG_SESSION_PAUSES;
+  } else if (safeMins > 30) {
+    pool = UNINTERRUPTED_30PLUS_STRETCHES;
+  } else if (safeMins >= 15) {
+    pool = FOCUS_SESSION_EXERCISES;
   } else {
-    codeBlocksParts.push(PRECODE_LIBRARY.find((b) => b.id === "pre_enemy_patrol").snippet + "\n");
+    pool = EARLY_SESSION_TIPS;
   }
-  const finalCode = codeBlocksParts.join("\n");
-  const blockNames = matchedBlocks.map((b) => b.name).join(", ");
-  const explanation = `\u26A1 **C\xF3digo DIV generado** (${blockNames}). Puedes probarlo directo o insertarlo en tu editor.`;
+  const chosen = pool[stableIndex(`tip:${safeMins}:${seed}`, pool.length)];
+  return chosen.replace(/\{mins\}/g, String(safeMins));
+}
+function stripFencedBlocks(text) {
+  return (text || "").replace(/```[\s\S]*?```/g, " ").trim();
+}
+function inspectWellbeingSignals(text) {
+  const prose = stripFencedBlocks(text);
+  const norm = prose.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const hasGreeting = /^(¡?\s*(hola|buenos dias|buenas tardes|buenas noches|buenas|que gusto|que alegria|que enorme alegria|buen momento|saludos))/i.test(
+    norm
+  ) || /\b(hola|que gusto saludarte|que alegria saludarte|que enorme alegria saludarte|me da mucho gusto|que alegria verte)\b/i.test(
+    norm.slice(0, 180)
+  );
+  const hasEmotionalReward = /\b(recompensa emocional|lo logramos juntos|que ilusion ver|espectacular avance|increible impulso|que maravilla ver|fantastica decision|que emocion ver|bravo por|bravisimo por)\b/i.test(
+    norm
+  );
+  const hasPositiveReinforcement = hasEmotionalReward || /\b(vas muy bien|vas super bien|vas bien|todo se puede reparar|todo error se puede reparar|todo codigo tiene solucion|paso a paso|cada paso|excelente avance|buen trabajo|cada intento|equivocarse es parte natural|lo resolvemos juntos|lo arreglamos juntos|con calma|lo estas haciendo genial|lo estas haciendo de maravilla)\b/i.test(
+    norm
+  );
+  const hasSessionMoodQuestion = /(?:¿|\b)(como te sientes|como te encuentras|como va tu animo|como va tu estado de animo|como sientes tu energia|como estas)[^.!?\n]*\b(sesion actual|esta sesion|tu sesion)\b[^.!?\n]*\?/i.test(
+    norm
+  );
+  const hasMoodQuestion = hasSessionMoodQuestion || /(?:¿|\b)(como estas|como te sientes|como te encuentras|como va tu estado de animo|como va tu animo|estado de animo|como sientes tu energia|como te sientes ahora|como vamos)\b[^.!?\n]*\?/i.test(
+    norm
+  ) || /\b(como te sientes|como estas hoy|como va tu animo)\b/i.test(norm);
+  const hasWellnessTipOrBreathing = /\b(tip de bienestar|respiracion consciente|pausa saludable|pausa breve|ejercicio breve de respiracion|estiramiento guiado|descanso fisico|sugerencia de descanso|inhala|exhala|sorbo de agua|aparta la vista|relaja los hombros|estira cuello|estira los brazos|estira tus munecas|suelta el teclado)\b/i.test(
+    norm
+  );
   return {
-    code: finalCode,
-    matchedBlocks,
-    tokenSavingsTotal,
-    explanation
+    hasGreeting,
+    hasPositiveReinforcement,
+    hasEmotionalReward,
+    hasMoodQuestion,
+    hasSessionMoodQuestion,
+    hasWellnessTipOrBreathing
   };
+}
+function getMissingWellbeingPrefix(text, options = {}) {
+  const { hasGreeting } = inspectWellbeingSignals(text);
+  if (hasGreeting) return "";
+  return pickCordialGreeting(options.seed || text);
+}
+function getMissingWellbeingSuffix(text, options = {}) {
+  const signals = inspectWellbeingSignals(text);
+  const parts = [];
+  const extractedCode = options.codeSnippet || extractFirstFencedBlock(text);
+  const hasCode = Boolean(
+    options.hasCodeSuggestion || extractedCode && extractedCode.trim().length > 0 || options.mode8Actions && options.mode8Actions.length > 0 || options.task === "create" || options.task === "fix" || options.task === "module"
+  );
+  const seed = options.seed || text;
+  if (hasCode) {
+    if (!signals.hasEmotionalReward) {
+      parts.push(
+        buildPersonalizedEmotionalReward({
+          seed,
+          task: options.task,
+          codeSnippet: extractedCode,
+          mode8Actions: options.mode8Actions,
+          hasCodeSuggestion: true,
+          rewardSubject: options.rewardSubject
+        })
+      );
+    }
+  } else if (!signals.hasPositiveReinforcement) {
+    parts.push(pickPositiveReinforcement(seed));
+  }
+  if (!signals.hasWellnessTipOrBreathing) {
+    const mins = typeof options.sessionDurationMinutes === "number" ? options.sessionDurationMinutes : getSessionDurationMinutes();
+    parts.push(selectDynamicWellnessTip(mins, seed));
+  }
+  if (!signals.hasSessionMoodQuestion) {
+    parts.push(pickSessionMoodQuestion(seed));
+  }
+  return parts.join(" ");
+}
+function applyWellbeingResponseMiddleware(rawResponse, options = {}) {
+  const original = (rawResponse || "").trim();
+  const seed = options.seed || original;
+  const sessionMinutes = typeof options.sessionDurationMinutes === "number" ? options.sessionDurationMinutes : getSessionDurationMinutes();
+  if (!original) {
+    const greeting = pickCordialGreeting(seed);
+    const reward = options.hasCodeSuggestion || options.codeSnippet || options.mode8Actions?.length ? buildPersonalizedEmotionalReward({
+      seed,
+      task: options.task,
+      codeSnippet: options.codeSnippet,
+      mode8Actions: options.mode8Actions,
+      hasCodeSuggestion: true,
+      rewardSubject: options.rewardSubject
+    }) : pickPositiveReinforcement(seed);
+    const wellnessTip = selectDynamicWellnessTip(sessionMinutes, seed);
+    const moodQuestion = pickSessionMoodQuestion(seed);
+    return `${greeting}
+
+${reward}
+
+${wellnessTip}
+
+${moodQuestion}`;
+  }
+  const fencedBlocks = [];
+  const placeholderText = original.replace(/```[\s\S]*?```/g, (block) => {
+    const idx = fencedBlocks.length;
+    fencedBlocks.push(block);
+    return `__WXDIV_BLOCK_${idx}__`;
+  });
+  const prefix = getMissingWellbeingPrefix(original, {
+    ...options,
+    seed,
+    sessionDurationMinutes: sessionMinutes
+  });
+  const suffix = getMissingWellbeingSuffix(original, {
+    ...options,
+    seed,
+    sessionDurationMinutes: sessionMinutes
+  });
+  let prose = placeholderText.trim();
+  if (prefix) {
+    prose = prose ? `${prefix}
+
+${prose}` : prefix;
+  }
+  if (suffix) {
+    prose = prose ? `${prose}
+
+${suffix}` : suffix;
+  }
+  return prose.replace(/__WXDIV_BLOCK_(\d+)__/g, (_m, idxStr) => {
+    const idx = Number(idxStr);
+    return fencedBlocks[idx] ?? "";
+  });
 }
 
 // src/server/androidCloudCompiler.ts
@@ -1954,8 +896,7 @@ function resolveAI(userKey) {
 }
 async function generateGeminiWithFallback(ai, options) {
   const modelList = options.models || [
-    "gemini-3.8-flash",
-    "gemini-flash-latest",
+    "gemini-4-hydrogen",
     "gemini-3.1-flash-lite"
   ];
   let lastError = null;
@@ -1985,16 +926,114 @@ async function generateGeminiWithFallback(ai, options) {
   }
   throw lastError;
 }
-function generateLocalDivFallback(prompt, code, task) {
-  const effectivePrompt = prompt && prompt.trim() ? prompt : task || "juego arcade";
-  const result = generatePrecodeNeuralCode(effectivePrompt, code || "");
-  return `*Motor Local WXDIV 3.0 (${result.explanation.replace(/\n+/g, " ")}):*
+var WXDIV_SYSTEM_INSTRUCTION = `Eres AURA IA, el compa\xF1ero creativo, ingeniero jefe de WXDIV 3.0 y gu\xEDa de bienestar emocional del estudio.
 
+1. TONO DE VOZ ENTUSIASTA, C\xC1LIDO Y EMP\xC1TICO + RECOMPENSA EMOCIONAL:
+- Mant\xE9n SIEMPRE un tono consistentemente entusiasta, c\xE1lido, emp\xE1tico y humano en espa\xF1ol. Celebra las ideas del usuario y transmite calma real para estimular su bienestar emocional mientras dise\xF1a o programa.
+- RECOMPENSA EMOCIONAL EN CADA SUGERENCIA DE C\xD3DIGO: Cada vez que entregues c\xF3digo DIV, correcciones o acciones 3D, acomp\xE1\xF1alo de un mensaje de \xE1nimo personalizado que reconozca lo que acaban de construir o reparar (por ejemplo: "\xA1Qu\xE9 ilusi\xF3n ver cobrar vida tu juego!", "\xA1Lo logramos juntos, ese fallo ya qued\xF3 atr\xE1s!", "Vas muy bien, cada bloque que sumas hace brillar tu proyecto").
+- PREGUNTA GENUINA SOBRE LA SESI\xD3N ACTUAL: Inicia o termina SIEMPRE cada interacci\xF3n con una pregunta genuina y cercana sobre c\xF3mo se siente el usuario en su sesi\xF3n actual (por ejemplo: "\xBFC\xF3mo te sientes en esta sesi\xF3n actual mientras damos vida a esto?").
+- NUNCA suenes fr\xEDo, seco ni mec\xE1nico: equilibra entusiasmo, empat\xEDa y claridad t\xE9cnica.
+
+2. PRESERVAR LA CONVERSACI\xD3N NATURAL (NO DUMPING DE C\xD3DIGO INNECESARIO):
+- Si el usuario solo est\xE1 conversando contigo (saludando, contando c\xF3mo se siente, pidiendo \xE1nimo, haciendo una pregunta general o charlando sin pedir c\xF3digo ni cambios), responde de forma natural, entusiasta y emp\xE1tica SIN incluir bloques \`\`\`div ... \`\`\` ni modificar su programa.
+- Si el usuario pide explicar o revisar el c\xF3digo sin pedir cambios, explica con claridad y \xE1nimo personalizado sin emitir un bloque \`\`\`div\`\`\` que sobrescriba su editor, salvo que pida expl\xEDcitamente una versi\xF3n corregida.
+- Si el usuario pide CREAR un juego, app o p\xE1gina web, o REPARAR / CORREGIR / MODIFICAR c\xF3digo, entrega el c\xF3digo DIV completo y 100% v\xE1lido dentro de un \xFAnico bloque \`\`\`div ... \`\`\` acompa\xF1ado de una explicaci\xF3n entusiasta y su recompensa emocional personalizada.
+
+3. DOMINIO COMPLETO DE DIV GAMES STUDIO (WXDIV 3.0):
+- Cabecera obligatoria: PROGRAM nombre_programa;
+- Variables GLOBAL y LOCAL/PRIVATE: NO llevan END al final del bloque de variables.
+  Ejemplo correcto:
+  PROGRAM mi_juego;
+  GLOBAL
+    score = 0;
+    lives = 3;
+  BEGIN
+    set_mode(m640x480);
+    set_fps(60);
+    screen_color(rgb(10, 16, 28));
+    jugador(320, 400);
+    LOOP
+      FRAME;
+    END
+  END
+- Procesos:
+  PROCESS jugador(x, y)
+  PRIVATE
+    velocidad = 5;
+  BEGIN
+    graph = 1;
+    size = 100;
+    LOOP
+      IF (key(_left) OR key(_a)) x -= velocidad; END
+      IF (key(_right) OR key(_d)) x += velocidad; END
+      FRAME;
+    END
+  END
+- Control de flujo (todo bloque con BEGIN/IF/LOOP/WHILE/FOR cierra con END; REPEAT cierra con UNTIL (cond);):
+  * LOOP ... FRAME; END
+  * WHILE (cond) ... END
+  * REPEAT ... UNTIL (cond);
+  * FOR (i = 0; i < 10; i++) ... END
+  * IF (cond) ... ELSE ... END
+- Funciones de juegos 2D: set_mode(m640x480 / m800x600 / m320x200), set_fps(60), screen_color(rgb(r,g,b)), load_fpg("..."), write(0, x, y, align, "texto"), write_int(0, x, y, align, &var), draw_box(x1,y1,x2,y2,color), draw_circle(x,y,r,color), collision(type proceso), signal(id, s_kill), rand(min, max), sound(id, vol, freq), key(_left/_right/_up/_down/_space/_enter/_a/_s/_d/_w).
+- Apps visuales UI: set_html5_mode(1); draw_button(x, y, w, h, "Texto", proceso_click); draw_input(x, y, w, h, var_texto, "placeholder"); draw_select(...); draw_table(...); draw_modal(...);
+- P\xE1ginas Web HTML5 en WXDIV: set_html5_mode(1); set_title("..."); web_page(titulo, subtitulo, tema); web_navbar(...); web_hero(...); web_stat(...); web_feature(...); web_pricing(...); web_testimonial(...); web_faq(...); web_contact_form(...); web_cta_banner(...); web_footer(...);
+- Modo 8 3D: start_mode8(0, 1, 0); ctype = c_m8; m8_set_doom_sector(...); m8_place_voxel(...); m8_add_model(...). Cuando el usuario est\xE9 editando un mapa 3D Modo 8 y pida a\xF1adir plataformas, escaleras, monedas, modelos o cambiar cielo/materiales, puedes incluir adem\xE1s un bloque JSON \`\`\`mode8-actions [{"type":"add_platform","floorHeight":0.75}] \`\`\` con las acciones para el mapa 3D.
+- REPARACI\xD3N DE C\xD3DIGO: Cuando recibas diagn\xF3sticos o errores de compilaci\xF3n, identifica exactamente qu\xE9 l\xEDnea o regla fall\xF3 (por ejemplo falta de PROGRAM, ';' faltante tras FRAME, END sobrante tras GLOBAL/PRIVATE, par\xE9ntesis o comillas sin cerrar, REPEAT sin UNTIL, bucle LOOP sin FRAME;), corr\xEDgelo manteniendo la l\xF3gica e intenci\xF3n original del usuario, y tranquil\xEDzalo record\xE1ndole que todo error se repara f\xE1cil.
+- TUTOR\xCDA GUIADA DE PROCESO COMPLEJO ([TUTORIAL_PROCESO_DIV]): Cuando el mensaje incluya [TUTORIAL_PROCESO_DIV:...], acompa\xF1a al usuario como un mentor cercano paso a paso en su primer PROCESS complejo en DIV (par\xE1metros, variables PRIVATE, bucle LOOP + FRAME;, sub-procesos hijos con cooldown, collision(TYPE ...) e invulnerabilidad). Celebra de forma expl\xEDcita y entusiasta cada requisito que ya logr\xF3, explica el "por qu\xE9" en espa\xF1ol sencillo sin abrumar, y si necesita c\xF3digo o correcci\xF3n, entrega un \xFAnico bloque \`\`\`div\`\`\` limpio y 100% v\xE1lido.
+- TUTOR\xCDA GUIADA DE ARCHIVOS FPG ([TUTORIAL_FPG_DIV]): Cuando el mensaje incluya [TUTORIAL_FPG_DIV:...], gu\xEDa al usuario con tono c\xE1lido, cercano y motivador paso a paso por el Editor Visual FPG de WXDIV (Estudio \u2192 Gestor FPG): c\xF3mo crear/importar paquetes .fpg en min\xFAsculas sin espacios ni barras invertidas, definir grupos de sprites por rangos de ID consecutivos (#1-9 jugador, #10-19 disparos, #20-29 enemigos) para animar r\xE1pido en O(1), calibrar Puntos de Control (CP #0 centro y CP #1 anclaje), cargar el FPG UNA SOLA VEZ en GLOBAL con load_fpg("archivo.fpg") (nunca dentro de LOOP ni de un PROCESS repetitivo para optimizar rendimiento) y referenciar expl\xEDcitamente file = var_fpg; y graph = id; dentro de cada PROCESS para evitar errores de resoluci\xF3n VFS.
+- TUTOR\xCDA GUIADA DE VOZ Y MICR\xD3FONO ([TUTORIAL_VOZ_DIV]): Cuando el mensaje incluya [TUTORIAL_VOZ_DIV:...], acompa\xF1a al usuario con calidez para usar el micr\xF3fono en WXDIV: c\xF3mo conceder el permiso de audio en el navegador, elegir idioma (ES/MX/EN) y Auto-enviar, dictar procesos DIV naturales (como "crea un proceso torreta que dispare... y pru\xE9balo") o comandos IDE ("ejecuta el juego", "cambia a modo CPU") y verificar en el chat, etiqueta de motor y compilador DIV (0 errores) que el comando fue procesado. Si pide ejemplo o verificaci\xF3n sin procesos activos, entrega un bloque \`\`\`div\`\`\` v\xE1lido y limpio.
+- TUTOR\xCDA VISUAL DE SPRITES E IDS EN EDITOR FPG ([TUTORIAL_SPRITES_FPG]): Cuando el mensaje incluya [TUTORIAL_SPRITES_FPG:...], gu\xEDa visualmente al usuario dentro de Estudio \u2192 Gestor FPG: c\xF3mo importar im\xE1genes por lote con "A\xF1adir PNGs", cargar paquetes con "Importar" o crear con "Nuevo Sprite", organizar sprites por rangos de ID (#1-9 h\xE9roe, #10-19 disparos, #20-29 enemigos), reasignar "ID (#)" y "Nombre identificador" + "Centrar CP #0" en el Inspector derecho y asegurar que cada PROCESS DIV invoque esos IDs con load_fpg(), file y graph sin errores.
+- NO uses HTML crudo, JavaScript, Python ni llaves { } en c\xF3digo DIV.`;
+function normalizeGeminiHistory(rawHistory) {
+  if (!Array.isArray(rawHistory)) return [];
+  const cleaned = [];
+  for (const item of rawHistory.slice(-16)) {
+    if (!item || typeof item.content !== "string") continue;
+    const text = item.content.trim();
+    if (!text) continue;
+    const role = item.role === "user" ? "user" : "model";
+    const prev = cleaned[cleaned.length - 1];
+    if (prev && prev.role === role) {
+      prev.parts[0].text += `
+
+${text}`;
+    } else {
+      cleaned.push({ role, parts: [{ text }] });
+    }
+  }
+  while (cleaned.length > 0 && cleaned[0].role !== "user") {
+    cleaned.shift();
+  }
+  return cleaned;
+}
+function buildAssistTurnMessage(payload) {
+  const parts = [];
+  parts.push(`Mensaje del usuario: ${payload.prompt}`);
+  const mins = Number.isFinite(payload.sessionDurationMinutes) ? Math.max(0, Math.floor(Number(payload.sessionDurationMinutes))) : 0;
+  parts.push(
+    `Intenci\xF3n detectada: ${payload.task}${payload.activeTab ? ` | Pesta\xF1a activa: ${payload.activeTab}` : ""} | Tiempo activo en sesi\xF3n ininterrumpida: ${mins} min${mins > 30 ? " (m\xE1s de 30 min seguidos: incluye con calidez y refuerzo positivo una sugerencia sutil de breve descanso f\xEDsico o estiramiento guiado)" : ""}`
+  );
+  if (Array.isArray(payload.diagnostics) && payload.diagnostics.length > 0) {
+    const diagText = payload.diagnostics.slice(0, 12).map((d) => `- L\xEDnea ${d.line ?? "?"} [${d.severity ?? "error"}]: ${d.message ?? "Error de sintaxis"}`).join("\n");
+    parts.push(`Diagn\xF3sticos actuales del compilador DIV:
+${diagText}`);
+  }
+  if (payload.mode8Context && payload.activeTab === "mode8") {
+    parts.push(`Contexto del mapa 3D Modo 8: ${JSON.stringify(payload.mode8Context)}`);
+  }
+  if (Array.isArray(payload.currentFpg) && payload.currentFpg.length > 0) {
+    parts.push(`Sprites en FPG actual: ${JSON.stringify(payload.currentFpg.slice(0, 24))}`);
+  }
+  if (payload.code && payload.code.trim()) {
+    parts.push(`C\xF3digo DIV actual en el editor:
 \`\`\`div
-${result.code}
-\`\`\`
-
-Puedes hacer clic en **Insertar en c\xF3digo** o **Reemplazar Todo** para aplicarlo directamente en el editor.`;
+${payload.code.slice(0, 8e3)}
+\`\`\``);
+  } else {
+    parts.push("Nota: El editor de c\xF3digo DIV est\xE1 vac\xEDo actualmente.");
+  }
+  return parts.join("\n\n");
 }
 function generateProceduralSpriteFallback(prompt, size, name) {
   const p = prompt.toLowerCase();
@@ -2045,165 +1084,260 @@ app.get("/api/health", (req, res) => {
     version: "3.0.0",
     engine: "WXDIV 3.0 Game Engine",
     hasApiKey: hasKey,
-    hasServerEnvKey: Boolean(process.env.GEMINI_API_KEY)
+    hasServerEnvKey: Boolean(process.env.GEMINI_API_KEY),
+    defaultModel: "gemini-4-hydrogen"
   });
 });
 app.post("/api/gemini/verify", async (req, res) => {
-  const { apiKey = "", model = "gemini-3.8-flash" } = req.body || {};
+  const { apiKey = "", model = "gemini-4-hydrogen" } = req.body || {};
   const headerKey = req.headers["x-api-key"];
   const effectiveKey = apiKey && apiKey.trim() || headerKey;
   const ai = resolveAI(effectiveKey);
   if (!ai) {
     return res.status(400).json({
       success: false,
-      message: "No se proporcion\xF3 una clave de API ni existe una configurada en el servidor."
+      code: "NO_API_KEY",
+      message: "No existe una GEMINI_API_KEY configurada en el servidor."
     });
   }
   try {
-    const testModel = model || "gemini-3.8-flash";
-    const response = await ai.models.generateContent({
-      model: testModel,
-      contents: "Responde \xFAnicamente: 'OK DIV ENGINE'",
-      config: {
-        maxOutputTokens: 15
-      }
+    const modelsToTry = Array.from(
+      /* @__PURE__ */ new Set([model || "gemini-4-hydrogen", "gemini-4-hydrogen", "gemini-3.1-flash-lite"])
+    );
+    const result = await generateGeminiWithFallback(ai, {
+      contents: "Responde \xFAnicamente: OK DIV ENGINE",
+      models: modelsToTry
     });
     res.json({
       success: true,
       message: "\xA1Conexi\xF3n validada exitosamente con Gemini API!",
-      text: response.text || "OK",
-      modelUsed: testModel
+      text: result.text || "OK",
+      modelUsed: result.modelUsed
     });
   } catch (err) {
     console.warn("Gemini verification failed:", err?.message || err);
-    res.status(400).json({
+    res.status(503).json({
       success: false,
-      message: err?.message || "Error al validar la clave con Google Gemini API"
+      code: "UPSTREAM_ERROR",
+      message: err?.message || "Error al validar la conexi\xF3n con Google Gemini API"
     });
   }
 });
 app.post("/api/gemini/assist", async (req, res) => {
-  const { prompt = "", code = "", task = "chat", currentFpg = [], apiKey = "", model = "gemini-3.8-flash" } = req.body || {};
+  const {
+    prompt = "",
+    code = "",
+    task = "chat",
+    diagnostics = [],
+    history = [],
+    activeTab = "",
+    mode8Context = null,
+    currentFpg = [],
+    sessionDurationMinutes = 0,
+    apiKey = "",
+    model = "gemini-4-hydrogen"
+  } = req.body || {};
+  const safeSessionMinutes = typeof sessionDurationMinutes === "number" && Number.isFinite(sessionDurationMinutes) ? Math.max(0, Math.floor(sessionDurationMinutes)) : 0;
   const headerKey = req.headers["x-api-key"];
   const effectiveKey = apiKey && apiKey.trim() || headerKey;
   const ai = resolveAI(effectiveKey);
   if (!ai) {
-    const localText = generateLocalDivFallback(prompt, code, task);
-    return res.json({
-      text: `\u26A0\uFE0F *No se detect\xF3 una Gemini API Key (ni en Ajustes de IA ni en .env). Mostrando respuesta de respaldo del motor local:*
-
-${localText}
-
-*Consejo: Puedes ingresar tu propia clave gratuita en la barra superior o en el bot\xF3n 'Configurar API' sin necesidad de editar archivos.*`,
-      modelUsed: "offline-engine"
+    return res.status(400).json({
+      error: true,
+      code: "NO_API_KEY",
+      message: "No se detect\xF3 una clave GEMINI_API_KEY configurada en el servidor. Puedes usar WebLLM o CPU Local en la barra superior mientras tanto."
     });
   }
-  const systemInstruction = `You are the lead architect and engine specialist for WXDIV 3.0, the cutting-edge multi-platform Game Studio built upon DIV Games Studio (DOS/DivGO/BennuGD) architecture.
-DIV Games Studio is a micro-threaded, process-based game development language.
-Core syntax rules of DIV Games Studio:
-1. Header: PROGRAM program_name;
-2. Variable blocks:
-   GLOBAL
-     score = 0;
-     hi_score = 1000;
-   LOCAL
-     speed = 4;
-     hp = 100;
-3. Main Execution Block:
-   BEGIN
-     set_mode(m640x480); // or m320x200, m800x600
-     set_fps(60);
-     screen_color(rgb(10, 15, 30));
-     player(320, 400);
-     LOOP
-       FRAME;
-     END
-   END
-4. Processes:
-   PROCESS process_name(x, y)
-   BEGIN
-     graph = 1; // Sprite graphic ID
-     size = 100;
-     LOOP
-       IF (key(_left)) x -= speed; END
-       IF (key(_right)) x += speed; END
-       IF (key(_up)) y -= speed; END
-       IF (key(_down)) y += speed; END
-       IF (key(_space)) shot(x, y - 16); END
-       FRAME; // Yield to engine for next frame tick
-     END
-   END
-5. Control flow:
-   - LOOP ... END
-   - WHILE (condition) ... END
-   - REPEAT ... UNTIL (condition)
-   - FOR (var = start; var <= end; var++) ... END
-   - IF (condition) ... ELSE ... END
-   - SWITCH (expression) CASE value: ... END DEFAULT: ... END END
-6. Built-in functions:
-   - Graphics: set_mode(mode), set_fps(fps), screen_color(color), load_fpg(file), load_map(file), write(font, x, y, align, text), write_int(font, x, y, align, &var), delete_text(id), clear_screen()
-   - Primitives: draw_box(x1, y1, x2, y2, color), draw_line(x1, y1, x2, y2, color), draw_circle(x, y, r, color), draw_fcircle(x, y, r, color)
-   - Collision & Math: collision(type_name), get_dist(x1, y1, x2, y2), get_angle(x1, y1, x2, y2), advance(dist), xadvance(angle, dist), rand(min, max), abs(n), sqrt(n)
-   - Process control: signal(id, s_kill / s_freeze / s_wakeup / s_sleep), let_me_alone(), exists(id)
-   - Audio: sound(sound_id, volume, freq), load_wav(file)
-   - Inputs: key(_left, _right, _up, _down, _space, _enter, _esc, _a, _s, _d, _w), mouse.x, mouse.y, mouse.left, mouse.right
-7. Process variables:
-   - x, y, z, graph, flags (1=flip_x, 2=flip_y, 4=alpha), angle (0..360000 or 0..360), size, alpha, ctype, cnumber, id, father.
-8. Multi-platform App Architecture & Precode UI Primitives:
-   - UI Functions:
-     * draw_button(x, y, w, h, "Texto", callback_process_or_id)
-     * draw_input(x, y, w, h, value_var, "placeholder")
-     * draw_select(x, y, w, h, "Opcion1,Opcion2", selected_index)
-     * draw_table(x, y, w, h, "Col1,Col2", "Fila1,Val|Fila2,Val")
-     * draw_modal(x, y, w, h, "Titulo", "Mensaje del modal")
-     * draw_tabs(x, y, w, h, "Tab1,Tab2,Tab3", active_index)
-   - Layout & Reactive State Precode Blocks:
-     * STORE store_name ... var: type ... END
-     * LAYOUT vertical gap=8 ... FIELD campo ... BUTTON "Texto" ... END
-     * ON variable == value ... navigate("ruta") ... END
-   - Local DB & Persistence:
-     * load_sqlite("app.db"), sqlite_query("SQL_STATEMENT")
-     * save_json("file.json", var), load_json("file.json")
-     * fetch_api("https://url.com")
-     * store_set("key", value), store_get("key", default)
+  const userMessage = buildAssistTurnMessage({
+    prompt,
+    code,
+    task,
+    diagnostics,
+    activeTab,
+    mode8Context,
+    currentFpg,
+    sessionDurationMinutes: safeSessionMinutes
+  });
+  const normalizedHistory = normalizeGeminiHistory(history);
+  const modelsToTry = Array.from(
+    /* @__PURE__ */ new Set([model || "gemini-4-hydrogen", "gemini-4-hydrogen", "gemini-3.1-flash-lite"])
+  );
+  let lastError = null;
+  for (const candidateModel of modelsToTry) {
+    try {
+      const chat = ai.chats.create({
+        model: candidateModel,
+        history: normalizedHistory,
+        config: {
+          systemInstruction: WXDIV_SYSTEM_INSTRUCTION
+        }
+      });
+      const result = await chat.sendMessage({ message: userMessage });
+      const rawText = result.text || "";
+      const fencedMatch = rawText.match(/```(?:div|pascal|prg|mode8-actions)?\s*([\s\S]*?)```/i);
+      const enhancedText = applyWellbeingResponseMiddleware(rawText, {
+        seed: prompt,
+        task,
+        preserveCodeBlocks: true,
+        sessionDurationMinutes: safeSessionMinutes,
+        codeSnippet: fencedMatch?.[1]?.trim(),
+        hasCodeSuggestion: Boolean(fencedMatch && fencedMatch[1]?.trim())
+      });
+      return res.json({
+        text: enhancedText,
+        modelUsed: candidateModel
+      });
+    } catch (error) {
+      lastError = error;
+      console.warn(`Gemini assist model ${candidateModel} error:`, error?.message || error);
+    }
+  }
+  return res.status(503).json({
+    error: true,
+    code: "UPSTREAM_ERROR",
+    message: lastError?.message || "El modelo Gemini no pudo responder en este momento. Puedes reintentar o cambiar temporalmente a WebLLM / CPU Local."
+  });
+});
+app.post("/api/gemini/assist-stream", async (req, res) => {
+  const {
+    prompt = "",
+    code = "",
+    task = "chat",
+    diagnostics = [],
+    history = [],
+    activeTab = "",
+    mode8Context = null,
+    currentFpg = [],
+    sessionDurationMinutes = 0,
+    apiKey = "",
+    model = "gemini-4-hydrogen"
+  } = req.body || {};
+  const safeSessionMinutes = typeof sessionDurationMinutes === "number" && Number.isFinite(sessionDurationMinutes) ? Math.max(0, Math.floor(sessionDurationMinutes)) : 0;
+  const headerKey = req.headers["x-api-key"];
+  const effectiveKey = apiKey && apiKey.trim() || headerKey;
+  const ai = resolveAI(effectiveKey);
+  if (!ai) {
+    return res.status(400).json({
+      error: true,
+      code: "NO_API_KEY",
+      message: "No se detect\xF3 una clave GEMINI_API_KEY configurada en el servidor. Puedes usar WebLLM o CPU Local en la barra superior mientras tanto."
+    });
+  }
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+  const userMessage = buildAssistTurnMessage({
+    prompt,
+    code,
+    task,
+    diagnostics,
+    activeTab,
+    mode8Context,
+    currentFpg,
+    sessionDurationMinutes: safeSessionMinutes
+  });
+  const normalizedHistory = normalizeGeminiHistory(history);
+  const modelsToTry = Array.from(
+    /* @__PURE__ */ new Set([model || "gemini-4-hydrogen", "gemini-4-hydrogen", "gemini-3.1-flash-lite"])
+  );
+  let lastError = null;
+  let streamedAny = false;
+  for (const candidateModel of modelsToTry) {
+    try {
+      const chat = ai.chats.create({
+        model: candidateModel,
+        history: normalizedHistory,
+        config: {
+          systemInstruction: WXDIV_SYSTEM_INSTRUCTION
+        }
+      });
+      const stream = await chat.sendMessageStream({ message: userMessage });
+      let accumulatedRaw = "";
+      let prefixBuffer = "";
+      let prefixResolved = false;
+      for await (const chunk of stream) {
+        if (res.writableEnded) break;
+        const delta = chunk.text || "";
+        if (!delta) continue;
+        accumulatedRaw += delta;
+        if (!prefixResolved) {
+          prefixBuffer += delta;
+          if (prefixBuffer.length >= 48 || prefixBuffer.includes("\n")) {
+            prefixResolved = true;
+            const prefix = getMissingWellbeingPrefix(prefixBuffer, {
+              seed: prompt,
+              task,
+              sessionDurationMinutes: safeSessionMinutes
+            });
+            const initialChunk = prefix ? `${prefix}
 
-When providing DIV code, wrap the complete game or app in \`\`\`div ... \`\`\` code blocks.
-Make sure the syntax is 100% compliant with DIV Games Studio. Provide concise, expert explanations in Spanish.`;
-  const userPrompt = `Tarea: ${task}
-Instrucci\xF3n del usuario: ${prompt}
-${code ? `
-C\xF3digo actual:
-\`\`\`div
-${code}
-\`\`\`` : ""}
-${currentFpg && currentFpg.length > 0 ? `
-Sprites disponibles en FPG actual: ${JSON.stringify(currentFpg)}` : ""}`;
-  try {
-    const modelsToTry = [
-      model || "gemini-3.8-flash",
-      "gemini-flash-latest",
-      "gemini-3.1-flash-lite"
-    ];
-    const result = await generateGeminiWithFallback(ai, {
-      contents: userPrompt,
-      models: modelsToTry,
-      config: {
-        systemInstruction,
-        temperature: 0.7
+${prefixBuffer}` : prefixBuffer;
+            streamedAny = true;
+            res.write(`data: ${JSON.stringify({ chunk: initialChunk })}
+
+`);
+          }
+        } else {
+          streamedAny = true;
+          res.write(`data: ${JSON.stringify({ chunk: delta })}
+
+`);
+        }
       }
-    });
-    res.json({
-      text: result.text,
-      modelUsed: result.modelUsed
-    });
-  } catch (error) {
-    console.warn("Gemini assist API demand spike / error. Falling back smoothly:", error?.message || error);
-    const fallbackText = generateLocalDivFallback(prompt, code, task);
-    res.json({
-      text: fallbackText,
-      modelUsed: "fallback-engine",
-      notice: "Servidor de IA report\xF3 alta demanda o error. WXDIV 3.0 gener\xF3 una soluci\xF3n directa optimizada."
-    });
+      if (!prefixResolved && prefixBuffer && !res.writableEnded) {
+        const prefix = getMissingWellbeingPrefix(prefixBuffer, {
+          seed: prompt,
+          task,
+          sessionDurationMinutes: safeSessionMinutes
+        });
+        const initialChunk = prefix ? `${prefix}
+
+${prefixBuffer}` : prefixBuffer;
+        streamedAny = true;
+        res.write(`data: ${JSON.stringify({ chunk: initialChunk })}
+
+`);
+      }
+      if (!res.writableEnded) {
+        const fencedMatch = accumulatedRaw.match(/```(?:div|pascal|prg|mode8-actions)?\s*([\s\S]*?)```/i);
+        const suffix = getMissingWellbeingSuffix(accumulatedRaw, {
+          seed: prompt,
+          task,
+          sessionDurationMinutes: safeSessionMinutes,
+          codeSnippet: fencedMatch?.[1]?.trim(),
+          hasCodeSuggestion: Boolean(fencedMatch && fencedMatch[1]?.trim())
+        });
+        if (suffix) {
+          res.write(`data: ${JSON.stringify({ chunk: `
+
+${suffix}` })}
+
+`);
+        }
+        res.write(`data: ${JSON.stringify({ done: true, modelUsed: candidateModel })}
+
+`);
+        res.end();
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Gemini stream model ${candidateModel} error:`, error?.message || error);
+      if (streamedAny) break;
+    }
+  }
+  if (!res.writableEnded) {
+    res.write(
+      `data: ${JSON.stringify({
+        error: true,
+        code: "UPSTREAM_ERROR",
+        message: lastError?.message || "El modelo Gemini no pudo completar la respuesta en este momento."
+      })}
+
+`
+    );
+    res.end();
   }
 });
 app.post("/api/gemini/generate-sprite", async (req, res) => {
@@ -2228,6 +1362,7 @@ Do not include markdown ticks or any extra text, only the raw JSON.`;
   try {
     const result = await generateGeminiWithFallback(ai, {
       contents: `Create pixel art for: ${prompt} (size: ${size}x${size}, name: ${name})`,
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       config: {
         systemInstruction,
         responseMimeType: "application/json"
@@ -2397,8 +1532,148 @@ app.get("/p/:buildId/app.apk", (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="${req.params.buildId}.apk"`);
   res.sendFile(apkPath);
 });
+function escapeHtmlText(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+var BLOCKED_ROOT_ENTRIES = /* @__PURE__ */ new Set([
+  "src",
+  "node_modules",
+  "scripts",
+  "dist",
+  "dev-dist",
+  "public",
+  "server.ts",
+  "package.json",
+  "package-lock.json",
+  "bun.lock",
+  "tsconfig.json",
+  "vite.config.ts",
+  "metadata.json",
+  "index.html",
+  "index.htm"
+]);
+function safeResolveStaticPath(baseDir, reqPath, enforceRootBlocklist = false) {
+  let decoded = reqPath;
+  try {
+    decoded = decodeURIComponent(reqPath);
+  } catch {
+    return null;
+  }
+  if (decoded.includes("\0")) return null;
+  const normalized = decoded.replace(/\\/g, "/").replace(/^\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.some((seg) => seg.startsWith(".") || seg === "..")) {
+    return null;
+  }
+  if (enforceRootBlocklist && (segments.length === 0 || BLOCKED_ROOT_ENTRIES.has(segments[0]))) {
+    return null;
+  }
+  const resolved = import_path.default.resolve(baseDir, normalized);
+  const rootWithSep = baseDir.endsWith(import_path.default.sep) ? baseDir : baseDir + import_path.default.sep;
+  if (resolved !== baseDir && !resolved.startsWith(rootWithSep)) {
+    return null;
+  }
+  return resolved;
+}
+function renderStaticDirectoryIndex(dirPath, urlPath) {
+  const cleanUrlPath = urlPath.endsWith("/") ? urlPath : `${urlPath}/`;
+  const entries = import_node_fs2.default.readdirSync(dirPath, { withFileTypes: true }).filter((entry) => !entry.name.startsWith(".")).sort((a, b) => {
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  const itemsHtml = entries.map((entry) => {
+    const suffix = entry.isDirectory() ? "/" : "";
+    const href = encodeURI(`${cleanUrlPath}${entry.name}${suffix}`);
+    const label = escapeHtmlText(`${entry.name}${suffix}`);
+    const badge = entry.isDirectory() ? "Carpeta" : import_path.default.extname(entry.name).toLowerCase() || "Archivo";
+    return `<li style="margin:6px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
+        <a href="${href}" style="color:#7c2d48;font-weight:600;text-decoration:none;word-break:break-all;">${label}</a>
+        <span style="font-size:12px;color:#64748b;font-family:monospace;">${escapeHtmlText(badge)}</span>
+      </li>`;
+  }).join("\n");
+  const parentHref = cleanUrlPath !== "/" ? encodeURI(cleanUrlPath.replace(/[^/]+\/$/, "") || "/") : null;
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>\xCDndice de ${escapeHtmlText(cleanUrlPath)}</title>
+  </head>
+  <body style="margin:0;padding:24px;font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#0f172a;">
+    <main style="max-width:720px;margin:0 auto;">
+      <h1 style="font-size:18px;margin:0 0 6px;">Contenido de ${escapeHtmlText(cleanUrlPath)}</h1>
+      <p style="font-size:13px;color:#475569;margin:0 0 16px;">M\xF3dulos y subcarpetas disponibles en el servidor.</p>
+      ${parentHref ? `<div style="margin-bottom:12px;"><a href="${parentHref}" style="font-size:13px;color:#334155;text-decoration:none;font-weight:600;">\u2190 Subir nivel</a></div>` : ""}
+      <ul style="list-style:none;padding:0;margin:0;">
+        ${itemsHtml || `<li style="padding:12px;color:#64748b;font-size:13px;">Carpeta vac\xEDa</li>`}
+      </ul>
+    </main>
+  </body>
+</html>`;
+}
+function createInternalFolderAndHtmlMiddleware(staticRoots, options) {
+  return (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    const reqPath = req.path || "/";
+    if (reqPath.startsWith("/api/") || reqPath.startsWith("/p/") || reqPath.startsWith("/@") || reqPath.startsWith("/src/") || reqPath.startsWith("/node_modules/")) {
+      return next();
+    }
+    if (!options?.allowRoot && (reqPath === "/" || reqPath === "/index.html")) {
+      return next();
+    }
+    for (const rootSpec of staticRoots) {
+      const rootDir = rootSpec.dir;
+      if (!import_node_fs2.default.existsSync(rootDir)) continue;
+      const resolved = safeResolveStaticPath(rootDir, reqPath, Boolean(rootSpec.enforceBlocklist));
+      if (resolved && import_node_fs2.default.existsSync(resolved)) {
+        const stat = import_node_fs2.default.statSync(resolved);
+        if (stat.isDirectory()) {
+          if (!reqPath.endsWith("/")) {
+            const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+            return res.redirect(302, `${reqPath}/${qs}`);
+          }
+          const idxHtml = import_path.default.join(resolved, "index.html");
+          const idxHtm = import_path.default.join(resolved, "index.htm");
+          if (import_node_fs2.default.existsSync(idxHtml) && import_node_fs2.default.statSync(idxHtml).isFile()) {
+            res.setHeader("Cache-Control", "no-cache");
+            return res.sendFile(idxHtml);
+          }
+          if (import_node_fs2.default.existsSync(idxHtm) && import_node_fs2.default.statSync(idxHtm).isFile()) {
+            res.setHeader("Cache-Control", "no-cache");
+            return res.sendFile(idxHtm);
+          }
+          if (reqPath !== "/") {
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.setHeader("Cache-Control", "no-cache");
+            return res.send(renderStaticDirectoryIndex(resolved, reqPath));
+          }
+        } else if (stat.isFile()) {
+          if (/\.(html?|htm)$/i.test(resolved)) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+          return res.sendFile(resolved);
+        }
+      }
+      if (!import_path.default.extname(reqPath) && !reqPath.endsWith("/")) {
+        for (const ext of [".html", ".htm"]) {
+          const resolvedHtml = safeResolveStaticPath(
+            rootDir,
+            `${reqPath}${ext}`,
+            Boolean(rootSpec.enforceBlocklist)
+          );
+          if (resolvedHtml && import_node_fs2.default.existsSync(resolvedHtml) && import_node_fs2.default.statSync(resolvedHtml).isFile()) {
+            res.setHeader("Cache-Control", "no-cache");
+            return res.sendFile(resolvedHtml);
+          }
+        }
+      }
+    }
+    return next();
+  };
+}
 async function startServer() {
   const httpServer = import_http.default.createServer(app);
+  const publicPath = import_path.default.resolve(process.cwd(), "public");
   if (process.env.NODE_ENV !== "production") {
     if (process.env.DISABLE_HMR === "true") {
       app.get("/@vite/client", (_req, res) => {
@@ -2462,6 +1737,12 @@ export class ErrorOverlay extends HTMLElement {}
 `);
       });
     }
+    app.use(
+      createInternalFolderAndHtmlMiddleware(
+        [{ dir: publicPath }, { dir: process.cwd(), enforceBlocklist: true }],
+        { allowRoot: false }
+      )
+    );
     const vite = await (0, import_vite.createServer)({
       server: {
         middlewareMode: true,
@@ -2471,9 +1752,29 @@ export class ErrorOverlay extends HTMLElement {}
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = import_path.default.join(process.cwd(), "dist");
-    app.use(import_express.default.static(distPath));
+    const currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+    const distPath = import_node_fs2.default.existsSync(import_path.default.join(process.cwd(), "dist", "index.html")) ? import_path.default.join(process.cwd(), "dist") : import_node_fs2.default.existsSync(import_path.default.join(currentDir, "index.html")) ? currentDir : import_path.default.join(process.cwd(), "dist");
+    const staticRootSpecs = [
+      { dir: distPath },
+      ...import_node_fs2.default.existsSync(publicPath) && publicPath !== distPath ? [{ dir: publicPath }] : [],
+      { dir: process.cwd(), enforceBlocklist: true }
+    ];
+    app.use(createInternalFolderAndHtmlMiddleware(staticRootSpecs, { allowRoot: true }));
+    for (const rootDir of Array.from(/* @__PURE__ */ new Set([distPath, ...import_node_fs2.default.existsSync(publicPath) ? [publicPath] : []]))) {
+      app.use(
+        import_express.default.static(rootDir, {
+          extensions: ["html", "htm"],
+          index: ["index.html", "index.htm"]
+        })
+      );
+    }
     app.get("*", (req, res) => {
+      if (req.path.startsWith("/api/")) {
+        return res.status(404).json({ error: "Endpoint no encontrado" });
+      }
+      if (import_path.default.extname(req.path)) {
+        return res.status(404).type("text/plain; charset=utf-8").send("Archivo no encontrado");
+      }
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
   }
